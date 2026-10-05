@@ -1,0 +1,5 @@
+# 폴더별 PR 승인자. 아래 줄이 위 줄보다 우선한다.
+*                   @rlawogml26-art
+/frontend/          @rlawogml26-art
+/backend/prisma/    @rlawogml26-art
+/package-lock.json
