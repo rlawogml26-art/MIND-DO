@@ -96,6 +96,7 @@
   - `main`, `develop`에 직접 commit·push
   - `git push --force`, `git reset --hard` 등 기록을 지우는 명령
   - 사용자 확인 없는 commit·push
+  - PR 병합 (병합은 PR 작성자가 직접 한다)
 
 ## 수정 금지 파일
 
@@ -123,7 +124,7 @@
 작업이 끝나면 아래 형식으로 PR 본문을 작성해 사용자에게 준다.
 
 ```
-Closes #이슈번호
+Closes #이슈번호   ← 연결할 Issue가 없으면 이 줄은 지운다
 
 ## 무엇을
 (변경 내용 요약)
