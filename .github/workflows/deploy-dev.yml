@@ -1,0 +1,60 @@
+name: Deploy (dev)
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  ROLE_ARN: arn:aws:iam::486760602320:role/mindo-github-deploy-role
+  BUCKET: mindo-deploy-486760602320
+  APP_NAME: mindo-app
+  DEPLOY_GROUP: mindo-dev-dg
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build -w shared
+      - run: npm run build -w backend
+
+      - name: Make bundle
+        run: |
+          zip -r bundle.zip appspec.yml deploy package.json package-lock.json .npmrc \
+            backend/package.json backend/dist shared/package.json shared/dist
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload bundle
+        run: aws s3 cp bundle.zip "s3://${BUCKET}/dev/${GITHUB_SHA}.zip"
+
+      - name: Deploy
+        run: |
+          id=$(aws deploy create-deployment \
+            --application-name "$APP_NAME" \
+            --deployment-group-name "$DEPLOY_GROUP" \
+            --s3-location bucket="$BUCKET",key="dev/${GITHUB_SHA}.zip",bundleType=zip \
+            --description "$GITHUB_SHA" \
+            --query deploymentId --output text)
+          echo "deployment: $id"
+          aws deploy wait deployment-successful --deployment-id "$id"
