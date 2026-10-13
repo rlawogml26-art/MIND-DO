@@ -1,6 +1,6 @@
 # AGENTS.md — MIND-DO AI 작업 규칙
 
-> v1 · 최종 업데이트: 2026-10-11. 이 문서에 없는 사항은 추측해서 정하지 말고 사용자에게 묻는다.
+> v1 · 최종 업데이트: 2026-10-13. 이 문서에 없는 사항은 추측해서 정하지 말고 사용자에게 묻는다.
 
 ## 아키텍처 (코드를 짜기 전에 전제로 둘 것)
 
@@ -8,8 +8,8 @@
 - API 서버: Node.js + Express + TypeScript (`backend/`), DB 접근은 Prisma 7, 입력 검증은 zod
 - 공통 코드: `shared/` (프론트·백엔드가 함께 가져다 쓴다)
 - 요청 흐름: 앱 → HTTPS → ALB → EC2(API 서버) → RDS MySQL
-- HTTPS는 ALB에서 끝나고, ALB → EC2 구간은 HTTP다. 그래서 Express는 `trust proxy`를 켜서 원래 요청이 HTTPS였음을 인식해야 한다.
-- dev·운영 두 환경이 있다. 코드는 같고 환경변수만 다르다. 코드에 환경별 분기를 직접 쓰지 않는다. 주소는 서브도메인으로 나뉜다 (예정: `dev-api.memore.kr`, `api.memore.kr`).
+- HTTPS는 ALB에서 끝나고, ALB → EC2 구간은 HTTP다. 그래서 Express는 `trust proxy`를 `1`(앞단 프록시가 ALB 하나)로 설정해 원래 요청이 HTTPS였음을 인식해야 한다. `true`로 두지 않는다.
+- dev·운영 두 환경이 있다. 코드는 같고 환경변수만 다르다. 코드에 환경별 분기를 직접 쓰지 않는다. 주소는 서브도메인으로 나뉜다 (`dev-api.memore.site`, `api.memore.site`).
 - EC2는 ALB를 통한 요청만 받는다. RDS는 외부에서 접근할 수 없는 프라이빗 영역에 있다.
 - EC2는 Auto Scaling으로 **언제든 교체·추가될 수 있다.**
 - 사진·미디어는 S3에 저장하고 CloudFront로 제공한다.
@@ -113,6 +113,7 @@
 다음 파일은 수정하지 않는다. 수정이 필요하다고 판단되면 이유를 설명하고 사용자에게 묻는다.
 
 - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/` 아래 전체
+- 배포 파일: `appspec.yml`, `deploy/` 아래 전체
 - 루트 설정 파일: `package.json`, `.npmrc`, `.nvmrc`, `.gitattributes`, `.gitignore`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `tsconfig.base.json`
 - 각 폴더의 `tsconfig.json`
 - 설정 파일을 새로 만들거나 추가하지 않는다 (예: 폴더별 ESLint·Prettier 설정)
