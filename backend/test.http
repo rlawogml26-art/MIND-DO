@@ -1,0 +1,9 @@
+POST http://localhost:3000/api/tickets
+Content-Type: application/json
+
+{
+  "title": "뮤지컬 관람",
+  "visitDate": "2026-06-15",
+  "location": "COEX 신한카드 아트움",
+  "memo": "재밌겠다!"
+}
