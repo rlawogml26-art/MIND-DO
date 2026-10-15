@@ -9,9 +9,16 @@ GET http://localhost:3000/api/tickets/1
 
 ### 티켓 상세 조회 요청 (존재하지 않는 ID: 999번 -> 404 확인용)
 GET http://localhost:3000/api/tickets/999
+
+
+### 티켓 수정 요청 (1번 티켓 정보 변경)
+PUT http://localhost:3000/api/tickets/1
+Content-Type: application/json
+
+### 티켓 삭제 요청 (1번 티켓 삭제)
+DELETE http://localhost:3000/api/tickets/1
+
 {
-  "title": "뮤지컬 관람",
-  "visitDate": "2026-06-15",
-  "location": "COEX 신한카드 아트움",
-  "memo": "재밌겠다!"
+  "title": "뮤지컬 관람 (수정됨)",
+  "memo": "메모도 수정!"
 }
