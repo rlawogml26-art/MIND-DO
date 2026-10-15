@@ -1,4 +1,27 @@
 import { Request, Response } from "express";
+import { z } from "zod";
+
+// Zod 유효성 검증 스키마 정의
+export const ticketSchema = z.object({
+  title: z
+    .string()
+    .max(30, "제목은 최대 30자까지 입력 가능합니다.")
+    .optional()
+    .nullable(),
+  imageUrl: z.string().optional().nullable(),
+  location: z
+    .string()
+    .min(1, "방문 장소는 필수입니다.")
+    .max(30, "방문 장소는 최대 30자까지 입력 가능합니다."),
+  visitDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "날짜 형식은 YYYY-MM-DD여야 합니다."),
+  memo: z
+    .string()
+    .max(200, "메모는 최대 200자까지 입력 가능합니다.")
+    .optional()
+    .nullable(),
+});
 
 const dummyTickets = [
   {
@@ -17,16 +40,40 @@ const dummyTickets = [
   },
 ];
 
-// 티켓 생성 컨트롤러
+// 티켓 생성 컨트롤러 (Zod 검증 적용)
 export const createTicket = async (req: Request, res: Response) => {
   try {
-    const { title, visitDate, location, memo } = req.body;
+    // 1. Zod로 요청 데이터 검증
+    const result = ticketSchema.safeParse(req.body);
+
+    if (!result.success) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_INPUT",
+          message: result.error.issues[0].message,
+        },
+      });
+    }
+
+    const { title, imageUrl, location, visitDate, memo } = result.data;
+    
+    const newTicket = {
+      ticketId: dummyTickets.length + 1,
+      title: title || "", // null 대신 빈 문자열 또는 undefined 처리
+      imageUrl: imageUrl || "",
+      location,
+      visitDate,
+      memo: memo || "",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    };
+
+    dummyTickets.push(newTicket);
 
     return res.status(201).json({
       data: {
-        ticketId: 1,
-        message: "티켓이 성공적으로 생성되었습니다.",
-        ticket: { title, visitDate, location, memo },
+        ticketId: newTicket.ticketId,
+        message: "티켓이 성공적으로 생성되었습니다. (24시간 동안 보관됩니다.)",
+        ticket: newTicket,
       },
     });
   } catch {
@@ -108,10 +155,10 @@ export const updateTicket = async (req: Request, res: Response) => {
 
     const updatedTicket = {
       ...dummyTickets[ticketIndex],
-      ...(title && { title }),
-      ...(visitDate && { visitDate }),
-      ...(location && { location }),
-      ...(memo && { memo }),
+      ...(title !== undefined && { title }),
+      ...(visitDate !== undefined && { visitDate }),
+      ...(location !== undefined && { location }),
+      ...(memo !== undefined && { memo }),
     };
 
     dummyTickets[ticketIndex] = updatedTicket;
@@ -149,7 +196,6 @@ export const deleteTicket = async (req: Request, res: Response) => {
       });
     }
 
-    // 배열에서 해당 티켓 제거
     dummyTickets.splice(ticketIndex, 1);
 
     return res.status(200).json({

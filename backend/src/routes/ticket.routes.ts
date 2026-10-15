@@ -12,7 +12,7 @@ const router = Router();
 /**
  * @swagger
  * tags:
- *   name: 티켓 아카이ビング
+ *   name: 티켓 아카이빙
  *   description: 티켓 관리 API
  */
 
