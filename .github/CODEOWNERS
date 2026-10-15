@@ -1,5 +1,6 @@
 # 폴더별 PR 승인자. 아래 줄이 위 줄보다 우선한다.
+# 승인자가 두 명인 곳은 둘 중 한 명만 승인하면 된다.
 *                   @rlawogml26-art
-/frontend/          @rlawogml26-art
+/frontend/          @anjw336 @rlawogml26-art
 /backend/prisma/    @rlawogml26-art
 /package-lock.json
