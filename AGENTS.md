@@ -1,6 +1,6 @@
 # AGENTS.md — MIND-DO AI 작업 규칙
 
-> v1.1 · 최종 업데이트: 2026-10-16. 이 문서에 없는 사항은 추측해서 정하지 말고 사용자에게 묻는다.
+> v1.2 · 최종 업데이트: 2026-10-16. 이 문서에 없는 사항은 추측해서 정하지 말고 사용자에게 묻는다.
 
 ## 아키텍처 (코드를 짜기 전에 전제로 둘 것)
 
@@ -63,6 +63,14 @@
 - `shared/`에서 Prisma, bcrypt 등 서버 전용 라이브러리나 React Native 등 앱 전용 코드를 불러오지 않는다.
 - API 응답 타입은 Prisma가 생성한 타입을 가져오지 않고 따로 정의한다. 비밀번호 해시 등 민감 필드를 넣지 않는다.
 - 제한 숫자나 검증 규칙을 프론트·백엔드에 따로 만들지 않고 `shared/`의 것을 가져다 쓴다.
+
+## 프론트엔드 (`frontend/`)
+
+- Expo는 SDK 버전마다 API가 바뀐다. Expo·React Native API를 쓰기 전에 `frontend/package.json`의 `expo` 메이저 버전을 확인하고, 그 버전의 문서(`https://docs.expo.dev/versions/v<메이저>.0.0/`)를 기준으로 한다. 기억에 의존하지 않는다.
+- 패키지는 다른 폴더와 똑같이 레포 루트에서 `npm install 패키지 -w frontend`로 설치한다. `npx expo install`로 설치하지 않는다.
+- 설치 후 `frontend/`에서 `npx expo install --check`로 Expo SDK 호환 여부를 확인한다. 맞지 않으면 안내된 버전으로 루트에서 다시 설치한다. `--fix`는 쓰지 않는다.
+- 화면(라우트)은 `frontend/src/app/`에 두고, 컴포넌트·훅·유틸은 `src/app/` 밖에 둔다.
+- `ios/`, `android/` 폴더를 직접 만들거나 수정하지 않는다. 네이티브 설정은 `app.json`과 config plugin으로 한다.
 
 ## 티켓 입력 규칙
 
@@ -134,7 +142,8 @@
 - 루트 설정 파일: `package.json`, `.npmrc`, `.nvmrc`, `.gitattributes`, `.gitignore`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `tsconfig.base.json`
 - 각 폴더의 `tsconfig.json`
 - 설정 파일을 새로 만들거나 추가하지 않는다 (예: 폴더별 ESLint·Prettier 설정). 단, 폴더별 `.gitignore`는 허용한다.
-- `frontend/package.json`에 `expo lint` 스크립트를 두지 않는다. 실행하면 `frontend/`에 ESLint 설정 파일을 만든다. lint는 루트의 `npm run lint`로 한다.
+- `frontend/package.json`에 `expo lint` 스크립트를 두지 않고, `npx expo lint`도 실행하지 않는다. 실행하면 `frontend/`에 ESLint 설정 파일을 만든다. lint는 루트의 `npm run lint`로 한다.
+- 하위 폴더에 `AGENTS.md`, `CLAUDE.md` 등 AI 작업 지침 파일을 만들지 않는다. 팀 규칙은 루트의 이 문서 하나다. 도구가 생성했으면 삭제하고 사용자에게 알린다.
 - `backend/prisma/schema.prisma`: 사용자가 데이터 담당자가 아니면 수정하지 않는다. 대신 데이터 담당에게 보낼 Issue 요청 문안(테이블, 필요한 컬럼, 이유)을 작성해 준다.
 - 위 목록의 루트 `package.json`은 패키지 설치로도 바뀌면 안 된다. 패키지는 `-w 폴더`로 설치하므로 루트 `package.json`이 바뀌었다면 원인을 확인하고 사용자에게 알린다.
 
@@ -195,3 +204,4 @@ Closes #이슈번호   ← 연결할 Issue가 없으면 이 줄은 지운다
 - 사진 첨부 개수·용량 제한
 - 로그인 토큰(JWT)의 유효 기간
 - 로컬 개발용 DB, 테스트 방식, 서버 로그 방식
+- EAS 빌드·제출·OTA 업데이트 사용 여부
