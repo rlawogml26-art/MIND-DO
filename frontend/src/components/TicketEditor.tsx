@@ -402,6 +402,14 @@ const FramePreview = ({
   );
 };
 
+const Action = ({ label, onPress }: { label: string; onPress: () => void }) => (
+  <View style={styles.bottomWrap}>
+    <Pressable style={styles.action} onPress={onPress}>
+      <Text style={styles.actionText}>{label}</Text>
+    </Pressable>
+  </View>
+);
+
 export default function App() {
   const { width, height } = useWindowDimensions();
   // 1-2-4 / 1-2-5 전용: 기본 티켓의 약 1.25배. 작은 화면에서는 탭과 헤더를 침범하지 않도록 제한.
@@ -578,7 +586,7 @@ export default function App() {
     }
     go("frames");
   };
-  const Ticket = ({ backSide = false }: { backSide?: boolean }) => (
+  const renderTicket = (backSide = false) => (
     <View
       style={[
         styles.ticket,
@@ -629,7 +637,7 @@ export default function App() {
   );
   // 1-2-3 프레임 선택 화면 전용 미리보기. 이후 꾸미기 화면의 Ticket은 유지합니다.
 
-  const FrameSelection = ({ confirmed = false }: { confirmed?: boolean }) => (
+  const renderFrameSelection = (confirmed = false) => (
     <View style={styles.frameScreen}>
       <Text style={styles.frameHelper}>
         선택한 사진에 어울리는 티켓 디자인을 골라주세요.
@@ -695,19 +703,6 @@ export default function App() {
     </View>
   );
 
-  const Action = ({
-    label,
-    onPress,
-  }: {
-    label: string;
-    onPress: () => void;
-  }) => (
-    <View style={styles.bottomWrap}>
-      <Pressable style={styles.action} onPress={onPress}>
-        <Text style={styles.actionText}>{label}</Text>
-      </Pressable>
-    </View>
-  );
   const content = () => {
     switch (step) {
       case "photos":
@@ -786,9 +781,9 @@ export default function App() {
           </>
         );
       case "frames":
-        return <FrameSelection />;
+        return renderFrameSelection();
       case "frameConfirm":
-        return <FrameSelection confirmed />;
+        return renderFrameSelection(true);
       case "decorate":
       case "stickerPlace":
         return (
@@ -1119,7 +1114,7 @@ export default function App() {
                       placeholderTextColor="#B9AAA0"
                       autoCorrect={false}
                       returnKeyType="done"
-                      accessibilityLabel="TITLE 제목 입력, 최대 15자"
+                      accessibilityLabel={`TITLE 제목 입력, 최대 ${TICKET_TITLE_MAX}자`}
                     />
                   </View>
                   <View style={styles.textFieldRow}>
@@ -1145,7 +1140,7 @@ export default function App() {
                       placeholder={`장소 입력 (최대 ${TICKET_LOCATION_MAX}자)`}
                       placeholderTextColor="#B9AAA0"
                       returnKeyType="done"
-                      accessibilityLabel="PLACE 장소 입력, 최대 15자"
+                      accessibilityLabel={`PLACE 장소 입력, 최대 ${TICKET_LOCATION_MAX}자`}
                     />
                   </View>
                 </ScrollView>
@@ -1226,18 +1221,14 @@ export default function App() {
                 </F>
               ))}
             </View>
-            <View style={styles.frontPreviewCenter}>
-              <Ticket backSide />
-            </View>
+            <View style={styles.frontPreviewCenter}>{renderTicket(true)}</View>
             <Action label="뒷면 꾸미기  →" onPress={() => go("backEdit")} />
           </>
         );
       case "backEdit":
         return (
           <>
-            <View style={styles.center}>
-              <Ticket backSide />
-            </View>
+            <View style={styles.center}>{renderTicket(true)}</View>
             {/* 1-3-2 갤러리 영역은 현재 작업 범위에서 제외하여 임시 주석 처리합니다.
           <View style={styles.options}>
             <F onPress={() => pick(true)}>뒷면 사진 최대 4장 선택</F>
@@ -1252,9 +1243,7 @@ export default function App() {
       case "changePhoto":
         return (
           <>
-            <View style={styles.center}>
-              <Ticket backSide />
-            </View>
+            <View style={styles.center}>{renderTicket(true)}</View>
             <View style={styles.options}>
               <F onPress={() => pick(false)}>앞면 사진 변경</F>
               <F onPress={() => pick(true)}>뒷면 사진 변경</F>
@@ -1268,18 +1257,14 @@ export default function App() {
       case "reviewFront":
         return (
           <>
-            <View style={styles.center}>
-              <Ticket />
-            </View>
+            <View style={styles.center}>{renderTicket()}</View>
             <Action label="뒷면 확인하기  →" onPress={() => go("reviewBack")} />
           </>
         );
       case "reviewBack":
         return (
           <>
-            <View style={styles.center}>
-              <Ticket backSide />
-            </View>
+            <View style={styles.center}>{renderTicket(true)}</View>
             <Action label="티켓 발권하기  →" onPress={() => go("issuing")} />
           </>
         );
@@ -1300,7 +1285,7 @@ export default function App() {
           <>
             <View style={styles.center}>
               <Text style={styles.big}>티켓 발권 완료!</Text>
-              <Ticket />
+              {renderTicket()}
             </View>
             <Action
               label="내 보관함에서 보기  →"
@@ -1311,9 +1296,7 @@ export default function App() {
       case "archive":
         return (
           <>
-            <View style={styles.center}>
-              <Ticket />
-            </View>
+            <View style={styles.center}>{renderTicket()}</View>
             <Action label="새 티켓 만들기" onPress={() => go("photos")} />
           </>
         );
