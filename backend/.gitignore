@@ -1,0 +1,2 @@
+# prisma generate가 만드는 클라이언트 (schema.prisma의 generator output)
+src/generated/
