@@ -29,7 +29,7 @@ model Ticket {
   title     String    @db.VarChar(20)
   location  String    @db.VarChar(20)
   visitDate DateTime  @map("visit_date") @db.Date
-  memo      String?   @db.VarChar(80)
+  memo      String?   @db.VarChar(15)
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   // 티켓은 행을 지우지 않고 이 값을 채워 삭제 처리한다(소프트 삭제). 조회 시 항상 null인 것만 쓴다.
