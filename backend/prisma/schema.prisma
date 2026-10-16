@@ -26,8 +26,8 @@ model User {
 model Ticket {
   id        Int       @id @default(autoincrement())
   userId    Int       @map("user_id")
-  title     String    @db.VarChar(20)
-  location  String    @db.VarChar(20)
+  title     String    @db.VarChar(15)
+  location  String    @db.VarChar(15)
   visitDate DateTime  @map("visit_date") @db.Date
   memo      String?   @db.VarChar(80)
   createdAt DateTime  @default(now()) @map("created_at")

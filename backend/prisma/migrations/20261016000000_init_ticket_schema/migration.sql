@@ -15,8 +15,8 @@ CREATE TABLE `users` (
 CREATE TABLE `tickets` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `user_id` INTEGER NOT NULL,
-    `title` VARCHAR(20) NOT NULL,
-    `location` VARCHAR(20) NOT NULL,
+    `title` VARCHAR(15) NOT NULL,
+    `location` VARCHAR(15) NOT NULL,
     `visit_date` DATE NOT NULL,
     `memo` VARCHAR(80) NULL,
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
