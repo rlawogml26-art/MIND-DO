@@ -1,3 +1,4 @@
+import { TICKET_LOCATION_MAX, TICKET_TITLE_MAX } from "@mind-do/shared";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -322,13 +323,16 @@ const FramePreview = ({
             showSoftInputOnFocus={true}
             keyboardType="default"
             value={ticketTitle}
+            maxLength={TICKET_TITLE_MAX}
             onChangeText={setTicketTitle}
             onBlur={() =>
-              setTicketTitle((value) => Array.from(value).slice(0, 30).join(""))
+              setTicketTitle((value) =>
+                Array.from(value).slice(0, TICKET_TITLE_MAX).join(""),
+              )
             }
             placeholder="TITLE"
             placeholderTextColor="#292929"
-            accessibilityLabel="티켓 제목 입력 (최대 30자)"
+            accessibilityLabel={`티켓 제목 입력 (최대 ${TICKET_TITLE_MAX}자)`}
           />
         ) : (
           <View style={styles.ticketMetaRow}>
@@ -366,13 +370,16 @@ const FramePreview = ({
             showSoftInputOnFocus={true}
             keyboardType="default"
             value={ticketPlace}
+            maxLength={TICKET_LOCATION_MAX}
             onChangeText={setTicketPlace}
             onBlur={() =>
-              setTicketPlace((value) => Array.from(value).slice(0, 30).join(""))
+              setTicketPlace((value) =>
+                Array.from(value).slice(0, TICKET_LOCATION_MAX).join(""),
+              )
             }
             placeholder="PLACE"
             placeholderTextColor="#292929"
-            accessibilityLabel="티켓 장소 입력 (최대 30자)"
+            accessibilityLabel={`티켓 장소 입력 (최대 ${TICKET_LOCATION_MAX}자)`}
           />
         ) : (
           <View style={styles.ticketMetaRow}>
@@ -454,7 +461,8 @@ export default function App() {
     "keyboard",
   );
   const [ticketTitle, setTicketTitle] = useState("");
-  const [ticketDate] = useState(""); // 추후 달력 연동 시 날짜 선택값으로 교체
+  // 후속 Issue #18: 방문 날짜 입력을 연결하고 shared 스키마로 검증한다.
+  const [ticketDate] = useState("");
   const [ticketPlace, setTicketPlace] = useState("");
   const [backStyle, setBackStyle] = useState(0);
   const [tab, setTab] = useState(1);
@@ -1100,14 +1108,14 @@ export default function App() {
                     <TextInput
                       style={styles.textFieldInput}
                       value={ticketTitle}
+                      maxLength={TICKET_TITLE_MAX}
                       onChangeText={setTicketTitle}
-                      maxLength={15}
                       onBlur={() =>
                         setTicketTitle((value) =>
-                          Array.from(value).slice(0, 30).join(""),
+                          Array.from(value).slice(0, TICKET_TITLE_MAX).join(""),
                         )
                       }
-                      placeholder="제목 입력 (최대 15자)"
+                      placeholder={`제목 입력 (최대 ${TICKET_TITLE_MAX}자)`}
                       placeholderTextColor="#B9AAA0"
                       autoCorrect={false}
                       returnKeyType="done"
@@ -1125,14 +1133,16 @@ export default function App() {
                     <TextInput
                       style={styles.textFieldInput}
                       value={ticketPlace}
+                      maxLength={TICKET_LOCATION_MAX}
                       onChangeText={setTicketPlace}
-                      maxLength={15}
                       onBlur={() =>
                         setTicketPlace((value) =>
-                          Array.from(value).slice(0, 30).join(""),
+                          Array.from(value)
+                            .slice(0, TICKET_LOCATION_MAX)
+                            .join(""),
                         )
                       }
-                      placeholder="장소 입력 (최대 15자)"
+                      placeholder={`장소 입력 (최대 ${TICKET_LOCATION_MAX}자)`}
                       placeholderTextColor="#B9AAA0"
                       returnKeyType="done"
                       accessibilityLabel="PLACE 장소 입력, 최대 15자"
