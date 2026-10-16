@@ -18,7 +18,7 @@ CREATE TABLE `tickets` (
     `title` VARCHAR(20) NOT NULL,
     `location` VARCHAR(20) NOT NULL,
     `visit_date` DATE NOT NULL,
-    `memo` VARCHAR(15) NULL,
+    `memo` VARCHAR(80) NULL,
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updated_at` DATETIME(3) NOT NULL,
     `deleted_at` DATETIME(3) NULL,
