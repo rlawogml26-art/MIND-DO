@@ -5,7 +5,7 @@ import {
   getTicketById,
   updateTicket,
   deleteTicket,
-} from "../controllers/ticket.controller.js";
+} from "./ticket.controller.js";
 
 const router = Router();
 
@@ -28,16 +28,7 @@ const router = Router();
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               title:
- *                 type: string
- *               visitDate:
- *                 type: string
- *               location:
- *                 type: string
- *               memo:
- *                 type: string
+ *             $ref: '#/components/schemas/CreateTicketInput'
  *     responses:
  *       201:
  *         description: 티켓 생성 성공
@@ -87,16 +78,7 @@ router.get("/", getTickets);
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               title:
- *                 type: string
- *               visitDate:
- *                 type: string
- *               location:
- *                 type: string
- *               memo:
- *                 type: string
+ *             $ref: '#/components/schemas/UpdateTicketInput'
  *     responses:
  *       200:
  *         description: 수정 성공
