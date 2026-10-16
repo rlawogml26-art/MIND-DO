@@ -40,7 +40,7 @@ const options: swaggerJsdoc.Options = {
 };
 
 export const setupSwagger = (app: Express) => {
-  if (process.env.NODE_ENV !== "development") return;
+  if (process.env.SWAGGER_ENABLED !== "true") return;
   const specs = swaggerJsdoc(options);
   app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 };

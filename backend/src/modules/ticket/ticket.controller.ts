@@ -1,6 +1,11 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createTicketSchema, updateTicketSchema } from "@mind-do/shared";
+import {
+  createTicketSchema,
+  updateTicketSchema,
+  ticketResponseSchema,
+  ErrorCode,
+} from "@mind-do/shared";
 import * as service from "./ticket.service.js";
 
 const ticketIdSchema = z.object({
@@ -13,13 +18,13 @@ const ticketIdSchema = z.object({
 
 const invalidInput = (res: Response) =>
   res.status(400).json({
-    error: { code: "INVALID_INPUT", message: "입력값을 확인해주세요." },
+    error: { code: ErrorCode.INVALID_INPUT, message: "입력값을 확인해주세요." },
   });
 
 const notFound = (res: Response) =>
   res.status(404).json({
     error: {
-      code: "TICKET_NOT_FOUND",
+      code: ErrorCode.TICKET_NOT_FOUND,
       message: "해당 티켓을 찾을 수 없습니다.",
     },
   });
@@ -27,7 +32,7 @@ const notFound = (res: Response) =>
 const serverError = (res: Response) =>
   res.status(500).json({
     error: {
-      code: "INTERNAL_SERVER_ERROR",
+      code: ErrorCode.INTERNAL_SERVER_ERROR,
       message: "티켓 처리 중 오류가 발생했습니다.",
     },
   });
@@ -40,8 +45,8 @@ export const createTicket = async (req: Request, res: Response) => {
     return res.status(201).json({
       data: {
         ticketId: ticket.ticketId,
-        message: "티켓이 성공적으로 생성되었습니다. (24시간 동안 보관됩니다.)",
-        ticket,
+        message: "티켓이 성공적으로 생성되었습니다.",
+        ticket: ticketResponseSchema.parse(ticket),
       },
     });
   } catch {
@@ -51,9 +56,13 @@ export const createTicket = async (req: Request, res: Response) => {
 
 export const getTickets = async (_req: Request, res: Response) => {
   try {
-    return res
-      .status(200)
-      .json({ data: { tickets: await service.getTickets() } });
+    return res.status(200).json({
+      data: {
+        tickets: (await service.getTickets()).map((ticket) =>
+          ticketResponseSchema.parse(ticket),
+        ),
+      },
+    });
   } catch {
     return serverError(res);
   }
@@ -65,7 +74,9 @@ export const getTicketById = async (req: Request, res: Response) => {
   try {
     const ticket = await service.getTicketById(params.data.ticketId);
     if (!ticket) return notFound(res);
-    return res.status(200).json({ data: { ticket } });
+    return res
+      .status(200)
+      .json({ data: { ticket: ticketResponseSchema.parse(ticket) } });
   } catch {
     return serverError(res);
   }
@@ -81,9 +92,12 @@ export const updateTicket = async (req: Request, res: Response) => {
       parsed.data,
     );
     if (!ticket) return notFound(res);
-    return res
-      .status(200)
-      .json({ data: { message: "티켓이 성공적으로 수정되었습니다.", ticket } });
+    return res.status(200).json({
+      data: {
+        message: "티켓이 성공적으로 수정되었습니다.",
+        ticket: ticketResponseSchema.parse(ticket),
+      },
+    });
   } catch {
     return serverError(res);
   }

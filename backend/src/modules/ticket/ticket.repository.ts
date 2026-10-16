@@ -4,7 +4,6 @@ export type Ticket = CreateTicketInput & {
   ticketId: number;
   userId: number;
   deletedAt: Date | null;
-  expiresAt?: Date;
 };
 
 // DB 스키마가 준비되기 전까지만 이 저장소를 사용한다.
@@ -39,7 +38,6 @@ export const createTicket = async (
     ticketId: nextTicketId++,
     userId,
     deletedAt: null,
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
   };
   tickets.push(ticket);
   return ticket;
