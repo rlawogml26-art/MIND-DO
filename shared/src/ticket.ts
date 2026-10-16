@@ -16,5 +16,10 @@ export const createTicketSchema = z.object({
 // 티켓 수정 요청: 보낸 필드만 바꾼다
 export const updateTicketSchema = createTicketSchema.partial();
 
+export const ticketResponseSchema = createTicketSchema.extend({
+  ticketId: z.number().int().positive(),
+});
+
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;
+export type TicketResponse = z.infer<typeof ticketResponseSchema>;
