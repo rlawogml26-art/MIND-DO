@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 // 티켓 입력 규칙 (AGENTS.md "티켓 입력 규칙", 10/14 회의 결정)
-export const TICKET_TITLE_MAX = 20;
-export const TICKET_LOCATION_MAX = 20;
+export const TICKET_TITLE_MAX = 15;
+export const TICKET_LOCATION_MAX = 15;
 export const TICKET_MEMO_MAX = 80;
 
 // 티켓 저장 요청
