@@ -6,7 +6,7 @@ export type Ticket = CreateTicketInput & {
   deletedAt: Date | null;
 };
 
-// DB 스키마가 준비되기 전까지만 이 저장소를 사용한다.
+// 후속 Issue #13에서 Prisma 저장소로 교체하기 전까지 메모리 저장소를 사용한다.
 const tickets: Ticket[] = [
   {
     ticketId: 1,
