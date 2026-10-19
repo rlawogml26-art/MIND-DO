@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Alert } from "react-native";
 import { getIssuedTicket, type IssuedTicket } from "../storage/issued-tickets";
 import HomeScreen from "../components/HomeScreen";
-import MyPageScreen from "../components/MyPageScreen";
+import MyPageScreen, { type Profile } from "../components/MyPageScreen";
 import TicketCreationScreen from "../components/TicketEditor";
 
 type RootScreen = "home" | "my" | "dateSelection" | "ticket";
@@ -13,6 +13,12 @@ export default function App() {
     string | undefined
   >(undefined);
   const [viewTicket, setViewTicket] = useState<IssuedTicket | null>(null);
+  const [profile, setProfile] = useState<Profile>({
+    nickname: "닉네임 입력",
+    introduction: "나를 소개해보세요.",
+    username: "my.memory",
+    photoUri: null,
+  });
 
   const openTickets = (visitDate?: string) => {
     if (!visitDate) {
@@ -64,6 +70,8 @@ export default function App() {
       <MyPageScreen
         onOpenTickets={openTickets}
         onOpenHome={() => setScreen("home")}
+        savedProfile={profile}
+        onSaveProfile={setProfile}
       />
     );
   return (

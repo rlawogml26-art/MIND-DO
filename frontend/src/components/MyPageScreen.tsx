@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PROFILE_NICKNAME_MAX, PROFILE_BIO_MAX } from "@mind-do/shared";
 import {
   Alert,
   Keyboard,
@@ -29,7 +30,7 @@ const colors = {
 };
 import defaultProfileImage from "../../assets/images/memore/ticket-icon.png";
 
-type Profile = {
+export type Profile = {
   nickname: string;
   introduction: string;
   username: string;
@@ -38,19 +39,16 @@ type Profile = {
 
 type MyScreen = "profile" | "edit" | "tickets" | "following" | "followers";
 
-const initialProfile: Profile = {
-  nickname: "닉네임 입력",
-  introduction: "나를 소개해보세요.",
-  username: "my.memory",
-  photoUri: null,
-};
-
 export default function MyPageScreen({
   onOpenTickets,
   onOpenHome,
+  savedProfile,
+  onSaveProfile,
 }: {
   onOpenTickets: (visitDate?: string) => void;
   onOpenHome: () => void;
+  savedProfile: Profile;
+  onSaveProfile: (profile: Profile) => void;
 }) {
   const [screen, setScreen] = useState<MyScreen>("profile");
   const [tickets, setTickets] = useState<IssuedTicket[]>([]);
@@ -68,8 +66,7 @@ export default function MyPageScreen({
       active = false;
     };
   }, []);
-  const [savedProfile, setSavedProfile] = useState(initialProfile);
-  const [draftProfile, setDraftProfile] = useState(initialProfile);
+  const [draftProfile, setDraftProfile] = useState(savedProfile);
 
   const isEditing = screen === "edit";
   const visibleProfile = isEditing ? draftProfile : savedProfile;
@@ -80,9 +77,11 @@ export default function MyPageScreen({
   }
 
   function updateProfile(field: "nickname" | "introduction", value: string) {
+    const maxLength =
+      field === "nickname" ? PROFILE_NICKNAME_MAX : PROFILE_BIO_MAX;
     setDraftProfile((previous) => ({
       ...previous,
-      [field]: value.slice(0, 15),
+      [field]: value.slice(0, maxLength),
     }));
   }
   function deleteProfilePhoto() {
@@ -93,7 +92,7 @@ export default function MyPageScreen({
   }
   function saveProfile() {
     Keyboard.dismiss();
-    setSavedProfile({ ...draftProfile });
+    onSaveProfile({ ...draftProfile });
     setScreen("profile");
   }
 
@@ -240,7 +239,7 @@ export default function MyPageScreen({
                   <Text style={styles.label}>닉네임</Text>
                   <TextInput
                     accessibilityLabel="닉네임"
-                    maxLength={15}
+                    maxLength={PROFILE_NICKNAME_MAX}
                     value={draftProfile.nickname}
                     onChangeText={(value) => updateProfile("nickname", value)}
                     placeholder="닉네임 입력"
@@ -253,7 +252,7 @@ export default function MyPageScreen({
                   <Text style={styles.label}>소개</Text>
                   <TextInput
                     accessibilityLabel="소개"
-                    maxLength={15}
+                    maxLength={PROFILE_BIO_MAX}
                     value={draftProfile.introduction}
                     onChangeText={(value) =>
                       updateProfile("introduction", value)
