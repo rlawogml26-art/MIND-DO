@@ -1,0 +1,60 @@
+// DB 스키마 (데이터 담당). 글자 수 제한은 shared/src/ticket.ts의 TICKET_*_MAX와 같아야 한다.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+// Prisma 7은 접속 주소(url)를 이 파일이 아니라 prisma.config.ts에서 읽는다.
+datasource db {
+  provider = "mysql"
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  name         String   @db.VarChar(50)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tickets Ticket[]
+
+  @@map("users")
+}
+
+model Ticket {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  title     String    @db.VarChar(15)
+  location  String    @db.VarChar(15)
+  visitDate DateTime  @map("visit_date") @db.Date
+  memo      String?   @db.VarChar(80)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  // 티켓은 행을 지우지 않고 이 값을 채워 삭제 처리한다(소프트 삭제). 조회 시 항상 null인 것만 쓴다.
+  deletedAt DateTime? @map("deleted_at")
+
+  user   User          @relation(fields: [userId], references: [id])
+  images TicketImage[]
+
+  // 내 티켓 목록 조회(user_id + 삭제 안 됨 + 방문일 정렬)용
+  @@index([userId, deletedAt, visitDate])
+  @@map("tickets")
+}
+
+model TicketImage {
+  id        Int      @id @default(autoincrement())
+  ticketId  Int      @map("ticket_id")
+  // URL이 아니라 S3 저장 위치(key)만 저장한다. 링크는 조회 시 CloudFront 서명 링크로 만든다.
+  s3Key     String   @unique @map("s3_key") @db.VarChar(255)
+  sortOrder Int      @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // 티켓은 소프트 삭제라 이 Cascade는 평소에 동작하지 않는다.
+  // 티켓 삭제 시 사진 행은 service에서 같은 트랜잭션으로 직접 지운다.
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, sortOrder])
+  @@map("ticket_images")
+}
