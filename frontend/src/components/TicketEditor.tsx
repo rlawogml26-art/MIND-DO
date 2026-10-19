@@ -31,6 +31,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   issueTicketOnce,
+  normalizeStoredTicketFields,
   placedStickerSchema,
   localPhotoSchema,
   type IssuedTicket,
@@ -235,16 +236,16 @@ type FramePreviewProps = {
   ticketFont?: TicketFont;
   frame: number;
   front: string | null;
-  ticketTitle: string;
-  ticketDate: string;
-  ticketPlace: string;
+  title: string;
+  visitDate: string;
+  location: string;
   large?: boolean;
   decorateWidth?: number;
   stickers?: PlacedSticker[];
   onStickerMove?: (id: number, x: number, y: number) => void;
   previewOnly?: boolean;
-  setTicketTitle: React.Dispatch<React.SetStateAction<string>>;
-  setTicketPlace: React.Dispatch<React.SetStateAction<string>>;
+  setTitle: React.Dispatch<React.SetStateAction<string>>;
+  setLocation: React.Dispatch<React.SetStateAction<string>>;
 };
 
 const FramePreview = ({
@@ -257,11 +258,11 @@ const FramePreview = ({
   previewOnly = false,
   frame,
   front,
-  ticketTitle,
-  ticketDate,
-  ticketPlace,
-  setTicketTitle,
-  setTicketPlace,
+  title,
+  visitDate,
+  location,
+  setTitle,
+  setLocation,
 }: FramePreviewProps) => {
   // 티켓 너비에 비례해 TITLE / DATE / PLACE 라벨과 입력값 크기를 함께 조절합니다.
   const ticketWidth = decorateWidth ?? (large ? 250 : 204);
@@ -333,11 +334,9 @@ const FramePreview = ({
             style={[styles.frameMetaInput, ticketTextStyle]}
             showSoftInputOnFocus={true}
             keyboardType="default"
-            value={ticketTitle}
-            onChangeText={setTicketTitle}
-            onBlur={() =>
-              setTicketTitle((value) => value.slice(0, TICKET_TITLE_MAX))
-            }
+            value={title}
+            onChangeText={setTitle}
+            onBlur={() => setTitle((value) => value.slice(0, TICKET_TITLE_MAX))}
             placeholder="TITLE"
             placeholderTextColor="#292929"
             maxLength={TICKET_TITLE_MAX}
@@ -355,7 +354,7 @@ const FramePreview = ({
               TITLE
             </Text>
             <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-              {ticketTitle}
+              {title}
             </Text>
           </View>
         )}
@@ -370,7 +369,7 @@ const FramePreview = ({
             DATE
           </Text>
           <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-            {ticketDate}
+            {visitDate}
           </Text>
         </View>
         {editable ? (
@@ -378,10 +377,10 @@ const FramePreview = ({
             style={[styles.frameMetaInput, ticketTextStyle]}
             showSoftInputOnFocus={true}
             keyboardType="default"
-            value={ticketPlace}
-            onChangeText={setTicketPlace}
+            value={location}
+            onChangeText={setLocation}
             onBlur={() =>
-              setTicketPlace((value) => value.slice(0, TICKET_LOCATION_MAX))
+              setLocation((value) => value.slice(0, TICKET_LOCATION_MAX))
             }
             placeholder="PLACE"
             placeholderTextColor="#292929"
@@ -400,7 +399,7 @@ const FramePreview = ({
               PLACE
             </Text>
             <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-              {ticketPlace}
+              {location}
             </Text>
           </View>
         )}
@@ -428,13 +427,13 @@ const TEMP_BACK_PHOTO_LIMIT = 3;
 function BackTicketContent({
   photos,
   text,
-  date,
+  visitDate,
   color,
   onMore,
 }: {
   photos: string[];
   text: string;
-  date: string;
+  visitDate: string;
   color: string;
   onMore: () => void;
 }) {
@@ -477,7 +476,7 @@ function BackTicketContent({
           )}
         </View>
       )}
-      <Text style={styles.backTicketDate}>{date}</Text>
+      <Text style={styles.backTicketDate}>{visitDate}</Text>
     </View>
   );
 }
@@ -524,9 +523,9 @@ const frontDraftSchema = z.object({
   placedStickers: z.array(placedStickerSchema),
   caption: z.string(),
   ticketFont: z.enum(["sans-serif", "serif", "monospace"]),
-  ticketTitle: z.string().max(TICKET_TITLE_MAX),
-  ticketDate: z.string(),
-  ticketPlace: z.string().max(TICKET_LOCATION_MAX),
+  title: z.string().max(TICKET_TITLE_MAX),
+  visitDate: z.string(),
+  location: z.string().max(TICKET_LOCATION_MAX),
   savedAt: z.iso.datetime(),
 });
 type FrontDraft = z.infer<typeof frontDraftSchema>;
@@ -541,14 +540,14 @@ const Action = ({ label, onPress }: { label: string; onPress: () => void }) => (
 
 type TicketCreationScreenProps = {
   onBackHome?: () => void;
-  selectedDate?: string;
+  selectedVisitDate?: string;
   issuedTicket?: IssuedTicket | null;
   onCreateNew?: () => void;
 };
 
 export default function TicketCreationScreen({
   onBackHome,
-  selectedDate,
+  selectedVisitDate,
   issuedTicket = null,
   onCreateNew,
 }: TicketCreationScreenProps = {}) {
@@ -609,11 +608,11 @@ export default function TicketCreationScreen({
   const [textEditorTab, setTextEditorTab] = useState<"keyboard" | "font">(
     "keyboard",
   );
-  const [ticketTitle, setTicketTitle] = useState("");
-  const [ticketDate, setTicketDate] = useState(selectedDate ?? "");
-  const [ticketPlace, setTicketPlace] = useState("");
+  const [title, setTitle] = useState("");
+  const [visitDate, setVisitDate] = useState(selectedVisitDate ?? "");
+  const [location, setLocation] = useState("");
   const [backStyle, setBackStyle] = useState(0);
-  const [backText, setBackText] = useState("");
+  const [memo, setMemo] = useState("");
   const [backColor, setBackColor] = useState("#F2E8DC");
   const [expandedText, setExpandedText] = useState<string | null>(null);
   const [tab, setTab] = useState(1);
@@ -625,7 +624,11 @@ export default function TicketCreationScreen({
     AsyncStorage.getItem(DRAFT_KEY)
       .then((raw) => {
         if (active && raw)
-          setSavedDraft(frontDraftSchema.parse(JSON.parse(raw)));
+          setSavedDraft(
+            frontDraftSchema.parse(
+              normalizeStoredTicketFields(JSON.parse(raw)),
+            ),
+          );
       })
       .catch(() => {
         if (active) Alert.alert("임시저장", "저장된 작업을 불러오지 못했어요.");
@@ -647,9 +650,9 @@ export default function TicketCreationScreen({
       placedStickers,
       caption,
       ticketFont,
-      ticketTitle,
-      ticketDate,
-      ticketPlace,
+      title,
+      visitDate,
+      location,
       savedAt: new Date().toISOString(),
     };
     setDraftSaving(true);
@@ -679,9 +682,9 @@ export default function TicketCreationScreen({
     );
     setCaption(savedDraft.caption);
     setTicketFont(savedDraft.ticketFont);
-    setTicketTitle(savedDraft.ticketTitle);
-    setTicketDate(savedDraft.ticketDate.replaceAll(".", "-"));
-    setTicketPlace(savedDraft.ticketPlace);
+    setTitle(savedDraft.title);
+    setVisitDate(savedDraft.visitDate.replaceAll(".", "-"));
+    setLocation(savedDraft.location);
     go("decorate");
   };
 
@@ -822,10 +825,10 @@ export default function TicketCreationScreen({
       {backSide ? (
         <BackTicketContent
           photos={backs}
-          text={backText}
-          date={ticketDate}
+          text={memo}
+          visitDate={visitDate}
           color={backColor}
-          onMore={() => setExpandedText(backText)}
+          onMore={() => setExpandedText(memo)}
         />
       ) : (
         <>
@@ -844,13 +847,13 @@ export default function TicketCreationScreen({
             {sticker} {caption || "MEMO:RE"}
           </Text>
           <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"TITLE  " + ticketTitle}
+            {"TITLE  " + title}
           </Text>
           <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"DATE  " + ticketDate}
+            {"DATE  " + visitDate}
           </Text>
           <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"PLACE  " + ticketPlace}
+            {"PLACE  " + location}
           </Text>
         </>
       )}
@@ -873,11 +876,11 @@ export default function TicketCreationScreen({
           large
           frame={frame}
           front={front}
-          ticketTitle={ticketTitle}
-          ticketDate={ticketDate}
-          ticketPlace={ticketPlace}
-          setTicketTitle={setTicketTitle}
-          setTicketPlace={setTicketPlace}
+          title={title}
+          visitDate={visitDate}
+          location={location}
+          setTitle={setTitle}
+          setLocation={setLocation}
         />
       </View>
       <View style={styles.framePickerArea}>
@@ -941,12 +944,12 @@ export default function TicketCreationScreen({
     stickerId.current = 0;
     setCaption("");
     setTicketFont("sans-serif");
-    setTicketTitle("");
-    setTicketPlace("");
+    setTitle("");
+    setLocation("");
     setBackStyle(0);
-    setBackText("");
+    setMemo("");
     setBackColor("#F2E8DC");
-    setTicketDate("");
+    setVisitDate("");
     setTab(1);
     if (onCreateNew) onCreateNew();
     else {
@@ -956,12 +959,11 @@ export default function TicketCreationScreen({
 
   const finishIssuing = async () => {
     if (issuingTicket) return;
-    const date = ticketDate.trim();
     const input = createTicketSchema.safeParse({
-      title: ticketTitle,
-      location: ticketPlace,
-      visitDate: date.replaceAll(".", "-"),
-      memo: backText,
+      title,
+      location,
+      visitDate: visitDate.trim().replaceAll(".", "-"),
+      memo,
     });
     if (!input.success) {
       Alert.alert(
@@ -973,7 +975,7 @@ export default function TicketCreationScreen({
     setIssuingTicket(true);
     try {
       const snapshot: IssuedTicket = {
-        date,
+        visitDate: input.data.visitDate,
         front,
         backs,
         frame,
@@ -981,10 +983,10 @@ export default function TicketCreationScreen({
         caption,
         sticker,
         ticketFont,
-        ticketTitle: input.data.title,
-        ticketPlace: input.data.location,
+        title: input.data.title,
+        location: input.data.location,
         backStyle,
-        backText,
+        memo,
         backColor,
         issuedAt: new Date().toISOString(),
       };
@@ -1014,11 +1016,11 @@ export default function TicketCreationScreen({
               사진은 선택 사항이에요. 앞면 1장, 뒷면 최대{" "}
               {TEMP_BACK_PHOTO_LIMIT}장을 선택할 수 있습니다.
             </Text>
-            {!selectedDate && (
+            {!selectedVisitDate && (
               <TextInput
                 accessibilityLabel="방문 날짜, YYYY-MM-DD 형식"
-                value={ticketDate}
-                onChangeText={setTicketDate}
+                value={visitDate}
+                onChangeText={setVisitDate}
                 placeholder="방문 날짜 (YYYY-MM-DD)"
                 autoCapitalize="none"
                 style={styles.backTextInput}
@@ -1054,7 +1056,7 @@ export default function TicketCreationScreen({
                     ) : null}
                     <View style={styles.draftInfo}>
                       <Text style={styles.draftTitle}>
-                        {savedDraft.ticketTitle || "제목 없는 티켓"}
+                        {savedDraft.title || "제목 없는 티켓"}
                       </Text>
                       <Text style={styles.draftDescription}>
                         마지막 임시저장 · 이어서 편집하기 →
@@ -1154,11 +1156,11 @@ export default function TicketCreationScreen({
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
-                ticketTitle={ticketTitle}
-                ticketDate={ticketDate}
-                ticketPlace={ticketPlace}
-                setTicketTitle={setTicketTitle}
-                setTicketPlace={setTicketPlace}
+                title={title}
+                visitDate={visitDate}
+                location={location}
+                setTitle={setTitle}
+                setLocation={setLocation}
               />
             </View>
             {!keyboardVisible && (
@@ -1208,11 +1210,11 @@ export default function TicketCreationScreen({
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
-                ticketTitle={ticketTitle}
-                ticketDate={ticketDate}
-                ticketPlace={ticketPlace}
-                setTicketTitle={setTicketTitle}
-                setTicketPlace={setTicketPlace}
+                title={title}
+                visitDate={visitDate}
+                location={location}
+                setTitle={setTitle}
+                setLocation={setLocation}
               />
             </View>
             <View style={styles.stickerSheet}>
@@ -1326,11 +1328,11 @@ export default function TicketCreationScreen({
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
-                ticketTitle={ticketTitle}
-                ticketDate={ticketDate}
-                ticketPlace={ticketPlace}
-                setTicketTitle={setTicketTitle}
-                setTicketPlace={setTicketPlace}
+                title={title}
+                visitDate={visitDate}
+                location={location}
+                setTitle={setTitle}
+                setLocation={setLocation}
               />
             </View>
             <View style={styles.decorateTabs}>
@@ -1376,11 +1378,11 @@ export default function TicketCreationScreen({
                   onStickerMove={moveSticker}
                   frame={frame}
                   front={front}
-                  ticketTitle={ticketTitle}
-                  ticketDate={ticketDate}
-                  ticketPlace={ticketPlace}
-                  setTicketTitle={setTicketTitle}
-                  setTicketPlace={setTicketPlace}
+                  title={title}
+                  visitDate={visitDate}
+                  location={location}
+                  setTitle={setTitle}
+                  setLocation={setLocation}
                 />
               </View>
             )}
@@ -1455,13 +1457,11 @@ export default function TicketCreationScreen({
                     <Text style={styles.textFieldLabel}>TITLE</Text>
                     <TextInput
                       style={styles.textFieldInput}
-                      value={ticketTitle}
-                      onChangeText={setTicketTitle}
+                      value={title}
+                      onChangeText={setTitle}
                       maxLength={TICKET_TITLE_MAX}
                       onBlur={() =>
-                        setTicketTitle((value) =>
-                          value.slice(0, TICKET_TITLE_MAX),
-                        )
+                        setTitle((value) => value.slice(0, TICKET_TITLE_MAX))
                       }
                       placeholder={`제목 입력 (최대 ${TICKET_TITLE_MAX}자)`}
                       placeholderTextColor="#B9AAA0"
@@ -1473,18 +1473,18 @@ export default function TicketCreationScreen({
                   <View style={styles.textFieldRow}>
                     <Text style={styles.textFieldLabel}>DATE</Text>
                     <Text style={styles.textDatePlaceholder}>
-                      {ticketDate || "달력 연동 예정"}
+                      {visitDate || "달력 연동 예정"}
                     </Text>
                   </View>
                   <View style={styles.textFieldRow}>
                     <Text style={styles.textFieldLabel}>PLACE</Text>
                     <TextInput
                       style={styles.textFieldInput}
-                      value={ticketPlace}
-                      onChangeText={setTicketPlace}
+                      value={location}
+                      onChangeText={setLocation}
                       maxLength={TICKET_LOCATION_MAX}
                       onBlur={() =>
-                        setTicketPlace((value) =>
+                        setLocation((value) =>
                           value.slice(0, TICKET_LOCATION_MAX),
                         )
                       }
@@ -1543,11 +1543,11 @@ export default function TicketCreationScreen({
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
-                  ticketTitle={ticketTitle}
-                  ticketDate={ticketDate}
-                  ticketPlace={ticketPlace}
-                  setTicketTitle={setTicketTitle}
-                  setTicketPlace={setTicketPlace}
+                  title={title}
+                  visitDate={visitDate}
+                  location={location}
+                  setTitle={setTitle}
+                  setLocation={setLocation}
                 />
               </View>
             </View>
@@ -1608,14 +1608,12 @@ export default function TicketCreationScreen({
                 style={styles.backTextInput}
                 multiline
                 maxLength={TICKET_MEMO_MAX}
-                value={backText}
-                onChangeText={setBackText}
+                value={memo}
+                onChangeText={setMemo}
                 placeholder="이날의 기억을 적어 주세요"
                 placeholderTextColor="#987966"
               />
-              <Text style={styles.backCount}>
-                {Array.from(backText).length}/80
-              </Text>
+              <Text style={styles.backCount}>{Array.from(memo).length}/80</Text>
             </ScrollView>
             {keyboardVisible ? (
               <Pressable
@@ -1664,11 +1662,11 @@ export default function TicketCreationScreen({
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
-                  ticketTitle={ticketTitle}
-                  ticketDate={ticketDate}
-                  ticketPlace={ticketPlace}
-                  setTicketTitle={setTicketTitle}
-                  setTicketPlace={setTicketPlace}
+                  title={title}
+                  visitDate={visitDate}
+                  location={location}
+                  setTitle={setTitle}
+                  setLocation={setLocation}
                 />
               </View>
             </View>
@@ -1692,10 +1690,10 @@ export default function TicketCreationScreen({
                 >
                   <BackTicketContent
                     photos={backs}
-                    text={backText}
-                    date={ticketDate}
+                    text={memo}
+                    visitDate={visitDate}
                     color={backColor}
-                    onMore={() => setExpandedText(backText)}
+                    onMore={() => setExpandedText(memo)}
                   />
                 </View>
               </View>
@@ -1731,11 +1729,11 @@ export default function TicketCreationScreen({
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
-                  ticketTitle={ticketTitle}
-                  ticketDate={ticketDate}
-                  ticketPlace={ticketPlace}
-                  setTicketTitle={setTicketTitle}
-                  setTicketPlace={setTicketPlace}
+                  title={title}
+                  visitDate={visitDate}
+                  location={location}
+                  setTitle={setTitle}
+                  setLocation={setLocation}
                 />
               </View>
             </View>
@@ -1757,11 +1755,11 @@ export default function TicketCreationScreen({
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
-                  ticketTitle={ticketTitle}
-                  ticketDate={ticketDate}
-                  ticketPlace={ticketPlace}
-                  setTicketTitle={setTicketTitle}
-                  setTicketPlace={setTicketPlace}
+                  title={title}
+                  visitDate={visitDate}
+                  location={location}
+                  setTitle={setTitle}
+                  setLocation={setLocation}
                 />
               </View>
             </View>
@@ -1793,7 +1791,7 @@ export default function TicketCreationScreen({
         />
         <View style={styles.header}>
           <Pressable onPress={returnHome} style={styles.back}>
-            <Text style={styles.backText}>‹</Text>
+            <Text style={styles.backButtonText}>‹</Text>
           </Pressable>
           <Text style={styles.headerTitle}>
             발권한 티켓 · {readOnlyBack ? "뒷면" : "앞면"}
@@ -1813,10 +1811,10 @@ export default function TicketCreationScreen({
             >
               <BackTicketContent
                 photos={issuedTicket.backs ?? []}
-                text={issuedTicket.backText ?? ""}
-                date={issuedTicket.date}
+                text={issuedTicket.memo ?? ""}
+                visitDate={issuedTicket.visitDate}
                 color={issuedTicket.backColor ?? "#F2E8DC"}
-                onMore={() => setExpandedText(issuedTicket.backText ?? "")}
+                onMore={() => setExpandedText(issuedTicket.memo ?? "")}
               />
             </View>
           ) : (
@@ -1827,11 +1825,11 @@ export default function TicketCreationScreen({
               stickers={issuedTicket.placedStickers}
               frame={readOnlyFrame}
               front={issuedTicket.front}
-              ticketTitle={issuedTicket.ticketTitle}
-              ticketDate={issuedTicket.date}
-              ticketPlace={issuedTicket.ticketPlace}
-              setTicketTitle={setTicketTitle}
-              setTicketPlace={setTicketPlace}
+              title={issuedTicket.title}
+              visitDate={issuedTicket.visitDate}
+              location={issuedTicket.location}
+              setTitle={setTitle}
+              setLocation={setLocation}
             />
           )}
           <Text style={styles.info}>
@@ -1869,7 +1867,7 @@ export default function TicketCreationScreen({
       >
         <View style={styles.header}>
           <Pressable onPress={back} style={styles.back}>
-            <Text style={styles.backText}>‹</Text>
+            <Text style={styles.backButtonText}>‹</Text>
           </Pressable>
           <Text style={styles.headerTitle}>
             {step === "decorate" ||
@@ -2425,7 +2423,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  backText: { color: C.brown, fontSize: 34, lineHeight: 39 },
+  backButtonText: { color: C.brown, fontSize: 34, lineHeight: 39 },
   headerTitle: { color: C.brown, fontSize: 16, fontWeight: "500" },
   body: { flex: 1 },
   helper: {
