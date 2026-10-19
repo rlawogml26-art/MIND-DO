@@ -1586,7 +1586,9 @@ export default function TicketCreationScreen({
                 placeholder="이날의 기억을 적어 주세요"
                 placeholderTextColor="#987966"
               />
-              <Text style={styles.backCount}>{Array.from(memo).length}/80</Text>
+              <Text style={styles.backCount}>
+                {memo.length}/{TICKET_MEMO_MAX}
+              </Text>
             </ScrollView>
             {keyboardVisible ? (
               <Pressable

@@ -1,5 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createTicketSchema } from "@mind-do/shared";
+import {
+  createTicketSchema,
+  TICKET_TITLE_MAX,
+  TICKET_LOCATION_MAX,
+} from "@mind-do/shared";
 import { z } from "zod";
 
 // 후속 Issue #24: 기기 임시 보관을 확정된 저장·업로드 방식으로 교체한다.
@@ -118,12 +122,9 @@ const frontDraftSchema = (frameCount: number) =>
     placedStickers: z.array(placedStickerSchema),
     caption: z.string(),
     ticketFont: z.enum(["sans-serif", "serif", "monospace"]),
-    title: z.union([createTicketSchema.shape.title, z.literal("")]),
-    visitDate: z.union([
-      z.literal(""),
-      z.string().transform(normalizeTicketDate),
-    ]),
-    location: z.union([createTicketSchema.shape.location, z.literal("")]),
+    title: z.string().max(TICKET_TITLE_MAX),
+    visitDate: z.string(),
+    location: z.string().max(TICKET_LOCATION_MAX),
     savedAt: z.iso.datetime(),
   });
 
