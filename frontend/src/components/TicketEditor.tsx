@@ -1,4 +1,3 @@
-import { z } from "zod";
 import {
   createTicketSchema,
   TICKET_TITLE_MAX,
@@ -28,12 +27,11 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library/legacy";
 import { SafeAreaView } from "react-native-safe-area-context";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   issueTicketOnce,
-  normalizeStoredTicketFields,
-  placedStickerSchema,
-  localPhotoSchema,
+  loadFrontDraft,
+  saveFrontDraft,
+  type FrontDraft,
   type IssuedTicket,
 } from "../storage/issued-tickets";
 
@@ -509,27 +507,6 @@ function BackTextModal({
   );
 }
 
-// 후속 Issue #24: 임시저장과 사진 URI 보관을 확정된 저장 방식으로 교체한다.
-const DRAFT_KEY = "@memore/front_ticket_draft_v1";
-const frontDraftSchema = z.object({
-  front: localPhotoSchema.nullable(),
-  frame: z
-    .number()
-    .int()
-    .min(0)
-    .max(FRAMES.length - 1),
-  frameChosen: z.boolean(),
-  sticker: z.string(),
-  placedStickers: z.array(placedStickerSchema),
-  caption: z.string(),
-  ticketFont: z.enum(["sans-serif", "serif", "monospace"]),
-  title: z.string().max(TICKET_TITLE_MAX),
-  visitDate: z.string(),
-  location: z.string().max(TICKET_LOCATION_MAX),
-  savedAt: z.iso.datetime(),
-});
-type FrontDraft = z.infer<typeof frontDraftSchema>;
-
 const Action = ({ label, onPress }: { label: string; onPress: () => void }) => (
   <View style={styles.bottomWrap}>
     <Pressable style={styles.action} onPress={onPress}>
@@ -621,14 +598,9 @@ export default function TicketCreationScreen({
   const [draftSaving, setDraftSaving] = useState(false);
   useEffect(() => {
     let active = true;
-    AsyncStorage.getItem(DRAFT_KEY)
-      .then((raw) => {
-        if (active && raw)
-          setSavedDraft(
-            frontDraftSchema.parse(
-              normalizeStoredTicketFields(JSON.parse(raw)),
-            ),
-          );
+    loadFrontDraft(FRAMES.length)
+      .then((draft) => {
+        if (active) setSavedDraft(draft);
       })
       .catch(() => {
         if (active) Alert.alert("임시저장", "저장된 작업을 불러오지 못했어요.");
@@ -657,11 +629,8 @@ export default function TicketCreationScreen({
     };
     setDraftSaving(true);
     try {
-      await AsyncStorage.setItem(
-        DRAFT_KEY,
-        JSON.stringify(frontDraftSchema.parse(draft)),
-      );
-      setSavedDraft(draft);
+      const saved = await saveFrontDraft(draft, FRAMES.length);
+      setSavedDraft(saved);
       Alert.alert("임시저장 완료", "마지막 앞면 작업 1개를 저장했어요.");
     } catch {
       Alert.alert("임시저장 실패", "저장하지 못했어요. 다시 시도해 주세요.");
@@ -683,7 +652,7 @@ export default function TicketCreationScreen({
     setCaption(savedDraft.caption);
     setTicketFont(savedDraft.ticketFont);
     setTitle(savedDraft.title);
-    setVisitDate(savedDraft.visitDate.replaceAll(".", "-"));
+    setVisitDate(selectedVisitDate ?? savedDraft.visitDate);
     setLocation(savedDraft.location);
     go("decorate");
   };

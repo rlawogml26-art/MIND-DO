@@ -102,3 +102,48 @@ export function issueTicketOnce(ticket: IssuedTicket): Promise<boolean> {
   pendingWrite = write.catch(() => undefined);
   return write;
 }
+
+// 후속 Issue #24: 임시저장과 사진 URI 보관을 확정된 저장 방식으로 교체한다.
+const DRAFT_KEY = "@memore/front_ticket_draft_v1";
+const frontDraftSchema = (frameCount: number) =>
+  z.object({
+    front: localPhotoSchema.nullable(),
+    frame: z
+      .number()
+      .int()
+      .min(0)
+      .max(frameCount - 1),
+    frameChosen: z.boolean(),
+    sticker: z.string(),
+    placedStickers: z.array(placedStickerSchema),
+    caption: z.string(),
+    ticketFont: z.enum(["sans-serif", "serif", "monospace"]),
+    title: z.union([createTicketSchema.shape.title, z.literal("")]),
+    visitDate: z.union([
+      z.literal(""),
+      z.string().transform(normalizeTicketDate),
+    ]),
+    location: z.union([createTicketSchema.shape.location, z.literal("")]),
+    savedAt: z.iso.datetime(),
+  });
+
+export type FrontDraft = z.infer<ReturnType<typeof frontDraftSchema>>;
+
+export async function loadFrontDraft(
+  frameCount: number,
+): Promise<FrontDraft | null> {
+  const raw = await AsyncStorage.getItem(DRAFT_KEY);
+  if (!raw) return null;
+  return frontDraftSchema(frameCount).parse(
+    normalizeStoredTicketFields(JSON.parse(raw)),
+  );
+}
+
+export async function saveFrontDraft(
+  draft: FrontDraft,
+  frameCount: number,
+): Promise<FrontDraft> {
+  const validated = frontDraftSchema(frameCount).parse(draft);
+  await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(validated));
+  return validated;
+}
