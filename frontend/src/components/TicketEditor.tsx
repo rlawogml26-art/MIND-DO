@@ -721,6 +721,10 @@ export default function TicketCreationScreen({
       go("decorate");
       return;
     }
+    if (step === "reviewFront") {
+      go("backEdit");
+      return;
+    }
     if (step === "stickers") {
       go("decorate");
       return;
