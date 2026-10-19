@@ -1,4 +1,9 @@
-import { TICKET_LOCATION_MAX, TICKET_TITLE_MAX } from "@mind-do/shared";
+import {
+  createTicketSchema,
+  TICKET_TITLE_MAX,
+  TICKET_LOCATION_MAX,
+  TICKET_MEMO_MAX,
+} from "@mind-do/shared";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -7,6 +12,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   PanResponder,
   Platform,
   Pressable,
@@ -21,6 +27,13 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library/legacy";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  issueTicketOnce,
+  loadFrontDraft,
+  saveFrontDraft,
+  type FrontDraft,
+  type IssuedTicket,
+} from "../storage/issued-tickets";
 
 type Step =
   | "photos"
@@ -32,7 +45,6 @@ type Step =
   | "text"
   | "textInput"
   | "frontPreview"
-  | "backChoice"
   | "backEdit"
   | "changePhoto"
   | "reviewFront"
@@ -43,7 +55,7 @@ type Step =
   | "error";
 
 const C = {
-  bg: "#FFFDF8",
+  bg: "#FFF8EF",
   brown: "#654C40",
   outline: "#987966",
   gray: "#DFDFDF",
@@ -60,7 +72,6 @@ const STEPS: Step[] = [
   "text",
   "textInput",
   "frontPreview",
-  "backChoice",
   "backEdit",
   "changePhoto",
   "reviewFront",
@@ -80,7 +91,6 @@ const TITLES: Record<Step, string> = {
   text: "텍스트 선택",
   textInput: "텍스트 입력",
   frontPreview: "앞면 미리보기",
-  backChoice: "뒷면 디자인 선택",
   backEdit: "뒷면 디자인",
   changePhoto: "사진 변경하기",
   reviewFront: "저장 전 확인하기 · 앞면",
@@ -224,16 +234,16 @@ type FramePreviewProps = {
   ticketFont?: TicketFont;
   frame: number;
   front: string | null;
-  ticketTitle: string;
-  ticketDate: string;
-  ticketPlace: string;
+  title: string;
+  visitDate: string;
+  location: string;
   large?: boolean;
   decorateWidth?: number;
   stickers?: PlacedSticker[];
   onStickerMove?: (id: number, x: number, y: number) => void;
   previewOnly?: boolean;
-  setTicketTitle: React.Dispatch<React.SetStateAction<string>>;
-  setTicketPlace: React.Dispatch<React.SetStateAction<string>>;
+  setTitle: React.Dispatch<React.SetStateAction<string>>;
+  setLocation: React.Dispatch<React.SetStateAction<string>>;
 };
 
 const FramePreview = ({
@@ -246,11 +256,11 @@ const FramePreview = ({
   previewOnly = false,
   frame,
   front,
-  ticketTitle,
-  ticketDate,
-  ticketPlace,
-  setTicketTitle,
-  setTicketPlace,
+  title,
+  visitDate,
+  location,
+  setTitle,
+  setLocation,
 }: FramePreviewProps) => {
   // 티켓 너비에 비례해 TITLE / DATE / PLACE 라벨과 입력값 크기를 함께 조절합니다.
   const ticketWidth = decorateWidth ?? (large ? 250 : 204);
@@ -322,16 +332,12 @@ const FramePreview = ({
             style={[styles.frameMetaInput, ticketTextStyle]}
             showSoftInputOnFocus={true}
             keyboardType="default"
-            value={ticketTitle}
-            maxLength={TICKET_TITLE_MAX}
-            onChangeText={setTicketTitle}
-            onBlur={() =>
-              setTicketTitle((value) =>
-                Array.from(value).slice(0, TICKET_TITLE_MAX).join(""),
-              )
-            }
+            value={title}
+            onChangeText={setTitle}
+            onBlur={() => setTitle((value) => value.slice(0, TICKET_TITLE_MAX))}
             placeholder="TITLE"
             placeholderTextColor="#292929"
+            maxLength={TICKET_TITLE_MAX}
             accessibilityLabel={`티켓 제목 입력 (최대 ${TICKET_TITLE_MAX}자)`}
           />
         ) : (
@@ -346,7 +352,7 @@ const FramePreview = ({
               TITLE
             </Text>
             <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-              {ticketTitle}
+              {title}
             </Text>
           </View>
         )}
@@ -361,7 +367,7 @@ const FramePreview = ({
             DATE
           </Text>
           <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-            {ticketDate}
+            {visitDate}
           </Text>
         </View>
         {editable ? (
@@ -369,16 +375,14 @@ const FramePreview = ({
             style={[styles.frameMetaInput, ticketTextStyle]}
             showSoftInputOnFocus={true}
             keyboardType="default"
-            value={ticketPlace}
-            maxLength={TICKET_LOCATION_MAX}
-            onChangeText={setTicketPlace}
+            value={location}
+            onChangeText={setLocation}
             onBlur={() =>
-              setTicketPlace((value) =>
-                Array.from(value).slice(0, TICKET_LOCATION_MAX).join(""),
-              )
+              setLocation((value) => value.slice(0, TICKET_LOCATION_MAX))
             }
             placeholder="PLACE"
             placeholderTextColor="#292929"
+            maxLength={TICKET_LOCATION_MAX}
             accessibilityLabel={`티켓 장소 입력 (최대 ${TICKET_LOCATION_MAX}자)`}
           />
         ) : (
@@ -393,7 +397,7 @@ const FramePreview = ({
               PLACE
             </Text>
             <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-              {ticketPlace}
+              {location}
             </Text>
           </View>
         )}
@@ -401,6 +405,107 @@ const FramePreview = ({
     </View>
   );
 };
+
+const BACK_COLORS = [
+  "#E8D8CA",
+  "#DFDFDF",
+  "#654C40",
+  "#987966",
+  "#B69986",
+  "#CF897C",
+  "#F0C8BE",
+  "#FFFDF8",
+  "#B8BEB0",
+  "#681D1D",
+];
+// 후속 Issue #25: 원본의 뒷면 사진 3개 제한을 확정된 첨부 정책으로 교체한다.
+const TEMP_BACK_PHOTO_LIMIT = 3;
+
+// 뒷면 미리보기: 긴 글은 티켓 크기를 늘리지 않고 팝업으로 보여줍니다.
+function BackTicketContent({
+  photos,
+  text,
+  visitDate,
+  color,
+  onMore,
+}: {
+  photos: string[];
+  text: string;
+  visitDate: string;
+  color: string;
+  onMore: () => void;
+}) {
+  const shortened = Array.from(text).length > 34;
+  return (
+    <View style={[styles.backTicketInner, { backgroundColor: color }]}>
+      <Text style={styles.backTicketLogo}>MEMO:RE</Text>
+      <View style={styles.backTicketRule} />
+      <View style={styles.backPhotoGrid}>
+        {photos.slice(0, TEMP_BACK_PHOTO_LIMIT).map((uri, i) => (
+          <Image
+            key={`${i}-${uri}`}
+            source={{ uri }}
+            resizeMode="cover"
+            style={[
+              styles.backGridImage,
+              photos.length === 1 && styles.backGridImageSingle,
+            ]}
+          />
+        ))}
+        {photos.length === 0 && (
+          <Text style={styles.backEmptyPhoto}>
+            사진을 추가해 주세요 (최대 3장)
+          </Text>
+        )}
+      </View>
+      {text.trim().length > 0 && (
+        <View style={styles.backPreviewTextWrap}>
+          <Text style={styles.backPreviewText} numberOfLines={2}>
+            {text}
+          </Text>
+          {shortened && (
+            <Pressable
+              onPress={onMore}
+              accessibilityRole="button"
+              accessibilityLabel="뒷면 글 더보기"
+            >
+              <Text style={styles.backMore}>더보기 ›</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+      <Text style={styles.backTicketDate}>{visitDate}</Text>
+    </View>
+  );
+}
+function BackTextModal({
+  text,
+  onClose,
+}: {
+  text: string | null;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      visible={text !== null}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.backModalShade}>
+        <View style={styles.backModalCard}>
+          <Text style={styles.backModalTitle}>기억 보관함</Text>
+          <ScrollView style={{ maxHeight: 250 }}>
+            <Text style={styles.backModalText}>{text}</Text>
+          </ScrollView>
+          <Pressable style={styles.backModalClose} onPress={onClose}>
+            <Text style={styles.backPhotoButtonText}>닫기</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 const Action = ({ label, onPress }: { label: string; onPress: () => void }) => (
   <View style={styles.bottomWrap}>
@@ -410,7 +515,19 @@ const Action = ({ label, onPress }: { label: string; onPress: () => void }) => (
   </View>
 );
 
-export default function App() {
+type TicketCreationScreenProps = {
+  onBackHome?: () => void;
+  selectedVisitDate?: string;
+  issuedTicket?: IssuedTicket | null;
+  onCreateNew?: () => void;
+};
+
+export default function TicketCreationScreen({
+  onBackHome,
+  selectedVisitDate,
+  issuedTicket = null,
+  onCreateNew,
+}: TicketCreationScreenProps = {}) {
   const { width, height } = useWindowDimensions();
   // 1-2-4 / 1-2-5 전용: 기본 티켓의 약 1.25배. 작은 화면에서는 탭과 헤더를 침범하지 않도록 제한.
   const decorateWidth = Math.max(
@@ -441,7 +558,7 @@ export default function App() {
   const [backs, setBacks] = useState<string[]>([]);
   const [frame, setFrame] = useState(0);
   const [frameChosen, setFrameChosen] = useState(false);
-  const [sticker] = useState("");
+  const [sticker, setSticker] = useState("");
   const [placedStickers, setPlacedStickers] = useState<PlacedSticker[]>([]);
   const [stickerCategory, setStickerCategory] = useState("최근");
   const [stickerSearch, setStickerSearch] = useState("");
@@ -463,17 +580,83 @@ export default function App() {
       prev.map((item) => (item.id === id ? { ...item, x, y } : item)),
     );
   };
-  const [caption] = useState("");
+  const [caption, setCaption] = useState("");
   const [ticketFont, setTicketFont] = useState<TicketFont>("sans-serif");
   const [textEditorTab, setTextEditorTab] = useState<"keyboard" | "font">(
     "keyboard",
   );
-  const [ticketTitle, setTicketTitle] = useState("");
-  // 후속 Issue #18: 방문 날짜 입력을 연결하고 shared 스키마로 검증한다.
-  const [ticketDate] = useState("");
-  const [ticketPlace, setTicketPlace] = useState("");
+  const [title, setTitle] = useState("");
+  const [visitDate, setVisitDate] = useState(selectedVisitDate ?? "");
+  const [location, setLocation] = useState("");
   const [backStyle, setBackStyle] = useState(0);
+  const [memo, setMemo] = useState("");
+  const [backColor, setBackColor] = useState("#F2E8DC");
+  const [expandedText, setExpandedText] = useState<string | null>(null);
   const [tab, setTab] = useState(1);
+  const [savedDraft, setSavedDraft] = useState<FrontDraft | null>(null);
+  const [draftLoading, setDraftLoading] = useState(true);
+  const [draftSaving, setDraftSaving] = useState(false);
+  useEffect(() => {
+    let active = true;
+    loadFrontDraft(FRAMES.length)
+      .then((draft) => {
+        if (active) setSavedDraft(draft);
+      })
+      .catch(() => {
+        if (active) Alert.alert("임시저장", "저장된 작업을 불러오지 못했어요.");
+      })
+      .finally(() => {
+        if (active) setDraftLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const saveDraft = async () => {
+    if (draftSaving) return;
+    const draft: FrontDraft = {
+      front,
+      frame,
+      frameChosen,
+      sticker,
+      placedStickers,
+      caption,
+      ticketFont,
+      title,
+      visitDate,
+      location,
+      savedAt: new Date().toISOString(),
+    };
+    setDraftSaving(true);
+    try {
+      const saved = await saveFrontDraft(draft, FRAMES.length);
+      setSavedDraft(saved);
+      Alert.alert("임시저장 완료", "마지막 앞면 작업 1개를 저장했어요.");
+    } catch {
+      Alert.alert("임시저장 실패", "저장하지 못했어요. 다시 시도해 주세요.");
+    } finally {
+      setDraftSaving(false);
+    }
+  };
+  const restoreDraft = () => {
+    if (!savedDraft) return;
+    setFront(savedDraft.front);
+    setFrame(savedDraft.frame);
+    setFrameChosen(savedDraft.frameChosen);
+    setSticker(savedDraft.sticker);
+    setPlacedStickers(savedDraft.placedStickers);
+    stickerId.current = Math.max(
+      0,
+      ...savedDraft.placedStickers.map((item) => item.id),
+    );
+    setCaption(savedDraft.caption);
+    setTicketFont(savedDraft.ticketFont);
+    setTitle(savedDraft.title);
+    setVisitDate(selectedVisitDate ?? savedDraft.visitDate);
+    setLocation(savedDraft.location);
+    go("decorate");
+  };
+
   // 기기 사진을 60장씩 불러와 3열로 표시합니다.
   const [galleryPhotos, setGalleryPhotos] = useState<MediaLibrary.Asset[]>([]);
   const [galleryCursor, setGalleryCursor] = useState<string | undefined>();
@@ -510,7 +693,7 @@ export default function App() {
       setHasNextPage(result.hasNextPage);
     } catch {
       setGalleryError(
-        "사진을 불러오지 못했어요. Android 앱 빌드와 사진 권한을 확인해 주세요.",
+        "사진을 불러오지 못했어요. 사진 권한을 확인한 뒤 다시 시도해 주세요.",
       );
     } finally {
       galleryBusy.current = false;
@@ -519,15 +702,27 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (step === "photos" && galleryPhotos.length === 0) {
+    if (!issuedTicket && step === "photos" && galleryPhotos.length === 0) {
       void loadGallery();
     }
   }, [step]);
 
   const go = (s: Step) => setStep(s);
+  const returnHome = () => {
+    if (onBackHome) onBackHome();
+    else go("photos");
+  };
   const back = () => {
+    if (step === "photos") {
+      returnHome();
+      return;
+    }
     if (step === "frontPreview") {
       go("decorate");
+      return;
+    }
+    if (step === "reviewFront") {
+      go("backEdit");
       return;
     }
     if (step === "stickers") {
@@ -556,56 +751,58 @@ export default function App() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsMultipleSelection: forBack,
-        selectionLimit: forBack ? 4 : 1,
+        selectionLimit: forBack ? TEMP_BACK_PHOTO_LIMIT : 1,
         quality: 0.9,
       });
       if (result.canceled) return;
       const uris = result.assets.map((a) => a.uri);
-      if (forBack) setBacks(uris.slice(0, 4));
+      if (forBack) setBacks(uris.slice(0, TEMP_BACK_PHOTO_LIMIT));
       else setFront(uris[0] ?? null);
     } catch {
       Alert.alert("사진 선택 오류", "갤러리를 열 수 없습니다.");
     }
   };
   const shoot = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("카메라 권한 필요", "카메라 사용 권한을 허용해 주세요.");
-      return;
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("카메라 권한 필요", "카메라 사용 권한을 허용해 주세요.");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 0.9,
+      });
+      if (!result.canceled) setFront(result.assets[0]?.uri ?? null);
+    } catch {
+      Alert.alert(
+        "카메라 오류",
+        "카메라를 실행할 수 없어요. 갤러리에서 사진을 선택하거나 다시 시도해 주세요.",
+      );
     }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images"],
-      quality: 0.9,
-    });
-    if (!result.canceled) setFront(result.assets[0]?.uri ?? null);
   };
+
   const nextFromPhotos = () => {
-    if (!front) {
-      Alert.alert("사진 선택", "갤러리에서 앞면 사진 1장을 선택해 주세요.");
-      return;
-    }
     go("frames");
   };
-  const renderTicket = (backSide = false) => (
+  const renderTicket = ({ backSide = false }: { backSide?: boolean }) => (
     <View
       style={[
         styles.ticket,
         frame === 1 && styles.ticketFilm,
         frame === 2 && styles.ticketPolaroid,
+        backSide && styles.backTicketShell,
+        backSide && { backgroundColor: backColor },
       ]}
     >
       {backSide ? (
-        <View style={styles.ticketInner}>
-          <Text style={styles.ticketHeading}>MEMO:RE</Text>
-          <Text style={styles.ticketSmall}>
-            {caption || "우리의 소중한 순간"}
-          </Text>
-          <View style={styles.backPhotoRow}>
-            {backs.map((uri, i) => (
-              <Image key={i} source={{ uri }} style={styles.backPhoto} />
-            ))}
-          </View>
-        </View>
+        <BackTicketContent
+          photos={backs}
+          text={memo}
+          visitDate={visitDate}
+          color={backColor}
+          onMore={() => setExpandedText(memo)}
+        />
       ) : (
         <>
           {front ? (
@@ -623,13 +820,13 @@ export default function App() {
             {sticker} {caption || "MEMO:RE"}
           </Text>
           <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"TITLE  " + ticketTitle}
+            {"TITLE  " + title}
           </Text>
           <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"DATE  " + ticketDate}
+            {"DATE  " + visitDate}
           </Text>
           <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"PLACE  " + ticketPlace}
+            {"PLACE  " + location}
           </Text>
         </>
       )}
@@ -637,7 +834,11 @@ export default function App() {
   );
   // 1-2-3 프레임 선택 화면 전용 미리보기. 이후 꾸미기 화면의 Ticket은 유지합니다.
 
-  const renderFrameSelection = (confirmed = false) => (
+  const renderFrameSelection = ({
+    confirmed = false,
+  }: {
+    confirmed?: boolean;
+  }) => (
     <View style={styles.frameScreen}>
       <Text style={styles.frameHelper}>
         선택한 사진에 어울리는 티켓 디자인을 골라주세요.
@@ -648,11 +849,11 @@ export default function App() {
           large
           frame={frame}
           front={front}
-          ticketTitle={ticketTitle}
-          ticketDate={ticketDate}
-          ticketPlace={ticketPlace}
-          setTicketTitle={setTicketTitle}
-          setTicketPlace={setTicketPlace}
+          title={title}
+          visitDate={visitDate}
+          location={location}
+          setTitle={setTitle}
+          setLocation={setLocation}
         />
       </View>
       <View style={styles.framePickerArea}>
@@ -703,14 +904,101 @@ export default function App() {
     </View>
   );
 
+  const [issuingTicket, setIssuingTicket] = useState(false);
+  const [readOnlyBack, setReadOnlyBack] = useState(false);
+
+  const resetTicket = () => {
+    setFront(null);
+    setBacks([]);
+    setFrame(0);
+    setFrameChosen(false);
+    setSticker("");
+    setPlacedStickers([]);
+    stickerId.current = 0;
+    setCaption("");
+    setTicketFont("sans-serif");
+    setTitle("");
+    setLocation("");
+    setBackStyle(0);
+    setMemo("");
+    setBackColor("#F2E8DC");
+    setVisitDate("");
+    setTab(1);
+    if (onCreateNew) onCreateNew();
+    else {
+      returnHome();
+    }
+  };
+
+  const finishIssuing = async () => {
+    if (issuingTicket) return;
+    const input = createTicketSchema.safeParse({
+      title,
+      location,
+      visitDate: visitDate.trim().replaceAll(".", "-"),
+      memo,
+    });
+    if (!input.success) {
+      Alert.alert(
+        "입력 확인",
+        "제목, 장소와 달력에서 선택한 날짜를 확인해 주세요.",
+      );
+      return;
+    }
+    setIssuingTicket(true);
+    try {
+      const snapshot: IssuedTicket = {
+        visitDate: input.data.visitDate,
+        front,
+        backs,
+        frame,
+        placedStickers,
+        caption,
+        sticker,
+        ticketFont,
+        title: input.data.title,
+        location: input.data.location,
+        backStyle,
+        memo,
+        backColor,
+        issuedAt: new Date().toISOString(),
+      };
+      const created = await issueTicketOnce(snapshot);
+      if (!created) {
+        Alert.alert(
+          "이미 발권한 날짜",
+          "이 날짜에는 이미 티켓이 있어요. 달력에서 기존 티켓을 확인해 주세요.",
+        );
+        returnHome();
+        return;
+      }
+      go("issued");
+    } catch {
+      Alert.alert("발권 실패", "티켓을 저장하지 못했어요. 다시 시도해 주세요.");
+    } finally {
+      setIssuingTicket(false);
+    }
+  };
+
   const content = () => {
     switch (step) {
       case "photos":
         return (
           <>
             <Text style={styles.helper}>
-              앞면 사진 1장, 뒷면 사진 최대 4장을 선택할 수 있습니다.
+              사진은 선택 사항이에요. 앞면 1장, 뒷면 최대{" "}
+              {TEMP_BACK_PHOTO_LIMIT}장을 선택할 수 있습니다.
             </Text>
+            {!selectedVisitDate && (
+              <TextInput
+                accessibilityLabel="방문 날짜, YYYY-MM-DD 형식"
+                value={visitDate}
+                onChangeText={setVisitDate}
+                placeholder="방문 날짜 (YYYY-MM-DD)"
+                autoCapitalize="none"
+                style={styles.backTextInput}
+              />
+            )}
             <View style={styles.rule} />
             <View style={styles.filterContainer}>
               {["임시 저장", "최근 항목"].map((name, i) => (
@@ -719,61 +1007,101 @@ export default function App() {
                 </F>
               ))}
             </View>
-            <FlatList
-              style={styles.gallery}
-              data={[{ id: "__camera__", uri: "" }, ...galleryPhotos]}
-              numColumns={3}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.galleryGrid}
-              onEndReached={() => {
-                if (hasNextPage && !galleryLoading && !galleryError) {
-                  void loadGallery(galleryCursor, true);
-                }
-              }}
-              onEndReachedThreshold={0.5}
-              renderItem={({ item }) =>
-                item.id === "__camera__" ? (
+            {tab === 0 ? (
+              <View style={styles.draftArea}>
+                {draftLoading ? (
+                  <Text style={styles.info}>
+                    임시저장을 확인하는 중이에요...
+                  </Text>
+                ) : savedDraft ? (
                   <Pressable
-                    style={[styles.cameraTile, { width: cell, height: cell }]}
-                    onPress={shoot}
+                    style={styles.draftCard}
+                    onPress={restoreDraft}
+                    accessibilityRole="button"
+                    accessibilityLabel="임시저장한 티켓 이어서 편집"
                   >
-                    <Text style={styles.cameraIcon}>◎</Text>
-                    <Text style={styles.cameraText}>촬영하기</Text>
+                    {savedDraft.front ? (
+                      <Image
+                        source={{ uri: savedDraft.front }}
+                        style={styles.draftThumbnail}
+                        resizeMode="cover"
+                      />
+                    ) : null}
+                    <View style={styles.draftInfo}>
+                      <Text style={styles.draftTitle}>
+                        {savedDraft.title || "제목 없는 티켓"}
+                      </Text>
+                      <Text style={styles.draftDescription}>
+                        마지막 임시저장 · 이어서 편집하기 →
+                      </Text>
+                    </View>
                   </Pressable>
                 ) : (
-                  <Pressable
-                    style={[styles.galleryItem, { width: cell, height: cell }]}
-                    onPress={() => setFront(item.uri)}
-                  >
-                    <Image
-                      source={{ uri: item.uri }}
-                      style={styles.fillImage}
-                      resizeMode="cover"
-                    />
-                    {front === item.uri && (
-                      <View style={styles.selected}>
-                        <Text style={styles.selectedText}>✓</Text>
-                      </View>
-                    )}
-                  </Pressable>
-                )
-              }
-              ListFooterComponent={
-                galleryError ? (
-                  <View style={styles.galleryMessage}>
-                    <Text style={styles.info}>{galleryError}</Text>
-                    <Pressable onPress={() => void loadGallery()}>
-                      <Text style={styles.retryText}>다시 시도</Text>
+                  <Text style={styles.info}>임시저장된 티켓이 없어요.</Text>
+                )}
+              </View>
+            ) : (
+              <FlatList
+                style={styles.gallery}
+                data={[{ id: "__camera__", uri: "" }, ...galleryPhotos]}
+                numColumns={3}
+                keyExtractor={(item) => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.galleryGrid}
+                onEndReached={() => {
+                  if (hasNextPage && !galleryLoading && !galleryError) {
+                    void loadGallery(galleryCursor, true);
+                  }
+                }}
+                onEndReachedThreshold={0.5}
+                renderItem={({ item }) =>
+                  item.id === "__camera__" ? (
+                    <Pressable
+                      style={[styles.cameraTile, { width: cell, height: cell }]}
+                      onPress={shoot}
+                    >
+                      <Text style={styles.cameraIcon}>◎</Text>
+                      <Text style={styles.cameraText}>촬영하기</Text>
                     </Pressable>
-                  </View>
-                ) : galleryLoading ? (
-                  <Text style={styles.info}>사진을 불러오는 중이에요...</Text>
-                ) : galleryPhotos.length === 0 ? (
-                  <Text style={styles.info}>기기에 저장된 사진이 없어요.</Text>
-                ) : null
-              }
-            />
+                  ) : (
+                    <Pressable
+                      style={[
+                        styles.galleryItem,
+                        { width: cell, height: cell },
+                      ]}
+                      onPress={() => setFront(item.uri)}
+                    >
+                      <Image
+                        source={{ uri: item.uri }}
+                        style={styles.fillImage}
+                        resizeMode="cover"
+                      />
+                      {front === item.uri && (
+                        <View style={styles.selected}>
+                          <Text style={styles.selectedText}>✓</Text>
+                        </View>
+                      )}
+                    </Pressable>
+                  )
+                }
+                ListFooterComponent={
+                  galleryError ? (
+                    <View style={styles.galleryMessage}>
+                      <Text style={styles.info}>{galleryError}</Text>
+                      <Pressable onPress={() => void loadGallery()}>
+                        <Text style={styles.retryText}>다시 시도</Text>
+                      </Pressable>
+                    </View>
+                  ) : galleryLoading ? (
+                    <Text style={styles.info}>사진을 불러오는 중이에요...</Text>
+                  ) : galleryPhotos.length === 0 ? (
+                    <Text style={styles.info}>
+                      기기에 저장된 사진이 없어요.
+                    </Text>
+                  ) : null
+                }
+              />
+            )}
             <Action
               label="사진 선택 완료   ·   프레임 고르기  →"
               onPress={nextFromPhotos}
@@ -781,9 +1109,9 @@ export default function App() {
           </>
         );
       case "frames":
-        return renderFrameSelection();
+        return renderFrameSelection({});
       case "frameConfirm":
-        return renderFrameSelection(true);
+        return renderFrameSelection({ confirmed: true });
       case "decorate":
       case "stickerPlace":
         return (
@@ -801,11 +1129,11 @@ export default function App() {
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
-                ticketTitle={ticketTitle}
-                ticketDate={ticketDate}
-                ticketPlace={ticketPlace}
-                setTicketTitle={setTicketTitle}
-                setTicketPlace={setTicketPlace}
+                title={title}
+                visitDate={visitDate}
+                location={location}
+                setTitle={setTitle}
+                setLocation={setLocation}
               />
             </View>
             {!keyboardVisible && (
@@ -855,11 +1183,11 @@ export default function App() {
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
-                ticketTitle={ticketTitle}
-                ticketDate={ticketDate}
-                ticketPlace={ticketPlace}
-                setTicketTitle={setTicketTitle}
-                setTicketPlace={setTicketPlace}
+                title={title}
+                visitDate={visitDate}
+                location={location}
+                setTitle={setTitle}
+                setLocation={setLocation}
               />
             </View>
             <View style={styles.stickerSheet}>
@@ -973,11 +1301,11 @@ export default function App() {
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
-                ticketTitle={ticketTitle}
-                ticketDate={ticketDate}
-                ticketPlace={ticketPlace}
-                setTicketTitle={setTicketTitle}
-                setTicketPlace={setTicketPlace}
+                title={title}
+                visitDate={visitDate}
+                location={location}
+                setTitle={setTitle}
+                setLocation={setLocation}
               />
             </View>
             <View style={styles.decorateTabs}>
@@ -1023,11 +1351,11 @@ export default function App() {
                   onStickerMove={moveSticker}
                   frame={frame}
                   front={front}
-                  ticketTitle={ticketTitle}
-                  ticketDate={ticketDate}
-                  ticketPlace={ticketPlace}
-                  setTicketTitle={setTicketTitle}
-                  setTicketPlace={setTicketPlace}
+                  title={title}
+                  visitDate={visitDate}
+                  location={location}
+                  setTitle={setTitle}
+                  setLocation={setLocation}
                 />
               </View>
             )}
@@ -1102,13 +1430,11 @@ export default function App() {
                     <Text style={styles.textFieldLabel}>TITLE</Text>
                     <TextInput
                       style={styles.textFieldInput}
-                      value={ticketTitle}
+                      value={title}
+                      onChangeText={setTitle}
                       maxLength={TICKET_TITLE_MAX}
-                      onChangeText={setTicketTitle}
                       onBlur={() =>
-                        setTicketTitle((value) =>
-                          Array.from(value).slice(0, TICKET_TITLE_MAX).join(""),
-                        )
+                        setTitle((value) => value.slice(0, TICKET_TITLE_MAX))
                       }
                       placeholder={`제목 입력 (최대 ${TICKET_TITLE_MAX}자)`}
                       placeholderTextColor="#B9AAA0"
@@ -1120,21 +1446,19 @@ export default function App() {
                   <View style={styles.textFieldRow}>
                     <Text style={styles.textFieldLabel}>DATE</Text>
                     <Text style={styles.textDatePlaceholder}>
-                      {ticketDate || "달력 연동 예정"}
+                      {visitDate || "달력 연동 예정"}
                     </Text>
                   </View>
                   <View style={styles.textFieldRow}>
                     <Text style={styles.textFieldLabel}>PLACE</Text>
                     <TextInput
                       style={styles.textFieldInput}
-                      value={ticketPlace}
+                      value={location}
+                      onChangeText={setLocation}
                       maxLength={TICKET_LOCATION_MAX}
-                      onChangeText={setTicketPlace}
                       onBlur={() =>
-                        setTicketPlace((value) =>
-                          Array.from(value)
-                            .slice(0, TICKET_LOCATION_MAX)
-                            .join(""),
+                        setLocation((value) =>
+                          value.slice(0, TICKET_LOCATION_MAX),
                         )
                       }
                       placeholder={`장소 입력 (최대 ${TICKET_LOCATION_MAX}자)`}
@@ -1192,61 +1516,106 @@ export default function App() {
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
-                  ticketTitle={ticketTitle}
-                  ticketDate={ticketDate}
-                  ticketPlace={ticketPlace}
-                  setTicketTitle={setTicketTitle}
-                  setTicketPlace={setTicketPlace}
+                  title={title}
+                  visitDate={visitDate}
+                  location={location}
+                  setTitle={setTitle}
+                  setLocation={setLocation}
                 />
               </View>
             </View>
-            <Action
-              label="뒷면 디자인 선택  →"
-              onPress={() => go("backChoice")}
-            />
-          </>
-        );
-      case "backChoice":
-        return (
-          <>
-            <Text style={styles.info}>뒷면 디자인을 골라 주세요.</Text>
-            <View style={styles.options}>
-              {["기본", "사진형", "텍스트형"].map((s, i) => (
-                <F
-                  key={s}
-                  selected={backStyle === i}
-                  onPress={() => setBackStyle(i)}
-                >
-                  {s}
-                </F>
-              ))}
-            </View>
-            <View style={styles.frontPreviewCenter}>{renderTicket(true)}</View>
             <Action label="뒷면 꾸미기  →" onPress={() => go("backEdit")} />
           </>
         );
       case "backEdit":
         return (
-          <>
-            <View style={styles.center}>{renderTicket(true)}</View>
-            {/* 1-3-2 갤러리 영역은 현재 작업 범위에서 제외하여 임시 주석 처리합니다.
-          <View style={styles.options}>
-            <F onPress={() => pick(true)}>뒷면 사진 최대 4장 선택</F>
+          <View style={styles.backEditScreen}>
+            <ScrollView
+              contentContainerStyle={[
+                styles.backEditScroll,
+                keyboardVisible && styles.backEditScrollKeyboard,
+              ]}
+              keyboardShouldPersistTaps="always"
+              keyboardDismissMode="none"
+            >
+              {!keyboardVisible && (
+                <View style={styles.backEditIntro}>
+                  <Text style={styles.backEditTitle}>기억 보관함</Text>
+                  <Text style={styles.backEditSubtitle}>
+                    소중한 순간을 차곡차곡 저장
+                  </Text>
+                </View>
+              )}
+              {!keyboardVisible && renderTicket({ backSide: true })}
+              {!keyboardVisible && (
+                <View style={styles.backPalette}>
+                  {BACK_COLORS.map((color) => (
+                    <Pressable
+                      key={color}
+                      accessibilityLabel={`뒷면 색상 ${color}`}
+                      accessibilityState={{ selected: backColor === color }}
+                      onPress={() => setBackColor(color)}
+                      style={[
+                        styles.backColorChip,
+                        { backgroundColor: color },
+                        backColor === color && styles.backColorSelected,
+                      ]}
+                    />
+                  ))}
+                </View>
+              )}
+              {!keyboardVisible && (
+                <Pressable
+                  style={styles.backPhotoButton}
+                  onPress={() => void pick(true)}
+                >
+                  <Text style={styles.backPhotoButtonText}>
+                    사진 추가 및 변경 ({backs.length}/{TEMP_BACK_PHOTO_LIMIT})
+                  </Text>
+                </Pressable>
+              )}
+              <Text style={styles.backInputLabel}>
+                뒷면에 남길 글 · 최대 {TICKET_MEMO_MAX}자
+              </Text>
+              <TextInput
+                style={styles.backTextInput}
+                multiline
+                maxLength={TICKET_MEMO_MAX}
+                value={memo}
+                onChangeText={setMemo}
+                placeholder="이날의 기억을 적어 주세요"
+                placeholderTextColor="#987966"
+              />
+              <Text style={styles.backCount}>{Array.from(memo).length}/80</Text>
+            </ScrollView>
+            {keyboardVisible ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="텍스트 입력 완료"
+                style={styles.backInputDoneButton}
+                onPress={() => Keyboard.dismiss()}
+              >
+                <Text style={styles.backInputDoneText}>텍스트 입력 완료</Text>
+              </Pressable>
+            ) : (
+              <Action
+                label="티켓 저장 단계로  →"
+                onPress={() => go("reviewFront")}
+              />
+            )}
           </View>
-          */}
-            <Action
-              label="사진 변경하기  →"
-              onPress={() => go("changePhoto")}
-            />
-          </>
         );
       case "changePhoto":
         return (
           <>
-            <View style={styles.center}>{renderTicket(true)}</View>
+            <View style={styles.center}>
+              {renderTicket({ backSide: true })}
+            </View>
             <View style={styles.options}>
-              <F onPress={() => pick(false)}>앞면 사진 변경</F>
-              <F onPress={() => pick(true)}>뒷면 사진 변경</F>
+              <F onPress={() => void pick(false)}>앞면 사진 변경</F>
+              <F onPress={() => void pick(true)}>
+                뒷면 사진 변경 (최대 {TEMP_BACK_PHOTO_LIMIT}장)
+              </F>
             </View>
             <Action
               label="저장 전 확인하기  →"
@@ -1257,14 +1626,51 @@ export default function App() {
       case "reviewFront":
         return (
           <>
-            <View style={styles.center}>{renderTicket()}</View>
+            <View style={styles.reviewCenter}>
+              <View style={styles.reviewTicketOffset}>
+                <FramePreview
+                  previewOnly
+                  ticketFont={ticketFont}
+                  decorateWidth={decorateWidth}
+                  stickers={placedStickers}
+                  frame={frame}
+                  front={front}
+                  title={title}
+                  visitDate={visitDate}
+                  location={location}
+                  setTitle={setTitle}
+                  setLocation={setLocation}
+                />
+              </View>
+            </View>
             <Action label="뒷면 확인하기  →" onPress={() => go("reviewBack")} />
           </>
         );
       case "reviewBack":
         return (
           <>
-            <View style={styles.center}>{renderTicket(true)}</View>
+            <View style={styles.reviewCenter}>
+              <View style={styles.reviewTicketOffset}>
+                <View
+                  style={[
+                    styles.reviewBackShell,
+                    {
+                      width: decorateWidth,
+                      height: decorateWidth * (348 / 204),
+                      backgroundColor: backColor,
+                    },
+                  ]}
+                >
+                  <BackTicketContent
+                    photos={backs}
+                    text={memo}
+                    visitDate={visitDate}
+                    color={backColor}
+                    onMore={() => setExpandedText(memo)}
+                  />
+                </View>
+              </View>
+            </View>
             <Action label="티켓 발권하기  →" onPress={() => go("issuing")} />
           </>
         );
@@ -1277,15 +1683,32 @@ export default function App() {
                 발권 버튼을 눌러 완료 화면으로 이동해요.
               </Text>
             </View>
-            <Action label="발권 완료  →" onPress={() => go("issued")} />
+            <Action
+              label={issuingTicket ? "발권 중..." : "발권 완료  →"}
+              onPress={() => void finishIssuing()}
+            />
           </>
         );
       case "issued":
         return (
           <>
-            <View style={styles.center}>
-              <Text style={styles.big}>티켓 발권 완료!</Text>
-              {renderTicket()}
+            <View style={styles.frontPreviewCenter}>
+              <View style={styles.issuedTicketPosition}>
+                <Text style={styles.issuedTitle}>티켓 발권 완료!</Text>
+                <FramePreview
+                  previewOnly
+                  ticketFont={ticketFont}
+                  decorateWidth={decorateWidth}
+                  stickers={placedStickers}
+                  frame={frame}
+                  front={front}
+                  title={title}
+                  visitDate={visitDate}
+                  location={location}
+                  setTitle={setTitle}
+                  setLocation={setLocation}
+                />
+              </View>
             </View>
             <Action
               label="내 보관함에서 보기  →"
@@ -1296,8 +1719,24 @@ export default function App() {
       case "archive":
         return (
           <>
-            <View style={styles.center}>{renderTicket()}</View>
-            <Action label="새 티켓 만들기" onPress={() => go("photos")} />
+            <View style={styles.center}>
+              <View style={styles.archiveTicketOffset}>
+                <FramePreview
+                  previewOnly
+                  ticketFont={ticketFont}
+                  decorateWidth={decorateWidth}
+                  stickers={placedStickers}
+                  frame={frame}
+                  front={front}
+                  title={title}
+                  visitDate={visitDate}
+                  location={location}
+                  setTitle={setTitle}
+                  setLocation={setLocation}
+                />
+              </View>
+            </View>
+            <Action label="새 티켓 만들기" onPress={resetTicket} />
           </>
         );
       case "error":
@@ -1311,22 +1750,97 @@ export default function App() {
         );
     }
   };
+  if (issuedTicket) {
+    const readOnlyFrame = Math.max(
+      0,
+      Math.min(FRAMES.length - 1, issuedTicket.frame),
+    );
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+        <BackTextModal
+          text={expandedText}
+          onClose={() => setExpandedText(null)}
+        />
+        <View style={styles.header}>
+          <Pressable onPress={returnHome} style={styles.back}>
+            <Text style={styles.backButtonText}>‹</Text>
+          </Pressable>
+          <Text style={styles.headerTitle}>
+            발권한 티켓 · {readOnlyBack ? "뒷면" : "앞면"}
+          </Text>
+        </View>
+        <View style={styles.center}>
+          {readOnlyBack ? (
+            <View
+              style={[
+                styles.reviewBackShell,
+                {
+                  width: decorateWidth,
+                  height: decorateWidth * (348 / 204),
+                  backgroundColor: issuedTicket.backColor ?? "#F2E8DC",
+                },
+              ]}
+            >
+              <BackTicketContent
+                photos={issuedTicket.backs ?? []}
+                text={issuedTicket.memo ?? ""}
+                visitDate={issuedTicket.visitDate}
+                color={issuedTicket.backColor ?? "#F2E8DC"}
+                onMore={() => setExpandedText(issuedTicket.memo ?? "")}
+              />
+            </View>
+          ) : (
+            <FramePreview
+              previewOnly
+              ticketFont={issuedTicket.ticketFont}
+              decorateWidth={decorateWidth}
+              stickers={issuedTicket.placedStickers}
+              frame={readOnlyFrame}
+              front={issuedTicket.front}
+              title={issuedTicket.title}
+              visitDate={issuedTicket.visitDate}
+              location={issuedTicket.location}
+              setTitle={setTitle}
+              setLocation={setLocation}
+            />
+          )}
+          <Text style={styles.info}>
+            발권 완료 · 수정할 수 없는 티켓입니다.
+          </Text>
+          <Pressable
+            style={styles.action}
+            onPress={() => setReadOnlyBack((value) => !value)}
+          >
+            <Text style={[styles.actionText, { paddingHorizontal: 30 }]}>
+              {readOnlyBack ? "앞면 보기" : "뒷면 보기"}
+            </Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <BackTextModal
+        text={expandedText}
+        onClose={() => setExpandedText(null)}
+      />
       <KeyboardAvoidingView
         style={styles.root}
         behavior={
           Platform.OS === "ios"
             ? "padding"
-            : step === "textInput"
+            : step === "textInput" || step === "backEdit"
               ? "height"
               : undefined
         }
       >
         <View style={styles.header}>
           <Pressable onPress={back} style={styles.back}>
-            <Text style={styles.backText}>‹</Text>
+            <Text style={styles.backButtonText}>‹</Text>
           </Pressable>
           <Text style={styles.headerTitle}>
             {step === "decorate" ||
@@ -1337,23 +1851,43 @@ export default function App() {
               ? "티켓 꾸미기"
               : TITLES[step]}
           </Text>
-          {(step === "decorate" ||
-            step === "stickers" ||
-            step === "stickerPlace" ||
-            step === "text" ||
-            step === "textInput") && (
-            <Pressable
-              style={styles.donePill}
-              onPress={() => {
-                Keyboard.dismiss();
-                go("frontPreview");
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="티켓 꾸미기 완료"
-            >
-              <Text style={styles.donePillText}>완료</Text>
-            </Pressable>
-          )}
+          <View style={styles.headerActions}>
+            {(step === "decorate" ||
+              step === "stickers" ||
+              step === "stickerPlace" ||
+              step === "text" ||
+              step === "textInput" ||
+              step === "frontPreview") && (
+              <Pressable
+                onPress={() => void saveDraft()}
+                disabled={draftSaving}
+                style={styles.draftSaveButton}
+                accessibilityRole="button"
+                accessibilityLabel="앞면 임시저장"
+              >
+                <Text style={styles.draftSaveButtonText}>
+                  {draftSaving ? "저장 중" : "임시저장"}
+                </Text>
+              </Pressable>
+            )}
+            {(step === "decorate" ||
+              step === "stickers" ||
+              step === "stickerPlace" ||
+              step === "text" ||
+              step === "textInput") && (
+              <Pressable
+                style={styles.donePill}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  go("frontPreview");
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="티켓 꾸미기 완료"
+              >
+                <Text style={styles.donePillText}>완료</Text>
+              </Pressable>
+            )}
+          </View>
         </View>
         <View style={styles.body}>{content()}</View>
       </KeyboardAvoidingView>
@@ -1361,6 +1895,229 @@ export default function App() {
   );
 }
 const styles = StyleSheet.create({
+  reviewCenter: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  reviewTicketOffset: { marginTop: -90 },
+  archiveTicketOffset: { transform: [{ translateY: -40 }] },
+  reviewBackShell: {
+    width: 204,
+    height: 348,
+    maxWidth: "100%",
+    backgroundColor: "#F2E8DC",
+    borderWidth: 0,
+    borderRadius: 12,
+    padding: 8,
+    overflow: "hidden",
+  },
+  backTicketShell: {
+    width: 235,
+    height: 360,
+    minHeight: 360,
+    borderWidth: 1,
+    borderColor: "#987966",
+    borderRadius: 16,
+    padding: 7,
+  },
+  backTicketInner: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 12,
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingTop: 20,
+    paddingBottom: 12,
+  },
+  backTicketLogo: {
+    color: "#987966",
+    fontSize: 15,
+    fontFamily: "serif",
+    fontStyle: "italic",
+    marginBottom: 10,
+  },
+  backTicketRule: {
+    height: 1,
+    backgroundColor: "#FFFDF8",
+    width: "100%",
+    marginBottom: 8,
+  },
+  backPhotoGrid: {
+    width: "100%",
+    height: 175,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+    justifyContent: "center",
+    alignContent: "center",
+  },
+  backGridImage: { width: "48%", height: 84, backgroundColor: "#E8D8CA" },
+  backGridImageSingle: { width: "100%", height: 173 },
+  backEmptyPhoto: { color: "#987966", fontSize: 11, textAlign: "center" },
+  backPreviewTextWrap: {
+    width: "100%",
+    height: 48,
+    paddingTop: 4,
+    alignItems: "center",
+  },
+  backPreviewText: {
+    color: "#654C40",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  backMore: {
+    color: "#654C40",
+    fontSize: 11,
+    fontWeight: "700",
+    textDecorationLine: "underline",
+  },
+  backTicketDate: {
+    color: "#987966",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: "auto",
+  },
+  backEditScreen: { flex: 1 },
+  backInputDoneButton: {
+    marginHorizontal: 22,
+    marginBottom: 12,
+    minHeight: 52,
+    borderRadius: 12,
+    backgroundColor: "#654C40",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  backInputDoneText: { color: "#FFFDF8", fontSize: 15, fontWeight: "700" },
+  backEditScroll: { alignItems: "center", paddingBottom: 130, paddingTop: 12 },
+  backEditScrollKeyboard: { paddingTop: 12, paddingBottom: 24 },
+  backEditIntro: {
+    alignSelf: "stretch",
+    paddingHorizontal: 30,
+    marginBottom: 18,
+  },
+  backEditTitle: { color: "#654C40", fontSize: 15, fontWeight: "700" },
+  backEditSubtitle: {
+    color: "#987966",
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 6,
+  },
+  backPalette: {
+    flexDirection: "row",
+    gap: 6,
+    alignItems: "center",
+    marginTop: 18,
+    marginBottom: 12,
+  },
+  backColorChip: {
+    width: 22,
+    height: 22,
+    borderWidth: 1,
+    borderColor: "#E8D8CA",
+  },
+  backColorSelected: { borderWidth: 2, borderColor: "#654C40" },
+  backPhotoButton: {
+    backgroundColor: "#F0C8BE",
+    borderRadius: 12,
+    minHeight: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    width: "84%",
+  },
+  backPhotoButtonText: { color: "#654C40", fontSize: 14, fontWeight: "600" },
+  backInputLabel: {
+    color: "#654C40",
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 20,
+    alignSelf: "flex-start",
+    marginLeft: "8%",
+  },
+  backTextInput: {
+    width: "84%",
+    minHeight: 74,
+    maxHeight: 120,
+    borderWidth: 1,
+    borderColor: "#E8D8CA",
+    borderRadius: 12,
+    backgroundColor: "#FFFDF8",
+    color: "#654C40",
+    fontSize: 15,
+    fontWeight: "500",
+    padding: 10,
+    marginTop: 8,
+    textAlignVertical: "top",
+  },
+  backCount: {
+    alignSelf: "flex-end",
+    marginRight: "8%",
+    color: "#987966",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  backModalShade: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    paddingHorizontal: 28,
+  },
+  backModalCard: { backgroundColor: "#FFFDF8", borderRadius: 16, padding: 22 },
+  backModalTitle: {
+    color: "#654C40",
+    fontWeight: "700",
+    fontSize: 17,
+    marginBottom: 18,
+  },
+  backModalText: {
+    color: "#654C40",
+    fontSize: 16,
+    lineHeight: 25,
+    fontWeight: "500",
+  },
+  backModalClose: {
+    backgroundColor: "#F0C8BE",
+    borderRadius: 12,
+    alignItems: "center",
+    padding: 12,
+    marginTop: 20,
+  },
+
+  draftArea: { flex: 1, paddingHorizontal: 20, paddingTop: 24 },
+  draftCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E3D9D0",
+    backgroundColor: "#FFFFFF",
+  },
+  draftThumbnail: {
+    width: 68,
+    height: 86,
+    borderRadius: 7,
+    backgroundColor: "#F2E8DC",
+  },
+  draftInfo: { flex: 1, paddingLeft: 14 },
+  draftTitle: { fontSize: 15, fontWeight: "600", color: C.brown },
+  draftDescription: { fontSize: 12, color: C.outline, marginTop: 8 },
+  draftSaveButton: {
+    minWidth: 64,
+    height: 30,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.outline,
+    backgroundColor: "#F3E9DF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  draftSaveButtonText: { color: C.brown, fontSize: 12, fontWeight: "600" },
   root: { flex: 1, backgroundColor: C.bg },
   decorateScreen: { flex: 1, backgroundColor: C.bg },
   decoratePreviewArea: {
@@ -1609,15 +2366,23 @@ const styles = StyleSheet.create({
   decorateTabText: { fontSize: 13, fontWeight: "600", color: "#FFFDF8" },
   decorateTabTextActive: { color: C.brown },
   donePill: {
-    marginLeft: "auto",
-    width: 64,
-    height: 28,
+    minWidth: 64,
+    height: 30,
+    paddingHorizontal: 10,
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.outline,
     backgroundColor: "#F3E9DF",
     alignItems: "center",
     justifyContent: "center",
   },
   donePillText: { color: C.brown, fontSize: 12, fontWeight: "600" },
+  headerActions: {
+    marginLeft: "auto",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
   header: {
     height: 64,
     flexDirection: "row",
@@ -1631,7 +2396,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  backText: { color: C.brown, fontSize: 34, lineHeight: 39 },
+  backButtonText: { color: C.brown, fontSize: 34, lineHeight: 39 },
   headerTitle: { color: C.brown, fontSize: 16, fontWeight: "500" },
   body: { flex: 1 },
   helper: {
@@ -1918,5 +2683,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 20,
     paddingBottom: 0,
+  },
+  issuedTicketPosition: {
+    alignItems: "center",
+    transform: [{ translateY: -25 }],
+  },
+  issuedTitle: {
+    position: "absolute",
+    bottom: "100%",
+    marginBottom: 16,
+    color: C.brown,
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
   },
 });
