@@ -43,7 +43,7 @@ const issuedTicketSchema = z.object({
 
 export type IssuedTicket = z.infer<typeof issuedTicketSchema>;
 
-// ?? ?? ???? ?? ?? ????, ? ????? ??? ??? ??.
+// Normalize legacy field names only when reading existing device data.
 export function normalizeStoredTicketFields(value: unknown): unknown {
   const result = z.record(z.string(), z.unknown()).safeParse(value);
   if (!result.success) return value;
