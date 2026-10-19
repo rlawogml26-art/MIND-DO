@@ -49,7 +49,7 @@ export default function MyPageScreen({
   onOpenTickets,
   onOpenHome,
 }: {
-  onOpenTickets: (date?: string) => void;
+  onOpenTickets: (visitDate?: string) => void;
   onOpenHome: () => void;
 }) {
   const [screen, setScreen] = useState<MyScreen>("profile");
@@ -160,15 +160,15 @@ export default function MyPageScreen({
             ) : (
               tickets.map((ticket) => (
                 <Pressable
-                  key={ticket.date}
+                  key={ticket.visitDate}
                   accessibilityRole="button"
-                  accessibilityLabel={`${ticket.date} ${ticket.ticketTitle} 티켓 보기`}
-                  onPress={() => onOpenTickets(ticket.date)}
+                  accessibilityLabel={`${ticket.visitDate} ${ticket.title} 티켓 보기`}
+                  onPress={() => onOpenTickets(ticket.visitDate)}
                   style={styles.textMenuButton}
                 >
-                  <Text style={styles.textMenuLabel}>{ticket.ticketTitle}</Text>
+                  <Text style={styles.textMenuLabel}>{ticket.title}</Text>
                   <Text style={styles.username}>
-                    {ticket.date} · {ticket.ticketPlace}
+                    {ticket.visitDate} · {ticket.location}
                   </Text>
                 </Pressable>
               ))

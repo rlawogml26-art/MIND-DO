@@ -9,22 +9,22 @@ type RootScreen = "home" | "my" | "dateSelection" | "ticket";
 
 export default function App() {
   const [screen, setScreen] = useState<RootScreen>("home");
-  const [selectedTicketDate, setSelectedTicketDate] = useState<
+  const [selectedVisitDate, setSelectedVisitDate] = useState<
     string | undefined
   >(undefined);
   const [viewTicket, setViewTicket] = useState<IssuedTicket | null>(null);
 
-  const openTickets = (date?: string) => {
-    if (!date) {
+  const openTickets = (visitDate?: string) => {
+    if (!visitDate) {
       setScreen("dateSelection");
       return;
     }
     // 날짜별 발권 기록을 먼저 확인합니다. 이미 발권했으면 읽기 전용으로 엽니다.
     void (async () => {
       try {
-        const existing = await getIssuedTicket(date);
+        const existing = await getIssuedTicket(visitDate);
         setViewTicket(existing);
-        setSelectedTicketDate(date);
+        setSelectedVisitDate(visitDate);
         setScreen("ticket");
       } catch {
         Alert.alert(
@@ -38,12 +38,12 @@ export default function App() {
   if (screen === "ticket") {
     return (
       <TicketCreationScreen
-        selectedDate={selectedTicketDate}
+        selectedVisitDate={selectedVisitDate}
         issuedTicket={viewTicket}
         onBackHome={() => setScreen("home")}
         onCreateNew={() => {
           setViewTicket(null);
-          setSelectedTicketDate(undefined);
+          setSelectedVisitDate(undefined);
           setScreen("dateSelection");
         }}
       />

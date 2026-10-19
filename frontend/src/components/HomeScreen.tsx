@@ -26,7 +26,7 @@ const weekdays = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
 type HomeScreenProps = {
   onOpenMy: () => void;
-  onOpenTickets: (date?: string) => void;
+  onOpenTickets: (visitDate?: string) => void;
   dateSelectionMode?: boolean;
   onCancelDateSelection?: () => void;
 };
@@ -59,7 +59,7 @@ export default function HomeScreen({
     listIssuedTickets()
       .then((tickets) => {
         if (active)
-          setIssuedDates(new Set(tickets.map((ticket) => ticket.date)));
+          setIssuedDates(new Set(tickets.map((ticket) => ticket.visitDate)));
       })
       .catch(() => {
         if (active) {
@@ -164,13 +164,13 @@ export default function HomeScreen({
                 <View key={`${year}-${month}-${index}`} style={styles.dayCell}>
                   {day !== null &&
                     (() => {
-                      const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                      const issued = issuedDates.has(date);
+                      const visitDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                      const issued = issuedDates.has(visitDate);
                       return (
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel={`${year}년 ${month + 1}월 ${day}일 ${issued ? "발권한 티켓 보기" : "티켓 만들기"}`}
-                          onPress={() => onOpenTickets(date)}
+                          onPress={() => onOpenTickets(visitDate)}
                           style={styles.dateButton}
                         >
                           {issued ? (
