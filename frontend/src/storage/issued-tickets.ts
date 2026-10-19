@@ -5,8 +5,8 @@ import { z } from "zod";
 // 후속 Issue #24: 기기 임시 보관을 확정된 저장·업로드 방식으로 교체한다.
 const ISSUED_TICKETS_KEY = "@memore/issued_tickets_by_date_v1";
 
-export const normalizeTicketDate = (date: string) =>
-  createTicketSchema.shape.visitDate.parse(date.replaceAll(".", "-"));
+export const normalizeTicketDate = (visitDate: string) =>
+  createTicketSchema.shape.visitDate.parse(visitDate.replaceAll(".", "-"));
 
 export const localPhotoSchema = z
   .string()
@@ -22,7 +22,7 @@ export const placedStickerSchema = z.object({
 });
 
 const issuedTicketSchema = z.object({
-  date: z.string().transform(normalizeTicketDate),
+  visitDate: z.string().transform(normalizeTicketDate),
   front: localPhotoSchema.nullable(),
   backs: z.array(localPhotoSchema),
   frame: z.number().int().nonnegative(),
@@ -30,10 +30,10 @@ const issuedTicketSchema = z.object({
   caption: z.string(),
   sticker: z.string(),
   ticketFont: z.enum(["sans-serif", "serif", "monospace"]),
-  ticketTitle: createTicketSchema.shape.title,
-  ticketPlace: createTicketSchema.shape.location,
+  title: createTicketSchema.shape.title,
+  location: createTicketSchema.shape.location,
   backStyle: z.number().int().nonnegative(),
-  backText: createTicketSchema.shape.memo,
+  memo: createTicketSchema.shape.memo,
   backColor: z
     .string()
     .regex(/^#[0-9a-f]{6}$/i)
@@ -43,22 +43,42 @@ const issuedTicketSchema = z.object({
 
 export type IssuedTicket = z.infer<typeof issuedTicketSchema>;
 
+// ?? ?? ???? ?? ?? ????, ? ????? ??? ??? ??.
+export function normalizeStoredTicketFields(value: unknown): unknown {
+  const result = z.record(z.string(), z.unknown()).safeParse(value);
+  if (!result.success) return value;
+  const fields = result.data;
+  return {
+    ...fields,
+    title: fields.title ?? fields.ticketTitle,
+    location: fields.location ?? fields.ticketPlace,
+    memo: fields.memo ?? fields.backText,
+    visitDate: fields.visitDate ?? fields.ticketDate ?? fields.date,
+  };
+}
+
 export async function listIssuedTickets(): Promise<IssuedTicket[]> {
   const raw = await AsyncStorage.getItem(ISSUED_TICKETS_KEY);
   if (!raw) return [];
   const entries = z
-    .record(z.string(), issuedTicketSchema)
+    .record(
+      z.string(),
+      z.preprocess(normalizeStoredTicketFields, issuedTicketSchema),
+    )
     .parse(JSON.parse(raw));
-  return Object.values(entries).sort((a, b) => b.date.localeCompare(a.date));
+  return Object.values(entries).sort((a, b) =>
+    b.visitDate.localeCompare(a.visitDate),
+  );
 }
 
 export async function getIssuedTicket(
-  date: string,
+  visitDate: string,
 ): Promise<IssuedTicket | null> {
-  const visitDate = normalizeTicketDate(date);
+  const normalizedVisitDate = normalizeTicketDate(visitDate);
   return (
-    (await listIssuedTickets()).find((ticket) => ticket.date === visitDate) ??
-    null
+    (await listIssuedTickets()).find(
+      (ticket) => ticket.visitDate === normalizedVisitDate,
+    ) ?? null
   );
 }
 
@@ -69,11 +89,12 @@ export function issueTicketOnce(ticket: IssuedTicket): Promise<boolean> {
   const write = pendingWrite.then(async () => {
     const validated = issuedTicketSchema.parse(ticket);
     const tickets = await listIssuedTickets();
-    if (tickets.some((item) => item.date === validated.date)) return false;
+    if (tickets.some((item) => item.visitDate === validated.visitDate))
+      return false;
     const entries = Object.fromEntries(
-      tickets.map((item) => [item.date, item]),
+      tickets.map((item) => [item.visitDate, item]),
     );
-    entries[validated.date] = validated;
+    entries[validated.visitDate] = validated;
     await AsyncStorage.setItem(ISSUED_TICKETS_KEY, JSON.stringify(entries));
     return true;
   });
