@@ -98,12 +98,14 @@ model GroupInvite {
   @@map("group_invites")
 }
 
-// 그룹별 날짜당 1개. 삭제 기능은 없고, 생성 후 바꿀 수 있는 필드는 title뿐이다.
+// 그룹별 날짜당 1개. 삭제 기능은 없다.
 model SharedTicket {
   id         Int      @id @default(autoincrement())
   groupId    Int      @map("group_id")
   ticketDate DateTime @map("ticket_date") @db.Date
   title      String?  @db.VarChar(10)
+  // 선택 입력. 글자 수는 미확정이라 기존 장소 제한(15자)을 임시로 쓴다.
+  location   String?  @db.VarChar(15)
   creatorId  Int      @map("creator_id")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
