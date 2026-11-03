@@ -32,7 +32,7 @@ const BCRYPT_ROUNDS = 10;
 
 async function main() {
   const email = requireEnv("SEED_USER_EMAIL");
-  const name = requireEnv("SEED_USER_NAME");
+  const nickname = requireEnv("SEED_USER_NAME");
   const passwordHash = await bcrypt.hash(
     requireEnv("SEED_USER_PASSWORD"),
     BCRYPT_ROUNDS,
@@ -41,8 +41,8 @@ async function main() {
   // 여러 번 실행해도 사용자가 하나만 남도록 email 기준 upsert
   const user = await prisma.user.upsert({
     where: { email },
-    update: { name, passwordHash },
-    create: { email, name, passwordHash },
+    update: { nickname, passwordHash },
+    create: { email, nickname, passwordHash },
     select: { id: true },
   });
 
