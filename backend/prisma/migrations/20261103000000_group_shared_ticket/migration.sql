@@ -1,4 +1,4 @@
--- 요구사항 정의서 v2.1 반영: 그룹 · 날짜별 공동 티켓 · 멤버별 개인 티켓 · AI 초안
+-- 요구사항 정의서 v2.1 반영: 그룹 · 날짜별 공동 티켓 · 초대자 · 멤버별 개인 티켓
 -- users.name은 데이터를 지키기 위해 삭제·추가가 아니라 이름 변경(CHANGE COLUMN)으로 nickname이 된다.
 
 -- AlterTable
@@ -58,8 +58,7 @@ CREATE TABLE `group_invites` (
     `token` VARCHAR(64) NOT NULL,
     `created_by` INTEGER NOT NULL,
     `expires_at` DATETIME(3) NOT NULL,
-    `used_at` DATETIME(3) NULL,
-    `used_by` INTEGER NULL,
+    `revoked_at` DATETIME(3) NULL,
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
     UNIQUE INDEX `group_invites_token_key`(`token`),
@@ -77,6 +76,17 @@ CREATE TABLE `shared_tickets` (
     `updated_at` DATETIME(3) NOT NULL,
 
     UNIQUE INDEX `shared_tickets_group_id_ticket_date_key`(`group_id`, `ticket_date`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `shared_ticket_invitees` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `shared_ticket_id` INTEGER NOT NULL,
+    `user_id` INTEGER NOT NULL,
+    `invited_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `shared_ticket_invitees_shared_ticket_id_user_id_key`(`shared_ticket_id`, `user_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -101,8 +111,6 @@ ALTER TABLE `group_invites` ADD CONSTRAINT `group_invites_group_id_fkey` FOREIGN
 -- AddForeignKey
 ALTER TABLE `group_invites` ADD CONSTRAINT `group_invites_created_by_fkey` FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AddForeignKey
-ALTER TABLE `group_invites` ADD CONSTRAINT `group_invites_used_by_fkey` FOREIGN KEY (`used_by`) REFERENCES `users`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `shared_tickets` ADD CONSTRAINT `shared_tickets_group_id_fkey` FOREIGN KEY (`group_id`) REFERENCES `groups`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -112,3 +120,9 @@ ALTER TABLE `shared_tickets` ADD CONSTRAINT `shared_tickets_creator_id_fkey` FOR
 
 -- AddForeignKey
 ALTER TABLE `tickets` ADD CONSTRAINT `tickets_shared_ticket_id_fkey` FOREIGN KEY (`shared_ticket_id`) REFERENCES `shared_tickets`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `shared_ticket_invitees` ADD CONSTRAINT `shared_ticket_invitees_shared_ticket_id_fkey` FOREIGN KEY (`shared_ticket_id`) REFERENCES `shared_tickets`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `shared_ticket_invitees` ADD CONSTRAINT `shared_ticket_invitees_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
