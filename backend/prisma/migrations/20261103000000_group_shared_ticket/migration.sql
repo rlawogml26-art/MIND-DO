@@ -71,6 +71,7 @@ CREATE TABLE `shared_tickets` (
     `group_id` INTEGER NOT NULL,
     `ticket_date` DATE NOT NULL,
     `title` VARCHAR(10) NULL,
+    `location` VARCHAR(15) NULL,
     `creator_id` INTEGER NOT NULL,
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updated_at` DATETIME(3) NOT NULL,
