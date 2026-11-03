@@ -16,6 +16,17 @@ enum TicketStatus {
   COMPLETED
 }
 
+enum AssetType {
+  FRAME
+  STICKER
+  FONT
+}
+
+enum SubscriptionPlan {
+  MONTHLY
+  YEARLY
+}
+
 model User {
   id              Int       @id @default(autoincrement())
   email           String    @unique @db.VarChar(255)
@@ -33,6 +44,8 @@ model User {
   createdInvites       GroupInvite[]  @relation("InviteCreator")
   usedInvites          GroupInvite[]  @relation("InviteUser")
   createdSharedTickets SharedTicket[]
+  purchases            Purchase[]
+  subscriptions        Subscription[]
 
   @@map("users")
 }
@@ -172,4 +185,48 @@ model AiDraft {
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@map("ai_drafts")
+}
+
+// Store 판매 에셋. 템플릿은 판매하지 않는다.
+model Asset {
+  id          Int       @id @default(autoincrement())
+  type        AssetType
+  name        String    @db.VarChar(100)
+  s3Key       String    @unique @map("s3_key") @db.VarChar(255)
+  price       Int
+  vipIncluded Boolean   @default(false) @map("vip_included")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  purchases Purchase[]
+
+  @@map("assets")
+}
+
+model Purchase {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  assetId     Int       @map("asset_id")
+  paidPrice   Int       @map("paid_price")
+  purchasedAt DateTime  @default(now()) @map("purchased_at")
+  refundedAt  DateTime? @map("refunded_at")
+
+  user  User  @relation(fields: [userId], references: [id])
+  asset Asset @relation(fields: [assetId], references: [id])
+
+  @@unique([userId, assetId])
+  @@map("purchases")
+}
+
+model Subscription {
+  id         Int              @id @default(autoincrement())
+  userId     Int              @map("user_id")
+  plan       SubscriptionPlan
+  startedAt  DateTime         @default(now()) @map("started_at")
+  expiresAt  DateTime         @map("expires_at")
+  canceledAt DateTime?        @map("canceled_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("subscriptions")
 }
