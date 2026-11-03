@@ -80,18 +80,6 @@ CREATE TABLE `shared_tickets` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
-CREATE TABLE `ai_drafts` (
-    `id` INTEGER NOT NULL AUTO_INCREMENT,
-    `ticket_id` INTEGER NOT NULL,
-    `request_no` INTEGER NOT NULL,
-    `content` JSON NOT NULL,
-    `selected` BOOLEAN NOT NULL DEFAULT false,
-    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-
-    PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
 -- CreateIndex
 CREATE UNIQUE INDEX `tickets_shared_ticket_id_user_id_key` ON `tickets`(`shared_ticket_id`, `user_id`);
 
@@ -124,6 +112,3 @@ ALTER TABLE `shared_tickets` ADD CONSTRAINT `shared_tickets_creator_id_fkey` FOR
 
 -- AddForeignKey
 ALTER TABLE `tickets` ADD CONSTRAINT `tickets_shared_ticket_id_fkey` FOREIGN KEY (`shared_ticket_id`) REFERENCES `shared_tickets`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `ai_drafts` ADD CONSTRAINT `ai_drafts_ticket_id_fkey` FOREIGN KEY (`ticket_id`) REFERENCES `tickets`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
