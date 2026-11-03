@@ -55,13 +55,13 @@ CREATE TABLE `group_members` (
 CREATE TABLE `group_invites` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `group_id` INTEGER NOT NULL,
-    `token` VARCHAR(64) NOT NULL,
+    `token_hash` VARCHAR(64) NOT NULL,
     `created_by` INTEGER NOT NULL,
     `expires_at` DATETIME(3) NOT NULL,
     `revoked_at` DATETIME(3) NULL,
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    UNIQUE INDEX `group_invites_token_key`(`token`),
+    UNIQUE INDEX `group_invites_token_hash_key`(`token_hash`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 

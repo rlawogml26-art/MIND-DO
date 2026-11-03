@@ -83,10 +83,11 @@ model GroupMember {
 
 // 링크·QR 공용. 유효 기간 안에는 여러 명이 쓸 수 있다(1회용 아님).
 // 새 링크를 만들면 그 그룹의 이전 링크에 revoked_at을 기록해 무효로 만든다.
+// 원본 토큰은 저장하지 않고 SHA-256 해시만 저장한다 (AGENTS.md).
 model GroupInvite {
   id          Int       @id @default(autoincrement())
   groupId     Int       @map("group_id")
-  token       String    @unique @db.VarChar(64)
+  tokenHash   String    @unique @map("token_hash") @db.VarChar(64)
   createdById Int       @map("created_by")
   expiresAt   DateTime  @map("expires_at")
   revokedAt   DateTime? @map("revoked_at")
@@ -104,7 +105,7 @@ model SharedTicket {
   groupId    Int      @map("group_id")
   ticketDate DateTime @map("ticket_date") @db.Date
   title      String?  @db.VarChar(10)
-  // 선택 입력. 글자 수는 미확정이라 기존 장소 제한(15자)을 임시로 쓴다.
+  // 선택 입력(입력하지 않으면 NULL). 글자 수는 미확정이라 기존 장소 제한(15자)을 임시로 쓴다.
   location   String?  @db.VarChar(15)
   creatorId  Int      @map("creator_id")
   createdAt  DateTime @default(now()) @map("created_at")
@@ -134,7 +135,7 @@ model SharedTicketInvitee {
   @@map("shared_ticket_invitees")
 }
 
-// 개인 티켓. shared_ticket_id가 비어 있으면 혼자 만든 티켓이거나 그룹 연결이 제거된 티켓이다.
+// 개인 티켓. 공동 티켓의 슬롯에서만 만든다. shared_ticket_id가 비어 있으면 그룹 연결이 제거된 티켓이다.
 // 소유자가 원본을 지울 때(deleted_at)는 shared_ticket_id도 비워서 그룹에서도 빠지게 한다.
 model Ticket {
   id             Int          @id @default(autoincrement())
