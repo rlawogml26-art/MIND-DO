@@ -17,6 +17,8 @@ npm ci --omit=dev --workspace backend
 
 # Parameter Store 값을 환경변수 파일로 만든다. 비밀값이 로그에 찍히지 않게 set -x는 쓰지 않는다.
 mkdir -p /etc/mindo
+# RDS TLS 검증용 공개 인증서. 비밀값이 아니고 서비스 사용자(mindo)도 읽어야 해서 644로 둔다.
+install -m 644 "$APP_DIR/deploy/certs/rds-global-bundle.pem" /etc/mindo/rds-ca.pem
 umask 077
 aws ssm get-parameters-by-path \
   --path "/mindo/$ENV_NAME" \
@@ -29,6 +31,22 @@ aws ssm get-parameters-by-path \
     done > /etc/mindo/api.env
 chown root:mindo /etc/mindo/api.env
 chmod 640 /etc/mindo/api.env
+
+# 마이그레이션은 서버 시작(ApplicationStart) 전에 적용한다. 실패하면 배포가 실패로 끝나고 새 서버는 시작되지 않는다.
+# env 파일 전체를 source하지 않고 DATABASE_URL 한 줄만 읽는다. 값에 셸 특수문자가 있어도 실행되지 않게 하기 위해서다.
+# prisma migrate는 DB_SSL_CA_PATH를 읽지 않으므로 URL 파라미터로 인증서 검증 TLS를 켠다. 완성된 URL은 출력하지 않는다.
+db_url=$(sed -n 's/^DATABASE_URL=//p' /etc/mindo/api.env | head -n 1)
+if [ -z "$db_url" ]; then
+  echo "DATABASE_URL not found in Parameter Store (/mindo/$ENV_NAME)" >&2
+  exit 1
+fi
+case "$db_url" in
+  *\?*) sep='&' ;;
+  *) sep='?' ;;
+esac
+DATABASE_URL="${db_url}${sep}sslcert=/etc/mindo/rds-ca.pem&sslaccept=strict" \
+  npm run migrate:deploy --workspace backend
+unset db_url
 
 cat > /etc/systemd/system/mindo-api.service <<'UNIT'
 [Unit]
@@ -44,6 +62,7 @@ WorkingDirectory=/opt/mindo/app/backend
 EnvironmentFile=/etc/mindo/api.env
 Environment=NODE_ENV=production
 Environment=PORT=3000
+Environment=DB_SSL_CA_PATH=/etc/mindo/rds-ca.pem
 ExecStart=/usr/bin/npm run start
 Restart=always
 RestartSec=3
