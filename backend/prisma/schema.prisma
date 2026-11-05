@@ -17,7 +17,6 @@ enum TicketStatus {
 }
 
 enum AssetType {
-  FRAME
   STICKER
   FONT
 }
@@ -190,7 +189,7 @@ model TicketImage {
   @@map("ticket_images")
 }
 
-// Store 판매 에셋. 템플릿은 판매하지 않는다.
+// Store 판매 에셋(스티커·폰트, 요구사항 정의서 v2.2). 템플릿·프레임은 판매하지 않는다.
 model Asset {
   id          Int       @id @default(autoincrement())
   type        AssetType

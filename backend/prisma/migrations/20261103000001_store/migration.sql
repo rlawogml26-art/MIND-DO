@@ -1,9 +1,9 @@
--- 스토어: 프레임·스티커·폰트 판매, 구매 내역, VIP 구독
+-- 스토어: 스티커·폰트 판매, 구매 내역, VIP 구독
 
 -- CreateTable
 CREATE TABLE `assets` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
-    `type` ENUM('FRAME', 'STICKER', 'FONT') NOT NULL,
+    `type` ENUM('STICKER', 'FONT') NOT NULL,
     `name` VARCHAR(100) NOT NULL,
     `s3_key` VARCHAR(255) NOT NULL,
     `price` INTEGER NOT NULL,
