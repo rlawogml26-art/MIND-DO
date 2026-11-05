@@ -66,13 +66,15 @@ model RefreshToken {
 
 // is_personal: 계정마다 1개씩 있는 기본 1인 그룹. 멤버를 초대할 수 없고(초대하면 새 그룹을 만든다),
 // 참여 그룹 수 제한(4개)에서 빠진다. 보관함에서 공동 그룹 티켓과 나눠 보여줄 때도 이 값으로 구분한다.
+// deleted_at: 혼자 남은 그룹장이 나가 그룹이 삭제된 시각. 공동 티켓은 지울 수 없어서 행은 남긴다.
 model Group {
-  id         Int      @id @default(autoincrement())
-  name       String   @db.VarChar(8)
-  isPersonal Boolean  @default(false) @map("is_personal")
-  leaderId   Int      @map("leader_id")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id         Int       @id @default(autoincrement())
+  name       String    @db.VarChar(8)
+  isPersonal Boolean   @default(false) @map("is_personal")
+  leaderId   Int       @map("leader_id")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
 
   leader               User                  @relation("GroupLeader", fields: [leaderId], references: [id])
   members              GroupMember[]
@@ -165,6 +167,8 @@ model Ticket {
   design         Json?
   status         TicketStatus @default(DRAFT)
   completedAt    DateTime?    @map("completed_at")
+  // AI 초안 생성 횟수. 일반 사용자는 개인 티켓당 1회라 서버가 이 값으로 막는다. 초안 자체는 저장하지 않는다.
+  aiDraftCount   Int          @default(0) @map("ai_draft_count")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
   // 티켓은 행을 지우지 않고 이 값을 채워 삭제 처리한다(소프트 삭제). 조회 시 항상 null인 것만 쓴다.
