@@ -45,6 +45,7 @@ model User {
   sharedTicketInvites  SharedTicketInvitee[]
   purchases            Purchase[]
   subscriptions        Subscription[]
+  aiRegenerationUsages AiRegenerationUsage[]
 
   @@map("users")
 }
@@ -63,17 +64,23 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+// is_default: 계정마다 1개씩 있는 기본 1인 그룹(회원가입 때 생성). 멤버를 초대할 수 없고(초대하면 새 그룹을 만든다),
+// 참여 그룹 수 제한(4개)에서 빠진다. 보관함에서 공동 그룹 티켓과 나눠 보여줄 때도 이 값으로 구분한다.
+// deleted_at: 혼자 남은 그룹장이 나가 그룹이 삭제된 시각. 공동 티켓은 지울 수 없어서 행은 남긴다.
 model Group {
-  id        Int      @id @default(autoincrement())
-  name      String   @db.VarChar(15)
-  leaderId  Int      @map("leader_id")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id         Int       @id @default(autoincrement())
+  name       String    @db.VarChar(8)
+  isDefault  Boolean   @default(false) @map("is_default")
+  leaderId   Int       @map("leader_id")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
 
-  leader        User           @relation("GroupLeader", fields: [leaderId], references: [id])
-  members       GroupMember[]
-  invites       GroupInvite[]
-  sharedTickets SharedTicket[]
+  leader               User                  @relation("GroupLeader", fields: [leaderId], references: [id])
+  members              GroupMember[]
+  invites              GroupInvite[]
+  sharedTickets        SharedTicket[]
+  aiRegenerationUsages AiRegenerationUsage[]
 
   @@map("groups")
 }
@@ -94,7 +101,8 @@ model GroupMember {
 }
 
 // 링크·QR 공용. 유효 기간 안에는 여러 명이 쓸 수 있다(1회용 아님).
-// 새 링크를 만들면 그 그룹의 이전 링크에 revoked_at을 기록해 무효로 만든다.
+// 그룹 멤버 누구나 만들 수 있고, 새 링크를 만들어도 다른 링크는 그대로 유효하다 (AGENTS.md v1.18).
+// revoked_at은 그룹장이 그룹의 모든 링크를 한꺼번에 무효로 만들 때 쓴다 (발표 이후 구현).
 // 원본 토큰은 저장하지 않고 SHA-256 해시만 저장한다 (AGENTS.md).
 model GroupInvite {
   id          Int       @id @default(autoincrement())
@@ -111,14 +119,14 @@ model GroupInvite {
   @@map("group_invites")
 }
 
-// 그룹별 날짜당 1개. 삭제 기능은 없다.
+// 그룹별 날짜당 1개. 삭제 기능은 없다. 장소 필드는 없다(요구사항 정의서 v2.2).
+// group_name은 생성 당시 그룹명이다. 나중에 그룹명을 바꿔도 이 값은 바꾸지 않는다.
 model SharedTicket {
   id         Int      @id @default(autoincrement())
   groupId    Int      @map("group_id")
   ticketDate DateTime @map("ticket_date") @db.Date
-  title      String?  @db.VarChar(10)
-  // 선택 입력(입력하지 않으면 NULL). 글자 수는 미확정이라 기존 장소 제한(15자)을 임시로 쓴다.
-  location   String?  @db.VarChar(15)
+  title      String?  @db.VarChar(12)
+  groupName  String   @map("group_name") @db.VarChar(8)
   creatorId  Int      @map("creator_id")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
@@ -132,12 +140,17 @@ model SharedTicket {
   @@map("shared_tickets")
 }
 
-// 공동 티켓 생성자가 그룹 멤버 중에서 고른 초대자. 생성자 본인도 생성 시 함께 넣는다.
+// 날짜별 참여자(초대자). 생성자 본인도 생성 시 함께 넣는다.
 // 개인 티켓 슬롯은 이 표에 있는 사람에게만 생긴다. 초대에서 제외하면 행을 지운다.
+// nickname은 초대 당시 닉네임이다. 나중에 닉네임을 바꿔도 이 값은 바꾸지 않는다.
 model SharedTicketInvitee {
   id             Int      @id @default(autoincrement())
   sharedTicketId Int      @map("shared_ticket_id")
   userId         Int      @map("user_id")
+  nickname       String   @db.VarChar(15)
+  // 이 슬롯에서 AI 초안을 받은 횟수. 초안은 개인 티켓을 저장하기 전에 만들어서 티켓이 아니라 슬롯에 센다.
+  // 일반 사용자는 슬롯당 1회. 초안을 돌려주지 못한 실패는 세지 않는다.
+  aiDraftCount   Int      @default(0) @map("ai_draft_count")
   invitedAt      DateTime @default(now()) @map("invited_at")
 
   sharedTicket SharedTicket @relation(fields: [sharedTicketId], references: [id])
@@ -153,6 +166,7 @@ model Ticket {
   id             Int          @id @default(autoincrement())
   userId         Int          @map("user_id")
   sharedTicketId Int?         @map("shared_ticket_id")
+  // 발권 때 서버가 공동 티켓의 ticket_date를 복사한다(앱에서 받지 않음). 연결이 끊겨도 보관함·달력에 날짜가 남게 하려고 따로 둔다.
   visitDate      DateTime     @map("visit_date") @db.Date
   memo           String?      @db.VarChar(500)
   design         Json?
@@ -231,4 +245,21 @@ model Subscription {
   user User @relation(fields: [userId], references: [id])
 
   @@map("subscriptions")
+}
+
+// VIP의 AI 초안 재생성 횟수(사용자별·그룹당 하루 3회). usage_date는 한국시간(KST) 날짜라
+// 날짜가 바뀌면 새 행이 되어 0시에 초기화된다. 서버 메모리에 두면 서버 교체 시 사라져 DB에 둔다.
+model AiRegenerationUsage {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  groupId   Int      @map("group_id")
+  usageDate DateTime @map("usage_date") @db.Date
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id])
+  group Group @relation(fields: [groupId], references: [id])
+
+  @@unique([userId, groupId, usageDate])
+  @@map("ai_regeneration_usages")
 }
