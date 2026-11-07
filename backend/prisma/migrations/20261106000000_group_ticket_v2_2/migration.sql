@@ -4,7 +4,7 @@
 
 -- AlterTable
 ALTER TABLE `groups` MODIFY `name` VARCHAR(8) NOT NULL,
-    ADD COLUMN `is_personal` BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN `is_default` BOOLEAN NOT NULL DEFAULT false,
     ADD COLUMN `deleted_at` DATETIME(3) NULL;
 
 -- AlterTable
@@ -13,10 +13,8 @@ ALTER TABLE `shared_tickets` DROP COLUMN `location`,
     ADD COLUMN `group_name` VARCHAR(8) NOT NULL;
 
 -- AlterTable
-ALTER TABLE `tickets` ADD COLUMN `ai_draft_count` INTEGER NOT NULL DEFAULT 0;
-
--- AlterTable
-ALTER TABLE `shared_ticket_invitees` ADD COLUMN `nickname` VARCHAR(15) NOT NULL;
+ALTER TABLE `shared_ticket_invitees` ADD COLUMN `nickname` VARCHAR(15) NOT NULL,
+    ADD COLUMN `ai_draft_count` INTEGER NOT NULL DEFAULT 0;
 
 -- CreateTable
 CREATE TABLE `ai_regeneration_usages` (

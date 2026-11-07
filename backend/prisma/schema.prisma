@@ -64,13 +64,13 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-// is_personal: 계정마다 1개씩 있는 기본 1인 그룹. 멤버를 초대할 수 없고(초대하면 새 그룹을 만든다),
+// is_default: 계정마다 1개씩 있는 기본 1인 그룹(회원가입 때 생성). 멤버를 초대할 수 없고(초대하면 새 그룹을 만든다),
 // 참여 그룹 수 제한(4개)에서 빠진다. 보관함에서 공동 그룹 티켓과 나눠 보여줄 때도 이 값으로 구분한다.
 // deleted_at: 혼자 남은 그룹장이 나가 그룹이 삭제된 시각. 공동 티켓은 지울 수 없어서 행은 남긴다.
 model Group {
   id         Int       @id @default(autoincrement())
   name       String    @db.VarChar(8)
-  isPersonal Boolean   @default(false) @map("is_personal")
+  isDefault  Boolean   @default(false) @map("is_default")
   leaderId   Int       @map("leader_id")
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
@@ -101,7 +101,8 @@ model GroupMember {
 }
 
 // 링크·QR 공용. 유효 기간 안에는 여러 명이 쓸 수 있다(1회용 아님).
-// 새 링크를 만들면 그 그룹의 이전 링크에 revoked_at을 기록해 무효로 만든다.
+// 그룹 멤버 누구나 만들 수 있고, 새 링크를 만들어도 다른 링크는 그대로 유효하다 (AGENTS.md v1.18).
+// revoked_at은 그룹장이 그룹의 모든 링크를 한꺼번에 무효로 만들 때 쓴다 (발표 이후 구현).
 // 원본 토큰은 저장하지 않고 SHA-256 해시만 저장한다 (AGENTS.md).
 model GroupInvite {
   id          Int       @id @default(autoincrement())
@@ -147,6 +148,9 @@ model SharedTicketInvitee {
   sharedTicketId Int      @map("shared_ticket_id")
   userId         Int      @map("user_id")
   nickname       String   @db.VarChar(15)
+  // 이 슬롯에서 AI 초안을 받은 횟수. 초안은 개인 티켓을 저장하기 전에 만들어서 티켓이 아니라 슬롯에 센다.
+  // 일반 사용자는 슬롯당 1회. 초안을 돌려주지 못한 실패는 세지 않는다.
+  aiDraftCount   Int      @default(0) @map("ai_draft_count")
   invitedAt      DateTime @default(now()) @map("invited_at")
 
   sharedTicket SharedTicket @relation(fields: [sharedTicketId], references: [id])
@@ -162,13 +166,12 @@ model Ticket {
   id             Int          @id @default(autoincrement())
   userId         Int          @map("user_id")
   sharedTicketId Int?         @map("shared_ticket_id")
+  // 발권 때 서버가 공동 티켓의 ticket_date를 복사한다(앱에서 받지 않음). 연결이 끊겨도 보관함·달력에 날짜가 남게 하려고 따로 둔다.
   visitDate      DateTime     @map("visit_date") @db.Date
   memo           String?      @db.VarChar(500)
   design         Json?
   status         TicketStatus @default(DRAFT)
   completedAt    DateTime?    @map("completed_at")
-  // AI 초안 생성 횟수. 일반 사용자는 개인 티켓당 1회라 서버가 이 값으로 막는다. 초안 자체는 저장하지 않는다.
-  aiDraftCount   Int          @default(0) @map("ai_draft_count")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
   // 티켓은 행을 지우지 않고 이 값을 채워 삭제 처리한다(소프트 삭제). 조회 시 항상 null인 것만 쓴다.
