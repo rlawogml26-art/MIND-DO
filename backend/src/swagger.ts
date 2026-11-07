@@ -1,28 +1,63 @@
 import type { Express } from "express";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { createTicketSchema, updateTicketSchema } from "@mind-do/shared";
+import {
+  loginRequestSchema,
+  loginResponseSchema,
+  currentUserResponseSchema,
+  signupRequestSchema,
+  signupResponseSchema,
+} from "@mind-do/shared";
 import swaggerUi from "swagger-ui-express";
 import swaggerJsdoc from "swagger-jsdoc";
+
+const errorResponseSchema = z.object({
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+  }),
+});
 
 const options: swaggerJsdoc.Options = {
   definition: {
     openapi: "3.0.0",
     info: {
-      title: "MIND-DO Ticket API",
+      title: "MIND-DO API",
       version: "1.0.0",
-      description: "티켓 관리 서비스 MVP 백엔드 API 문서입니다.",
+      description: "MIND-DO 백엔드 API 문서입니다.",
     },
     components: {
       schemas: {
-        CreateTicketInput: z.toJSONSchema(createTicketSchema, {
+        SignupRequest: z.toJSONSchema(signupRequestSchema, {
           target: "openapi-3.0",
           io: "input",
         }),
-        UpdateTicketInput: z.toJSONSchema(updateTicketSchema, {
+        SignupResponse: z.toJSONSchema(signupResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
+        LoginRequest: z.toJSONSchema(loginRequestSchema, {
           target: "openapi-3.0",
           io: "input",
         }),
+        LoginResponse: z.toJSONSchema(loginResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
+        CurrentUserResponse: z.toJSONSchema(currentUserResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
+        ErrorResponse: z.toJSONSchema(errorResponseSchema, {
+          target: "openapi-3.0",
+        }),
+      },
+      securitySchemes: {
+        AccessTokenCookie: {
+          type: "apiKey",
+          in: "cookie",
+          name: "accessToken",
+        },
       },
     },
     servers: [
@@ -34,7 +69,7 @@ const options: swaggerJsdoc.Options = {
   },
   apis: [
     fileURLToPath(
-      new URL("./modules/ticket/ticket.routes.{ts,js}", import.meta.url),
+      new URL("./modules/{auth,users}/*.routes.{ts,js}", import.meta.url),
     ).replaceAll("\\", "/"),
   ],
 };

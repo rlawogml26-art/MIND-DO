@@ -10,6 +10,7 @@ export enum ErrorCode {
   UNAUTHORIZED = "UNAUTHORIZED", // 401 로그인 안 됨 → 로그인 화면
   ACCESS_TOKEN_EXPIRED = "ACCESS_TOKEN_EXPIRED", // 401 액세스 토큰 만료 → 토큰 갱신 후 재요청
   INVALID_CREDENTIALS = "INVALID_CREDENTIALS", // 401 이메일 또는 비밀번호 불일치 (둘을 구분하지 않음)
+  EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS", // 409 이미 가입된 이메일
 
   // 그룹 (생성·초대 링크·가입)
   GROUP_NOT_FOUND = "GROUP_NOT_FOUND", // 404 그룹이 없거나 내가 멤버가 아님

@@ -62,6 +62,11 @@ web_modules/
 # Output of 'npm pack'
 *.tgz
 
+# Local database files
+*.sqlite
+*.sqlite3
+*.db
+
 # Yarn Integrity file
 .yarn-integrity
 
@@ -77,10 +82,13 @@ web_modules/
 # Next.js build output
 .next
 out
+build/
+**/build/
 
 # Nuxt.js build / generate output
 .nuxt
-dist
+dist/
+**/dist/
 .output
 
 # Gatsby files
@@ -146,6 +154,13 @@ vite.config.ts.timestamp-*
 .astro/
 
 # Turbo Repo
-.turbo
+.turbo/
+**/.turbo/
 
-! .env.example
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Local VS Code settings
+.vscode/
+**/.vscode/
