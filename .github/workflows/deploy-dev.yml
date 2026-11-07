@@ -33,12 +33,17 @@ jobs:
 
       - run: npm ci
       - run: npm run build -w shared
+      - run: npx --no prisma generate
+        working-directory: backend
       - run: npm run build -w backend
 
+      # backend/prisma와 prisma.config.ts는 서버에서 마이그레이션을 실행할 때 쓴다.
+      # RDS 인증서(deploy/certs/)는 deploy 폴더에 포함되어 함께 들어간다.
       - name: Make bundle
         run: |
           zip -r bundle.zip appspec.yml deploy package.json package-lock.json .npmrc \
-            backend/package.json backend/dist shared/package.json shared/dist
+            backend/package.json backend/dist backend/prisma backend/prisma.config.ts \
+            shared/package.json shared/dist
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
