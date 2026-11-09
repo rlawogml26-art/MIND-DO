@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   createTicketSchema,
   createGroupRequestSchema,
+  createGroupInviteResponseSchema,
   currentUserResponseSchema,
   groupResponseSchema,
   loginRequestSchema,
@@ -53,6 +54,13 @@ const options: swaggerJsdoc.Options = {
           target: "openapi-3.0",
           io: "output",
         }),
+        CreateGroupInviteResponse: z.toJSONSchema(
+          createGroupInviteResponseSchema,
+          {
+            target: "openapi-3.0",
+            io: "output",
+          },
+        ),
         ErrorResponse: z.toJSONSchema(
           z.object({
             error: z.object({
