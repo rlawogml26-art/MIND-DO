@@ -1,12 +1,15 @@
 import express from "express";
 import type { ErrorRequestHandler } from "express";
+import authRouter from "./modules/auth/auth.routes.js";
 import ticketRouter from "./modules/ticket/ticket.routes.js";
 import { setupSwagger } from "./swagger.js";
 import { ErrorCode } from "@mind-do/shared";
+import "dotenv/config";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
 
+app.set("trust proxy", 1);
 app.use(express.json());
 
 // Swagger UI 연결
@@ -18,6 +21,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/tickets", ticketRouter);
+app.use("/api/auth", authRouter);
 
 const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, next) => {
   if (res.headersSent) {

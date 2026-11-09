@@ -1,7 +1,12 @@
 import type { Express } from "express";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { createTicketSchema, updateTicketSchema } from "@mind-do/shared";
+import {
+  createTicketSchema,
+  signupRequestSchema,
+  signupResponseSchema,
+  updateTicketSchema,
+} from "@mind-do/shared";
 import swaggerUi from "swagger-ui-express";
 import swaggerJsdoc from "swagger-jsdoc";
 
@@ -15,6 +20,23 @@ const options: swaggerJsdoc.Options = {
     },
     components: {
       schemas: {
+        SignupRequest: z.toJSONSchema(signupRequestSchema, {
+          target: "openapi-3.0",
+          io: "input",
+        }),
+        SignupResponse: z.toJSONSchema(signupResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
+        ErrorResponse: z.toJSONSchema(
+          z.object({
+            error: z.object({
+              code: z.string(),
+              message: z.string(),
+            }),
+          }),
+          { target: "openapi-3.0" },
+        ),
         CreateTicketInput: z.toJSONSchema(createTicketSchema, {
           target: "openapi-3.0",
           io: "input",
@@ -34,7 +56,7 @@ const options: swaggerJsdoc.Options = {
   },
   apis: [
     fileURLToPath(
-      new URL("./modules/ticket/ticket.routes.{ts,js}", import.meta.url),
+      new URL("./modules/{auth,ticket}/*.routes.{ts,js}", import.meta.url),
     ).replaceAll("\\", "/"),
   ],
 };
