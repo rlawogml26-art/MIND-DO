@@ -5,6 +5,10 @@ import {
   loginRequestSchema,
   loginResponseSchema,
   currentUserResponseSchema,
+  createGroupRequestSchema,
+  createGroupInviteResponseSchema,
+  joinGroupResponseSchema,
+  groupResponseSchema,
   signupRequestSchema,
   signupResponseSchema,
 } from "@mind-do/shared";
@@ -48,6 +52,25 @@ const options: swaggerJsdoc.Options = {
           target: "openapi-3.0",
           io: "output",
         }),
+        CreateGroupRequest: z.toJSONSchema(createGroupRequestSchema, {
+          target: "openapi-3.0",
+          io: "input",
+        }),
+        GroupResponse: z.toJSONSchema(groupResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
+        CreateGroupInviteResponse: z.toJSONSchema(
+          createGroupInviteResponseSchema,
+          {
+            target: "openapi-3.0",
+            io: "output",
+          },
+        ),
+        JoinGroupResponse: z.toJSONSchema(joinGroupResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
         ErrorResponse: z.toJSONSchema(errorResponseSchema, {
           target: "openapi-3.0",
         }),
@@ -69,7 +92,10 @@ const options: swaggerJsdoc.Options = {
   },
   apis: [
     fileURLToPath(
-      new URL("./modules/{auth,users}/*.routes.{ts,js}", import.meta.url),
+      new URL(
+        "./modules/{auth,users,groups}/*.routes.{ts,js}",
+        import.meta.url,
+      ),
     ).replaceAll("\\", "/"),
   ],
 };

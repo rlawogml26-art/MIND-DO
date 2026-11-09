@@ -1,6 +1,8 @@
 import express from "express";
 import type { ErrorRequestHandler } from "express";
 import authRouter from "./modules/auth/auth.routes.js";
+import groupsRouter from "./modules/groups/groups.routes.js";
+import invitesRouter from "./modules/groups/invites.routes.js";
 import usersRouter from "./modules/users/users.routes.js";
 import { setupSwagger } from "./swagger.js";
 import { ErrorCode } from "@mind-do/shared";
@@ -22,6 +24,8 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);
+app.use("/api/groups", groupsRouter);
+app.use("/api/invites", invitesRouter);
 
 const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, next) => {
   if (res.headersSent) {

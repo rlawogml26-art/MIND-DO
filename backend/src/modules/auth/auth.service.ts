@@ -153,6 +153,27 @@ export function verifyAccessToken(
   return userId;
 }
 
+export function getAccessTokenFromCookieHeader(
+  cookieHeader: string | undefined,
+): string | undefined {
+  if (!cookieHeader) return undefined;
+
+  let token: string | undefined;
+  for (const cookie of cookieHeader.split(";")) {
+    const separatorIndex = cookie.indexOf("=");
+    if (separatorIndex < 0) continue;
+
+    const name = cookie.slice(0, separatorIndex).trim();
+    if (name !== "accessToken") continue;
+    if (token !== undefined) return undefined;
+
+    const value = cookie.slice(separatorIndex + 1).trim();
+    if (!value) return undefined;
+    token = value;
+  }
+  return token;
+}
+
 export function getAuthenticatedUserId(token: string | undefined): number {
   if (!token) {
     throw new UnauthorizedError();
