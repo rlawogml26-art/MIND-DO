@@ -40,7 +40,14 @@ export const loginResponseSchema = z.object({
   name: signupNameSchema,
 });
 
+export const currentUserResponseSchema = z.object({
+  userId: z.number().int().positive(),
+  email: authEmailSchema,
+  name: signupNameSchema,
+});
+
 export type SignupRequest = z.infer<typeof signupRequestSchema>;
 export type SignupResponse = z.infer<typeof signupResponseSchema>;
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 export type LoginResponse = z.infer<typeof loginResponseSchema>;
+export type CurrentUserResponse = z.infer<typeof currentUserResponseSchema>;
