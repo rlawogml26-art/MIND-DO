@@ -3,7 +3,9 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
   createTicketSchema,
+  createGroupRequestSchema,
   currentUserResponseSchema,
+  groupResponseSchema,
   loginRequestSchema,
   loginResponseSchema,
   signupRequestSchema,
@@ -43,6 +45,14 @@ const options: swaggerJsdoc.Options = {
           target: "openapi-3.0",
           io: "output",
         }),
+        CreateGroupRequest: z.toJSONSchema(createGroupRequestSchema, {
+          target: "openapi-3.0",
+          io: "input",
+        }),
+        GroupResponse: z.toJSONSchema(groupResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
         ErrorResponse: z.toJSONSchema(
           z.object({
             error: z.object({
@@ -72,7 +82,7 @@ const options: swaggerJsdoc.Options = {
   apis: [
     fileURLToPath(
       new URL(
-        "./modules/{auth,ticket,users}/*.routes.{ts,js}",
+        "./modules/{auth,groups,ticket,users}/*.routes.{ts,js}",
         import.meta.url,
       ),
     ).replaceAll("\\", "/"),

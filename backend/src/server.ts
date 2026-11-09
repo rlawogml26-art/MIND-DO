@@ -1,6 +1,7 @@
 import express from "express";
 import type { ErrorRequestHandler } from "express";
 import authRouter from "./modules/auth/auth.routes.js";
+import groupsRouter from "./modules/groups/groups.routes.js";
 import ticketRouter from "./modules/ticket/ticket.routes.js";
 import usersRouter from "./modules/users/users.routes.js";
 import { setupSwagger } from "./swagger.js";
@@ -23,6 +24,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/tickets", ticketRouter);
 app.use("/api/auth", authRouter);
+app.use("/api/groups", groupsRouter);
 app.use("/api/users", usersRouter);
 
 const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, next) => {
