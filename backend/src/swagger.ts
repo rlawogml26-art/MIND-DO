@@ -9,6 +9,7 @@ import {
   groupResponseSchema,
   loginRequestSchema,
   loginResponseSchema,
+  joinGroupResponseSchema,
   signupRequestSchema,
   signupResponseSchema,
   updateTicketSchema,
@@ -61,6 +62,10 @@ const options: swaggerJsdoc.Options = {
             io: "output",
           },
         ),
+        JoinGroupResponse: z.toJSONSchema(joinGroupResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
         ErrorResponse: z.toJSONSchema(
           z.object({
             error: z.object({
