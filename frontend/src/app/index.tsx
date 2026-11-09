@@ -4,11 +4,12 @@ import { getIssuedTicket, type IssuedTicket } from "../storage/issued-tickets";
 import HomeScreen from "../components/HomeScreen";
 import MyPageScreen, { type Profile } from "../components/MyPageScreen";
 import TicketCreationScreen from "../components/TicketEditor";
+import LoginScreen from "../components/LoginScreen";
 
-type RootScreen = "home" | "my" | "dateSelection" | "ticket";
+type RootScreen = "login" | "home" | "my" | "dateSelection" | "ticket";
 
 export default function App() {
-  const [screen, setScreen] = useState<RootScreen>("home");
+  const [screen, setScreen] = useState<RootScreen>("login");
   const [selectedVisitDate, setSelectedVisitDate] = useState<
     string | undefined
   >(undefined);
@@ -40,6 +41,11 @@ export default function App() {
       }
     })();
   };
+
+  if (screen === "login") {
+    // 후속 Issue #51: 실제 로그인 API 성공 후에만 홈으로 이동한다.
+    return <LoginScreen onPreviewHome={() => setScreen("home")} />;
+  }
 
   if (screen === "ticket") {
     return (
