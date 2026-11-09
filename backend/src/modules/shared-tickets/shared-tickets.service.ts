@@ -20,7 +20,6 @@ export class TicketAlreadyCompletedError extends Error {}
 const PHOTO_EXTENSIONS: Record<(typeof PHOTO_CONTENT_TYPES)[number], string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
-  "image/heic": "heic",
 };
 
 function getUploadConfiguration() {
