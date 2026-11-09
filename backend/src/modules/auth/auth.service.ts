@@ -5,12 +5,13 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import bcrypt from "bcrypt";
-import type { SignupRequest } from "@mind-do/shared";
+import type { LoginRequest, SignupRequest } from "@mind-do/shared";
 import * as repository from "./auth.repository.js";
 import { EmailAlreadyExistsError } from "./auth.repository.js";
 
 export { EmailAlreadyExistsError } from "./auth.repository.js";
 
+export class InvalidCredentialsError extends Error {}
 export class UnauthorizedError extends Error {}
 export class AccessTokenExpiredError extends Error {}
 
@@ -240,5 +241,34 @@ export const signup = async (input: SignupRequest) => {
   return {
     user,
     ...createSessionTokens(user.userId, configuration, nowSeconds, refresh),
+  };
+};
+
+export const login = async (input: LoginRequest) => {
+  const configuration = getAuthConfiguration();
+  const user = await repository.findUserForLogin(input.email);
+  const passwordMatches = user
+    ? await bcrypt.compare(input.password, user.passwordHash)
+    : false;
+
+  if (!user || !passwordMatches) {
+    throw new InvalidCredentialsError();
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const session = createSessionTokens(user.id, configuration, nowSeconds);
+  await repository.createLoginSession(
+    user.id,
+    session.refreshTokenHash,
+    session.refreshTokenExpiresAt,
+  );
+
+  return {
+    user: { userId: user.id, name: user.nickname },
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken,
+    accessTokenTtlSeconds: session.accessTokenTtlSeconds,
+    refreshTokenTtlSeconds: session.refreshTokenTtlSeconds,
+    cookieSecure: session.cookieSecure,
   };
 };

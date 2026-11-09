@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
   createTicketSchema,
+  loginRequestSchema,
+  loginResponseSchema,
   signupRequestSchema,
   signupResponseSchema,
   updateTicketSchema,
@@ -25,6 +27,14 @@ const options: swaggerJsdoc.Options = {
           io: "input",
         }),
         SignupResponse: z.toJSONSchema(signupResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
+        LoginRequest: z.toJSONSchema(loginRequestSchema, {
+          target: "openapi-3.0",
+          io: "input",
+        }),
+        LoginResponse: z.toJSONSchema(loginResponseSchema, {
           target: "openapi-3.0",
           io: "output",
         }),
