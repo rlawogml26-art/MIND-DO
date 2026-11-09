@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
   createTicketSchema,
+  currentUserResponseSchema,
   loginRequestSchema,
   loginResponseSchema,
   signupRequestSchema,
@@ -38,6 +39,10 @@ const options: swaggerJsdoc.Options = {
           target: "openapi-3.0",
           io: "output",
         }),
+        CurrentUserResponse: z.toJSONSchema(currentUserResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
         ErrorResponse: z.toJSONSchema(
           z.object({
             error: z.object({
@@ -66,7 +71,10 @@ const options: swaggerJsdoc.Options = {
   },
   apis: [
     fileURLToPath(
-      new URL("./modules/{auth,ticket}/*.routes.{ts,js}", import.meta.url),
+      new URL(
+        "./modules/{auth,ticket,users}/*.routes.{ts,js}",
+        import.meta.url,
+      ),
     ).replaceAll("\\", "/"),
   ],
 };
