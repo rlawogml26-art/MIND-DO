@@ -24,11 +24,23 @@ export const signupRequestSchema = z.object({
   name: signupNameSchema,
 });
 
+export const loginRequestSchema = z.object({
+  email: authEmailSchema,
+  password: z.string(),
+});
+
 export const signupResponseSchema = z.object({
   userId: z.number().int().positive(),
   email: authEmailSchema,
   name: signupNameSchema,
 });
 
+export const loginResponseSchema = z.object({
+  userId: z.number().int().positive(),
+  name: signupNameSchema,
+});
+
 export type SignupRequest = z.infer<typeof signupRequestSchema>;
 export type SignupResponse = z.infer<typeof signupResponseSchema>;
+export type LoginRequest = z.infer<typeof loginRequestSchema>;
+export type LoginResponse = z.infer<typeof loginResponseSchema>;
