@@ -10,7 +10,9 @@ export const TICKET_DESIGN_VERSION = 1;
 // 카탈로그 ID (중간 발표용 임시값, 카탈로그 v4에서 확정)
 // 사진 합성 템플릿: 자연스러운 장면 / 감각적인 조합 / 광원·색감·질감
 export const COMPOSITE_TEMPLATE_IDS = ["blend", "collage", "light"] as const;
-// 색: 따뜻한 노을 / 차분한 푸른빛 / 밤의 조명 / 파스텔 / 선명한 색 / 빈티지 흑백
+// 팔레트: 따뜻한 노을 / 차분한 푸른빛 / 밤의 조명 / 파스텔 / 선명한 색 / 빈티지 흑백
+// 팔레트는 색 하나가 아니라 "사진에서 뽑은 색을 어떻게 다듬을지"의 규칙이다.
+// 실제 색(backgroundColor)은 서버가 사진의 주요 색과 팔레트 규칙으로 만든다.
 export const PALETTE_IDS = [
   "warm",
   "cool",
@@ -31,6 +33,9 @@ export const paletteIdSchema = z.enum(PALETTE_IDS);
 // 위치는 티켓 기준 0~1 (왼쪽 위가 0, 오른쪽 아래가 1)
 const positionSchema = z.number().min(0).max(1);
 
+// 색 값 #RRGGBB. 서버가 만든 색이든 사용자가 꾸미기에서 고른 색이든 형식만 검사한다.
+export const hexColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
+
 export const ticketStickerSchema = z.object({
   stickerId: z.string().min(1), // 카탈로그 ID
   x: positionSchema,
@@ -46,7 +51,7 @@ export const ticketTextSchema = z.object({
   fontId: z.string().min(1), // 카탈로그 ID
   scale: z.number().positive(),
   rotation: z.number(),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/), // #RRGGBB
+  color: hexColorSchema,
 });
 
 export const compositeTicketDesignSchema = z.object({
@@ -54,6 +59,7 @@ export const compositeTicketDesignSchema = z.object({
   method: z.literal("composite"),
   templateId: compositeTemplateIdSchema,
   paletteId: paletteIdSchema,
+  backgroundColor: hexColorSchema, // 템플릿의 배경 색 (어디에 칠할지는 템플릿 그리는 방식을 따른다)
   stickers: z.array(ticketStickerSchema).max(TICKET_STICKERS_MAX),
   texts: z.array(ticketTextSchema).max(TICKET_TEXTS_MAX),
 });

@@ -243,7 +243,6 @@ export const signup = async (input: SignupRequest) => {
     ...createSessionTokens(user.userId, configuration, nowSeconds, refresh),
   };
 };
-
 export const login = async (input: LoginRequest) => {
   const configuration = getAuthConfiguration();
   const user = await repository.findUserForLogin(input.email);
