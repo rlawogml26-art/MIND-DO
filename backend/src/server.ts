@@ -3,6 +3,7 @@ import type { ErrorRequestHandler } from "express";
 import authRouter from "./modules/auth/auth.routes.js";
 import groupsRouter from "./modules/groups/groups.routes.js";
 import invitesRouter from "./modules/groups/invites.routes.js";
+import sharedTicketsRouter from "./modules/shared-tickets/shared-tickets.routes.js";
 import ticketRouter from "./modules/ticket/ticket.routes.js";
 import usersRouter from "./modules/users/users.routes.js";
 import { setupSwagger } from "./swagger.js";
@@ -27,6 +28,7 @@ app.use("/api/tickets", ticketRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/groups", groupsRouter);
 app.use("/api/invites", invitesRouter);
+app.use("/api/shared-tickets", sharedTicketsRouter);
 app.use("/api/users", usersRouter);
 
 const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, next) => {

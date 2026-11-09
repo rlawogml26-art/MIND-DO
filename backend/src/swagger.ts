@@ -12,6 +12,8 @@ import {
   joinGroupResponseSchema,
   signupRequestSchema,
   signupResponseSchema,
+  sharedTicketPhotoUploadRequestSchema,
+  sharedTicketPhotoUploadUrlsResponseSchema,
   updateTicketSchema,
 } from "@mind-do/shared";
 import swaggerUi from "swagger-ui-express";
@@ -66,6 +68,20 @@ const options: swaggerJsdoc.Options = {
           target: "openapi-3.0",
           io: "output",
         }),
+        SharedTicketPhotoUploadRequest: z.toJSONSchema(
+          sharedTicketPhotoUploadRequestSchema,
+          {
+            target: "openapi-3.0",
+            io: "input",
+          },
+        ),
+        SharedTicketPhotoUploadUrlsResponse: z.toJSONSchema(
+          sharedTicketPhotoUploadUrlsResponseSchema,
+          {
+            target: "openapi-3.0",
+            io: "output",
+          },
+        ),
         ErrorResponse: z.toJSONSchema(
           z.object({
             error: z.object({
@@ -95,7 +111,7 @@ const options: swaggerJsdoc.Options = {
   apis: [
     fileURLToPath(
       new URL(
-        "./modules/{auth,groups,ticket,users}/*.routes.{ts,js}",
+        "./modules/{auth,groups,shared-tickets,ticket,users}/*.routes.{ts,js}",
         import.meta.url,
       ),
     ).replaceAll("\\", "/"),
