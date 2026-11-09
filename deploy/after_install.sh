@@ -13,6 +13,19 @@ esac
 
 # 패키지는 서버에서 설치한다. GitHub Actions(x86)와 서버(ARM)의 CPU가 달라서다.
 cd "$APP_DIR"
+
+# t4g.micro(메모리 910MB, 스왑 없음)에서 npm ci가 메모리 부족으로 강제 종료돼(11/7 배포 d-6IE1HSCI9, exit 137) 스왑 1GB를 둔다.
+# XFS에서는 fallocate로 만든 파일을 swapon이 거부할 수 있어 dd로 만든다.
+# ECS 전환 후 삭제.
+if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+  if [ ! -f /swapfile ]; then
+    dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none
+    chmod 600 /swapfile
+    mkswap /swapfile
+  fi
+  swapon /swapfile
+fi
+
 npm ci --omit=dev --workspace backend
 
 # Parameter Store 값을 환경변수 파일로 만든다. 비밀값이 로그에 찍히지 않게 set -x는 쓰지 않는다.
