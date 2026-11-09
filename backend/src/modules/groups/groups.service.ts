@@ -1,6 +1,7 @@
 import {
   GROUP_INVITE_TTL_HOURS_MIN,
   GROUP_ROLE_LEADER,
+  GROUP_ROLE_MEMBER,
   type CreateGroupRequest,
 } from "@mind-do/shared";
 import { createHash, randomBytes } from "node:crypto";
@@ -15,6 +16,8 @@ export class GroupLimitExceededError extends Error {}
 export class GroupNotFoundError extends Error {}
 export class DefaultGroupNotAllowedError extends Error {}
 export class GroupFullError extends Error {}
+export class InviteInvalidError extends Error {}
+export class AlreadyGroupMemberError extends Error {}
 
 function getInviteConfiguration() {
   const rawTtlHours = process.env["INVITE_LINK_TTL_HOURS"];
@@ -111,5 +114,34 @@ export const createGroupInvite = async (
     token,
     inviteUrl: new URL(`/invite/${token}`, baseUrl).toString(),
     expiresAt: result.expiresAt.toISOString(),
+  };
+};
+
+export const joinGroupByInvite = async (
+  cookieHeader: string | undefined,
+  token: string,
+) => {
+  const userId = getAuthenticatedUserId(
+    getAccessTokenFromCookieHeader(cookieHeader),
+  );
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const result = await repository.joinGroupByInvite({ userId, tokenHash });
+
+  if (result.status === "user_not_found") throw new UnauthorizedError();
+  if (result.status === "invite_invalid") throw new InviteInvalidError();
+  if (result.status === "already_group_member") {
+    throw new AlreadyGroupMemberError();
+  }
+  if (result.status === "group_full") throw new GroupFullError();
+  if (result.status === "group_limit_exceeded") {
+    throw new GroupLimitExceededError();
+  }
+
+  return {
+    groupId: result.groupId,
+    groupName: result.groupName,
+    myRole: GROUP_ROLE_MEMBER,
+    memberCount: result.memberCount,
+    joinedAt: result.joinedAt.toISOString(),
   };
 };

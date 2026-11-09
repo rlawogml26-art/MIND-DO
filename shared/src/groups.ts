@@ -38,8 +38,21 @@ export const createGroupInviteResponseSchema = z.object({
   expiresAt: z.iso.datetime(),
 });
 
+export const joinGroupInviteParamsSchema = z.object({
+  token: z.string().min(1),
+});
+
+export const joinGroupResponseSchema = z.object({
+  groupId: z.number().int().positive(),
+  groupName: groupNameSchema,
+  myRole: z.literal(GROUP_ROLE_MEMBER),
+  memberCount: z.number().int().positive().max(GROUP_MAX_MEMBERS),
+  joinedAt: z.iso.datetime(),
+});
+
 export type CreateGroupRequest = z.infer<typeof createGroupRequestSchema>;
 export type GroupResponse = z.infer<typeof groupResponseSchema>;
 export type CreateGroupInviteResponse = z.infer<
   typeof createGroupInviteResponseSchema
 >;
+export type JoinGroupResponse = z.infer<typeof joinGroupResponseSchema>;
