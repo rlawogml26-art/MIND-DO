@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
+  aiDraftsRequestSchema,
+  aiDraftsResponseSchema,
   createTicketSchema,
   signupRequestSchema,
   signupResponseSchema,
@@ -19,7 +21,21 @@ const options: swaggerJsdoc.Options = {
       description: "티켓 관리 서비스 MVP 백엔드 API 문서입니다.",
     },
     components: {
+      securitySchemes: {
+        AccessTokenCookie: {
+          type: "apiKey",
+          in: "cookie",
+          name: "accessToken",
+        },
+      },
       schemas: {
+        AiDraftsRequest: z.toJSONSchema(aiDraftsRequestSchema, {
+          target: "openapi-3.0",
+          io: "input",
+        }),
+        AiDraftsResponse: z.toJSONSchema(aiDraftsResponseSchema, {
+          target: "openapi-3.0",
+        }),
         SignupRequest: z.toJSONSchema(signupRequestSchema, {
           target: "openapi-3.0",
           io: "input",
@@ -56,7 +72,10 @@ const options: swaggerJsdoc.Options = {
   },
   apis: [
     fileURLToPath(
-      new URL("./modules/{auth,ticket}/*.routes.{ts,js}", import.meta.url),
+      new URL(
+        "./modules/{ai-drafts,auth,ticket}/*.routes.{ts,js}",
+        import.meta.url,
+      ),
     ).replaceAll("\\", "/"),
   ],
 };
