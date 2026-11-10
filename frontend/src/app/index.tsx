@@ -1,13 +1,30 @@
 import { useState } from "react";
 import { Alert } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { getIssuedTicket, type IssuedTicket } from "../storage/issued-tickets";
 import HomeScreen from "../components/HomeScreen";
 import MyPageScreen, { type Profile } from "../components/MyPageScreen";
 import TicketCreationScreen from "../components/TicketEditor";
+import LoginScreen from "../components/LoginScreen";
+import GroupScreen, {
+  initialGroups,
+  type DemoGroup,
+} from "../components/GroupScreen";
 
-type RootScreen = "home" | "my" | "dateSelection" | "ticket";
+type RootScreen = "home" | "group" | "my" | "dateSelection" | "ticket";
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
+  );
+}
+
+function AppContent() {
+  // 후속 Issue #51: 화면 진입 상태를 실제 로그인 API 성공과 쿠키 인증으로 교체한다.
+  const [loginPreviewFinished, setLoginPreviewFinished] = useState(false);
+  const [demoGroups, setDemoGroups] = useState<DemoGroup[]>(initialGroups);
   const [screen, setScreen] = useState<RootScreen>("home");
   const [selectedVisitDate, setSelectedVisitDate] = useState<
     string | undefined
@@ -41,6 +58,10 @@ export default function App() {
     })();
   };
 
+  if (!loginPreviewFinished) {
+    return <LoginScreen onPreviewHome={() => setLoginPreviewFinished(true)} />;
+  }
+
   if (screen === "ticket") {
     return (
       <TicketCreationScreen
@@ -61,11 +82,23 @@ export default function App() {
         dateSelectionMode
         onCancelDateSelection={() => setScreen("home")}
         onOpenMy={() => setScreen("my")}
+        onOpenGroup={() => setScreen("group")}
         onOpenTickets={openTickets}
       />
     );
   }
-  if (screen === "my")
+  if (screen === "group") {
+    return (
+      <GroupScreen
+        onOpenHome={() => setScreen("home")}
+        onOpenTickets={() => openTickets()}
+        onOpenMy={() => setScreen("my")}
+        groups={demoGroups}
+        onGroupsChange={setDemoGroups}
+      />
+    );
+  }
+  if (screen === "my") {
     return (
       <MyPageScreen
         onOpenTickets={openTickets}
@@ -74,7 +107,20 @@ export default function App() {
         onSaveProfile={setProfile}
       />
     );
+  }
   return (
-    <HomeScreen onOpenMy={() => setScreen("my")} onOpenTickets={openTickets} />
+    <HomeScreen
+      onOpenMy={() => setScreen("my")}
+      onOpenGroup={() => setScreen("group")}
+      onOpenTickets={openTickets}
+      onLogout={() => {
+        // 개발용 로그인 화면으로 돌아갑니다. 저장된 티켓은 삭제하지 않습니다.
+        setScreen("home");
+        setViewTicket(null);
+        setSelectedVisitDate(undefined);
+        setDemoGroups(initialGroups);
+        setLoginPreviewFinished(false);
+      }}
+    />
   );
 }

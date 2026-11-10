@@ -368,7 +368,7 @@ export default function MyPageScreen({
         </ScrollView>
         {!isEditing && (
           <View style={styles.bottomNav}>
-            {["Home", "SNS", "♥", "Store", "My"].map((tab) => (
+            {["Home", "Group", "♥", "Store", "My"].map((tab) => (
               <Pressable
                 key={tab}
                 accessibilityRole="button"
