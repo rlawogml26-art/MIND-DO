@@ -1,7 +1,7 @@
 import {
   GROUP_NAME_MAX,
-  GROUP_CAPACITY,
-  GROUP_MEMBERSHIP_MAX,
+  GROUP_MAX_MEMBERS,
+  USER_GROUP_MAX,
   JOINT_TITLE_MAX,
   groupNameSchema,
   jointTitleSchema,
@@ -274,20 +274,20 @@ export default function GroupScreen({
     if (!name) {
       Alert.alert(
         "그룹 이름을 입력해 주세요",
-        "그룹 이름은 최대 8자까지 입력할 수 있어요.",
+        `그룹 이름은 최대 ${GROUP_NAME_MAX}자까지 입력할 수 있어요.`,
       );
       return;
     }
     if (!groupNameSchema.safeParse(name).success) {
       Alert.alert(
         "그룹 이름 확인",
-        "그룹 이름은 최대 8자까지 입력할 수 있어요.",
+        `그룹 이름은 최대 ${GROUP_NAME_MAX}자까지 입력할 수 있어요.`,
       );
       return;
     }
     if (
       groups.filter((group) => group.id !== "sample-solo").length >=
-      GROUP_MEMBERSHIP_MAX
+      USER_GROUP_MAX
     ) {
       Alert.alert(
         "그룹 개수 확인",
@@ -296,7 +296,10 @@ export default function GroupScreen({
       return;
     }
     if (!jointTitleSchema.safeParse(firstTitle).success) {
-      Alert.alert("제목 확인", "공동 티켓 제목은 최대 12자예요.");
+      Alert.alert(
+        "제목 확인",
+        `공동 티켓 제목은 최대 ${JOINT_TITLE_MAX}자예요.`,
+      );
       return;
     }
     const date = checkedDate(firstDate);
@@ -326,7 +329,10 @@ export default function GroupScreen({
   function createJointTicket() {
     if (!selectedGroup) return;
     if (!jointTitleSchema.safeParse(jointTitle).success) {
-      Alert.alert("제목 확인", "공동 티켓 제목은 최대 12자예요.");
+      Alert.alert(
+        "제목 확인",
+        `공동 티켓 제목은 최대 ${JOINT_TITLE_MAX}자예요.`,
+      );
       return;
     }
     const date = checkedDate(jointDate);
@@ -363,7 +369,7 @@ export default function GroupScreen({
 
   function demoJoin() {
     if (!selectedGroup) return;
-    if (selectedGroup.members >= GROUP_CAPACITY) {
+    if (selectedGroup.members >= GROUP_MAX_MEMBERS) {
       setPage("full");
       return;
     }
@@ -454,7 +460,7 @@ export default function GroupScreen({
                 그룹과 첫 번째 날짜 기록을 함께 만들어요.
               </Text>
               <Field
-                label="그룹 이름 · 최대 8자"
+                label={`그룹 이름 · 최대 ${GROUP_NAME_MAX}자`}
                 value={groupName}
                 onChangeText={setGroupName}
                 placeholder="그룹 이름을 입력해 주세요"
@@ -468,7 +474,7 @@ export default function GroupScreen({
                 keyboardType="numbers-and-punctuation"
               />
               <Field
-                label="제목 · 선택 (최대 12자)"
+                label={`제목 · 선택 (최대 ${JOINT_TITLE_MAX}자)`}
                 value={firstTitle}
                 onChangeText={setFirstTitle}
                 placeholder="선택 사항"
@@ -481,7 +487,7 @@ export default function GroupScreen({
           {page === "group" && selectedGroup && (
             <View style={styles.stack}>
               <Text style={styles.description}>
-                비공개 · 멤버 {selectedGroup.members} / 6명
+                비공개 · 멤버 {selectedGroup.members} / {GROUP_MAX_MEMBERS}명
               </Text>
               {selectedGroup.tickets.map((ticket) => (
                 <ListRow
@@ -538,7 +544,7 @@ export default function GroupScreen({
                 keyboardType="numbers-and-punctuation"
               />
               <Field
-                label="제목 · 선택 (최대 12자)"
+                label={`제목 · 선택 (최대 ${JOINT_TITLE_MAX}자)`}
                 value={jointTitle}
                 onChangeText={setJointTitle}
                 placeholder="선택 사항"
@@ -564,7 +570,7 @@ export default function GroupScreen({
             <View style={styles.stack}>
               <Text style={styles.description}>
                 초대받은 사람만 그룹에 참여할 수 있어요.{"\n"}현재{" "}
-                {selectedGroup.members}명 · 최대 6명
+                {selectedGroup.members}명 · 최대 {GROUP_MAX_MEMBERS}명
               </Text>
               <ListRow
                 title="초대 링크"
@@ -599,8 +605,8 @@ export default function GroupScreen({
 
           {page === "full" && (
             <Text style={styles.description}>
-              그룹은 최대 6명까지 참여할 수 있어요.{"\n"}이 그룹에는 더 참여할
-              수 없어요.
+              그룹은 최대 {GROUP_MAX_MEMBERS}명까지 참여할 수 있어요.{"\n"}이
+              그룹에는 더 참여할 수 없어요.
             </Text>
           )}
         </ScrollView>

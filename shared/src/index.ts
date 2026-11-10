@@ -5,4 +5,5 @@ export * from "./auth.js";
 export * from "./ticket-design.js";
 export * from "./ai-draft.js";
 export * from "./mood-tags.js";
-export * from "./group.js";
+export * from "./groups.js";
+export * from "./shared-ticket.js";

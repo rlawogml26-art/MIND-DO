@@ -405,7 +405,7 @@ const FramePreview = ({
             }
             placeholder="TITLE"
             placeholderTextColor="#292929"
-            accessibilityLabel="티켓 제목 입력 (최대 15자)"
+            accessibilityLabel={`티켓 제목 입력 (최대 ${TICKET_TITLE_MAX}자)`}
           />
         ) : (
           <View style={styles.ticketMetaRow}>
@@ -451,7 +451,7 @@ const FramePreview = ({
             }
             placeholder="PLACE"
             placeholderTextColor="#292929"
-            accessibilityLabel="티켓 장소 입력 (최대 15자)"
+            accessibilityLabel={`티켓 장소 입력 (최대 ${TICKET_LOCATION_MAX}자)`}
           />
         ) : (
           <View style={styles.ticketMetaRow}>
@@ -1611,11 +1611,11 @@ export default function TicketCreationScreen({
                           Array.from(value).slice(0, TICKET_TITLE_MAX).join(""),
                         )
                       }
-                      placeholder="제목 입력 (최대 15자)"
+                      placeholder={`제목 입력 (최대 ${TICKET_TITLE_MAX}자)`}
                       placeholderTextColor="#B9AAA0"
                       autoCorrect={false}
                       returnKeyType="done"
-                      accessibilityLabel="TITLE 제목 입력, 최대 15자"
+                      accessibilityLabel={`TITLE 제목 입력, 최대 ${TICKET_TITLE_MAX}자`}
                     />
                   </View>
                   <View style={styles.textFieldRow}>
@@ -1638,10 +1638,10 @@ export default function TicketCreationScreen({
                             .join(""),
                         )
                       }
-                      placeholder="장소 입력 (최대 15자)"
+                      placeholder={`장소 입력 (최대 ${TICKET_LOCATION_MAX}자)`}
                       placeholderTextColor="#B9AAA0"
                       returnKeyType="done"
-                      accessibilityLabel="PLACE 장소 입력, 최대 15자"
+                      accessibilityLabel={`PLACE 장소 입력, 최대 ${TICKET_LOCATION_MAX}자`}
                     />
                   </View>
                 </ScrollView>

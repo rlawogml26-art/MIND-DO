@@ -1,8 +1,14 @@
 // 후속 Issue #51: 화면 시연 동작을 실제 인증 API와 쿠키 인증으로 연결한다.
-import { signupRequestSchema } from "@mind-do/shared";
+import {
+  SIGNUP_PASSWORD_MIN,
+  SIGNUP_PASSWORD_MAX,
+  PROFILE_NICKNAME_MAX,
+  signupRequestSchema,
+} from "@mind-do/shared";
 
 const authEmailSchema = signupRequestSchema.shape.email;
 const authPasswordSchema = signupRequestSchema.shape.password;
+const authNameSchema = signupRequestSchema.shape.name;
 import { useState } from "react";
 import {
   Alert,
@@ -20,6 +26,8 @@ type SignupScreenProps = {
 };
 
 export default function SignupScreen({ onBack }: SignupScreenProps) {
+  const [name, setName] = useState("");
+  const [nameError, setNameError] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [isCodeSent, setIsCodeSent] = useState(false);
@@ -49,8 +57,17 @@ export default function SignupScreen({ onBack }: SignupScreenProps) {
   };
   // 발송 버튼을 누르면 인증번호 입력 화면을 표시합니다.
   const checkPassword = () => {
+    if (!authNameSchema.safeParse(name).success) {
+      setNameError(
+        `닉네임은 공백만 입력할 수 없으며 1~${PROFILE_NICKNAME_MAX}자로 입력해 주세요.`,
+      );
+      return;
+    }
+    setNameError("");
     if (!authPasswordSchema.safeParse(password).success) {
-      setPasswordError("비밀번호는 8~64자로 입력해 주세요.");
+      setPasswordError(
+        `비밀번호는 ${SIGNUP_PASSWORD_MIN}~${SIGNUP_PASSWORD_MAX}자로 입력해 주세요.`,
+      );
       return;
     }
     if (password !== passwordConfirm) {
@@ -93,9 +110,28 @@ export default function SignupScreen({ onBack }: SignupScreenProps) {
               회원가입
             </Text>
           </View>
-          <Text style={styles.title}>비밀번호 설정</Text>
+          <Text style={styles.title}>닉네임과 비밀번호 설정</Text>
           <View style={styles.field}>
-            <Text style={styles.label}>비밀번호</Text>
+            <Text style={styles.label}>닉네임 (필수)</Text>
+            <TextInput
+              accessibilityLabel="닉네임 (필수)"
+              style={[styles.input, nameError !== "" && styles.duplicateInput]}
+              placeholder={`닉네임 1~${PROFILE_NICKNAME_MAX}자`}
+              placeholderTextColor="#987966"
+              autoCapitalize="none"
+              autoCorrect={false}
+              value={name}
+              onChangeText={(value) => {
+                setName(value);
+                setNameError("");
+              }}
+            />
+            {nameError !== "" && (
+              <Text accessibilityRole="alert" style={styles.duplicateMessage}>
+                {nameError}
+              </Text>
+            )}
+            <Text style={[styles.label, { marginTop: 12 }]}>비밀번호</Text>
             <TextInput
               accessibilityLabel="비밀번호"
               style={[
@@ -104,7 +140,7 @@ export default function SignupScreen({ onBack }: SignupScreenProps) {
                   !authPasswordSchema.safeParse(password).success &&
                   styles.duplicateInput,
               ]}
-              placeholder="비밀번호 8~64자"
+              placeholder={`비밀번호 ${SIGNUP_PASSWORD_MIN}~${SIGNUP_PASSWORD_MAX}자`}
               placeholderTextColor="#987966"
               autoCapitalize="none"
               autoCorrect={false}
@@ -124,7 +160,7 @@ export default function SignupScreen({ onBack }: SignupScreenProps) {
                   styles.input,
                   passwordError !== "" &&
                     authPasswordSchema.safeParse(password).success &&
-                    password.length <= 64 &&
+                    password.length <= SIGNUP_PASSWORD_MAX &&
                     password !== passwordConfirm &&
                     styles.duplicateInput,
                 ]}
