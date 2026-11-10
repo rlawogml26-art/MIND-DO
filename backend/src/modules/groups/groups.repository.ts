@@ -64,7 +64,7 @@ export const createGroupInvite = ({
       Array<{ id: number; isDefault: boolean }>
     >`
       SELECT id, is_default AS isDefault
-      FROM `groups`
+      FROM \`groups\`
       WHERE id = ${groupId} AND deleted_at IS NULL
       FOR UPDATE
     `;
@@ -112,7 +112,7 @@ export const joinGroupByInvite = ({ userId, tokenHash }: JoinGroupInput) =>
     >`
       SELECT g.id AS groupId, g.name AS groupName
       FROM group_invites AS i
-      INNER JOIN `groups` AS g ON g.id = i.group_id
+      INNER JOIN \`groups\` AS g ON g.id = i.group_id
       WHERE i.token_hash = ${tokenHash}
         AND i.expires_at > ${now}
         AND i.revoked_at IS NULL
