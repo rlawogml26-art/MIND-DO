@@ -1,3 +1,4 @@
+// 후속 Issue #25: 기존 시연용 티켓 입력을 확정된 공동·개인 티켓 구조로 교체한다.
 import {
   createTicketSchema,
   TICKET_TITLE_MAX,
@@ -25,8 +26,10 @@ import {
   useWindowDimensions,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as MediaLibrary from "expo-media-library/legacy";
 import { SafeAreaView } from "react-native-safe-area-context";
+
 import {
   issueTicketOnce,
   loadFrontDraft,
@@ -34,6 +37,67 @@ import {
   type FrontDraft,
   type IssuedTicket,
 } from "../storage/issued-tickets";
+
+// JPEG·PNG는 원본 URI를 유지하고, HEIC·HEIF만 JPEG 파일로 변환합니다.
+type PhotoSource = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+};
+type PhotoFormat = "jpeg" | "png" | "heic" | "unsupported";
+
+class PhotoPreparationError extends Error {}
+
+function photoExtension(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  return /\.([a-z0-9]+)(?:[?#]|$)/i.exec(value)?.[1]?.toLowerCase();
+}
+
+function photoFormat(source: PhotoSource): PhotoFormat {
+  const mime = source.mimeType?.toLowerCase().trim();
+  if (mime === "image/jpeg" || mime === "image/jpg") return "jpeg";
+  if (mime === "image/png") return "png";
+  if (mime === "image/heic" || mime === "image/heif") return "heic";
+  if (mime && mime !== "application/octet-stream") return "unsupported";
+
+  const ext = photoExtension(source.uri) ?? photoExtension(source.fileName);
+  if (ext === "jpg" || ext === "jpeg") return "jpeg";
+  if (ext === "png") return "png";
+  if (ext === "heic" || ext === "heif") return "heic";
+  return "unsupported";
+}
+
+async function prepareSelectedPhoto(source: PhotoSource): Promise<string> {
+  const format = photoFormat(source);
+  if (format === "unsupported") {
+    throw new PhotoPreparationError(
+      "JPEG, PNG 또는 HEIC 사진만 선택할 수 있어요.",
+    );
+  }
+  if (format !== "heic") return source.uri;
+  if (!source.uri.startsWith("file://")) {
+    throw new PhotoPreparationError(
+      "사진 원본을 불러올 수 없어요. 시스템 갤러리에서 다시 선택해 주세요.",
+    );
+  }
+
+  const context = ImageManipulator.manipulate(source.uri);
+  const image = await context.renderAsync();
+  const jpeg = await image.saveAsync({
+    format: SaveFormat.JPEG,
+    compress: 0.9,
+  });
+  return jpeg.uri;
+}
+
+function showPhotoSelectionError(error: unknown): void {
+  Alert.alert(
+    "사진 선택 오류",
+    error instanceof PhotoPreparationError
+      ? error.message
+      : "사진을 불러오거나 JPEG로 변환하지 못했어요. 다시 선택해 주세요.",
+  );
+}
 
 type Step =
   | "photos"
@@ -234,16 +298,16 @@ type FramePreviewProps = {
   ticketFont?: TicketFont;
   frame: number;
   front: string | null;
-  title: string;
-  visitDate: string;
-  location: string;
+  ticketTitle: string;
+  ticketDate: string;
+  ticketPlace: string;
   large?: boolean;
   decorateWidth?: number;
   stickers?: PlacedSticker[];
   onStickerMove?: (id: number, x: number, y: number) => void;
   previewOnly?: boolean;
-  setTitle: React.Dispatch<React.SetStateAction<string>>;
-  setLocation: React.Dispatch<React.SetStateAction<string>>;
+  setTicketTitle: React.Dispatch<React.SetStateAction<string>>;
+  setTicketPlace: React.Dispatch<React.SetStateAction<string>>;
 };
 
 const FramePreview = ({
@@ -256,11 +320,11 @@ const FramePreview = ({
   previewOnly = false,
   frame,
   front,
-  title,
-  visitDate,
-  location,
-  setTitle,
-  setLocation,
+  ticketTitle,
+  ticketDate,
+  ticketPlace,
+  setTicketTitle,
+  setTicketPlace,
 }: FramePreviewProps) => {
   // 티켓 너비에 비례해 TITLE / DATE / PLACE 라벨과 입력값 크기를 함께 조절합니다.
   const ticketWidth = decorateWidth ?? (large ? 250 : 204);
@@ -332,13 +396,16 @@ const FramePreview = ({
             style={[styles.frameMetaInput, ticketTextStyle]}
             showSoftInputOnFocus={true}
             keyboardType="default"
-            value={title}
-            onChangeText={setTitle}
-            onBlur={() => setTitle((value) => value.slice(0, TICKET_TITLE_MAX))}
+            value={ticketTitle}
+            onChangeText={setTicketTitle}
+            onBlur={() =>
+              setTicketTitle((value) =>
+                Array.from(value).slice(0, TICKET_TITLE_MAX).join(""),
+              )
+            }
             placeholder="TITLE"
             placeholderTextColor="#292929"
-            maxLength={TICKET_TITLE_MAX}
-            accessibilityLabel={`티켓 제목 입력 (최대 ${TICKET_TITLE_MAX}자)`}
+            accessibilityLabel="티켓 제목 입력 (최대 15자)"
           />
         ) : (
           <View style={styles.ticketMetaRow}>
@@ -352,7 +419,7 @@ const FramePreview = ({
               TITLE
             </Text>
             <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-              {title}
+              {ticketTitle}
             </Text>
           </View>
         )}
@@ -367,7 +434,7 @@ const FramePreview = ({
             DATE
           </Text>
           <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-            {visitDate}
+            {ticketDate}
           </Text>
         </View>
         {editable ? (
@@ -375,15 +442,16 @@ const FramePreview = ({
             style={[styles.frameMetaInput, ticketTextStyle]}
             showSoftInputOnFocus={true}
             keyboardType="default"
-            value={location}
-            onChangeText={setLocation}
+            value={ticketPlace}
+            onChangeText={setTicketPlace}
             onBlur={() =>
-              setLocation((value) => value.slice(0, TICKET_LOCATION_MAX))
+              setTicketPlace((value) =>
+                Array.from(value).slice(0, TICKET_LOCATION_MAX).join(""),
+              )
             }
             placeholder="PLACE"
             placeholderTextColor="#292929"
-            maxLength={TICKET_LOCATION_MAX}
-            accessibilityLabel={`티켓 장소 입력 (최대 ${TICKET_LOCATION_MAX}자)`}
+            accessibilityLabel="티켓 장소 입력 (최대 15자)"
           />
         ) : (
           <View style={styles.ticketMetaRow}>
@@ -397,7 +465,7 @@ const FramePreview = ({
               PLACE
             </Text>
             <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-              {location}
+              {ticketPlace}
             </Text>
           </View>
         )}
@@ -418,20 +486,20 @@ const BACK_COLORS = [
   "#B8BEB0",
   "#681D1D",
 ];
-// 후속 Issue #25: 원본의 뒷면 사진 3개 제한을 확정된 첨부 정책으로 교체한다.
-const TEMP_BACK_PHOTO_LIMIT = 3;
+// 후속 Issue #25: 기존 시연용 사진 개수 제한을 확정된 shared 규칙으로 교체한다.
+const FREE_BACK_PHOTO_LIMIT = 3;
 
 // 뒷면 미리보기: 긴 글은 티켓 크기를 늘리지 않고 팝업으로 보여줍니다.
 function BackTicketContent({
   photos,
   text,
-  visitDate,
+  date,
   color,
   onMore,
 }: {
   photos: string[];
   text: string;
-  visitDate: string;
+  date: string;
   color: string;
   onMore: () => void;
 }) {
@@ -441,7 +509,7 @@ function BackTicketContent({
       <Text style={styles.backTicketLogo}>MEMO:RE</Text>
       <View style={styles.backTicketRule} />
       <View style={styles.backPhotoGrid}>
-        {photos.slice(0, TEMP_BACK_PHOTO_LIMIT).map((uri, i) => (
+        {photos.slice(0, FREE_BACK_PHOTO_LIMIT).map((uri, i) => (
           <Image
             key={`${i}-${uri}`}
             source={{ uri }}
@@ -474,10 +542,64 @@ function BackTicketContent({
           )}
         </View>
       )}
-      <Text style={styles.backTicketDate}>{visitDate}</Text>
+      <Text style={styles.backTicketDate}>{date}</Text>
     </View>
   );
 }
+// 달력에서 이미 발권된 티켓을 앞/뒷면 그대로 보여주는 읽기 전용 미리보기입니다.
+// 기존 앞면/뒷면 미리보기 컴포넌트를 재사용하여 발권 화면과 디자인이 달라지지 않게 합니다.
+export function IssuedTicketFlipPreview({
+  ticket,
+  showingBack,
+  ticketWidth,
+  onMore,
+}: {
+  ticket: IssuedTicket;
+  showingBack: boolean;
+  ticketWidth: number;
+  onMore: () => void;
+}) {
+  const safeFrame = Math.max(0, Math.min(FRAMES.length - 1, ticket.frame ?? 0));
+  if (showingBack) {
+    const color = ticket.backColor ?? "#F2E8DC";
+    return (
+      <View
+        style={[
+          styles.reviewBackShell,
+          {
+            width: ticketWidth,
+            height: ticketWidth * (348 / 204),
+            backgroundColor: color,
+          },
+        ]}
+      >
+        <BackTicketContent
+          photos={ticket.backs ?? []}
+          text={ticket.memo ?? ""}
+          date={(ticket.visitDate ?? "").replace(/-/g, ".")}
+          color={color}
+          onMore={onMore}
+        />
+      </View>
+    );
+  }
+  return (
+    <FramePreview
+      previewOnly
+      ticketFont={ticket.ticketFont ?? "sans-serif"}
+      decorateWidth={ticketWidth}
+      stickers={ticket.placedStickers ?? []}
+      frame={safeFrame}
+      front={ticket.front ?? null}
+      ticketTitle={ticket.title ?? ""}
+      ticketDate={(ticket.visitDate ?? "").replace(/-/g, ".")}
+      ticketPlace={ticket.location ?? ""}
+      setTicketTitle={() => {}}
+      setTicketPlace={() => {}}
+    />
+  );
+}
+
 function BackTextModal({
   text,
   onClose,
@@ -507,16 +629,8 @@ function BackTextModal({
   );
 }
 
-const Action = ({ label, onPress }: { label: string; onPress: () => void }) => (
-  <View style={styles.bottomWrap}>
-    <Pressable style={styles.action} onPress={onPress}>
-      <Text style={styles.actionText}>{label}</Text>
-    </Pressable>
-  </View>
-);
-
 type TicketCreationScreenProps = {
-  onBackHome?: () => void;
+  onBackHome: () => void;
   selectedVisitDate?: string;
   issuedTicket?: IssuedTicket | null;
   onCreateNew?: () => void;
@@ -527,7 +641,7 @@ export default function TicketCreationScreen({
   selectedVisitDate,
   issuedTicket = null,
   onCreateNew,
-}: TicketCreationScreenProps = {}) {
+}: TicketCreationScreenProps) {
   const { width, height } = useWindowDimensions();
   // 1-2-4 / 1-2-5 전용: 기본 티켓의 약 1.25배. 작은 화면에서는 탭과 헤더를 침범하지 않도록 제한.
   const decorateWidth = Math.max(
@@ -555,6 +669,9 @@ export default function TicketCreationScreen({
   }, []);
   const [step, setStep] = useState<Step>("photos");
   const [front, setFront] = useState<string | null>(null);
+  const [selectedGalleryId, setSelectedGalleryId] = useState<string | null>(
+    null,
+  );
   const [backs, setBacks] = useState<string[]>([]);
   const [frame, setFrame] = useState(0);
   const [frameChosen, setFrameChosen] = useState(false);
@@ -585,14 +702,17 @@ export default function TicketCreationScreen({
   const [textEditorTab, setTextEditorTab] = useState<"keyboard" | "font">(
     "keyboard",
   );
-  const [title, setTitle] = useState("");
-  const [visitDate, setVisitDate] = useState(selectedVisitDate ?? "");
-  const [location, setLocation] = useState("");
+  const [ticketTitle, setTicketTitle] = useState("");
+  const [ticketDate, setTicketDate] = useState(
+    selectedVisitDate ? selectedVisitDate.replace(/-/g, ".") : "",
+  );
+  const [ticketPlace, setTicketPlace] = useState("");
   const [backStyle, setBackStyle] = useState(0);
-  const [memo, setMemo] = useState("");
+  const [backText, setBackText] = useState("");
   const [backColor, setBackColor] = useState("#F2E8DC");
   const [expandedText, setExpandedText] = useState<string | null>(null);
   const [tab, setTab] = useState(1);
+  const [, setSide] = useState<"front" | "back">("front");
   const [savedDraft, setSavedDraft] = useState<FrontDraft | null>(null);
   const [draftLoading, setDraftLoading] = useState(true);
   const [draftSaving, setDraftSaving] = useState(false);
@@ -614,6 +734,10 @@ export default function TicketCreationScreen({
   }, []);
   const saveDraft = async () => {
     if (draftSaving) return;
+    if (!front) {
+      Alert.alert("임시저장", "먼저 앞면 사진을 선택해 주세요.");
+      return;
+    }
     const draft: FrontDraft = {
       front,
       frame,
@@ -622,15 +746,15 @@ export default function TicketCreationScreen({
       placedStickers,
       caption,
       ticketFont,
-      title,
-      visitDate,
-      location,
+      title: ticketTitle,
+      visitDate: ticketDate,
+      location: ticketPlace,
       savedAt: new Date().toISOString(),
     };
     setDraftSaving(true);
     try {
-      const saved = await saveFrontDraft(draft, FRAMES.length);
-      setSavedDraft(saved);
+      await saveFrontDraft(draft, FRAMES.length);
+      setSavedDraft(draft);
       Alert.alert("임시저장 완료", "마지막 앞면 작업 1개를 저장했어요.");
     } catch {
       Alert.alert("임시저장 실패", "저장하지 못했어요. 다시 시도해 주세요.");
@@ -641,6 +765,7 @@ export default function TicketCreationScreen({
   const restoreDraft = () => {
     if (!savedDraft) return;
     setFront(savedDraft.front);
+    setSelectedGalleryId(null);
     setFrame(savedDraft.frame);
     setFrameChosen(savedDraft.frameChosen);
     setSticker(savedDraft.sticker);
@@ -651,9 +776,9 @@ export default function TicketCreationScreen({
     );
     setCaption(savedDraft.caption);
     setTicketFont(savedDraft.ticketFont);
-    setTitle(savedDraft.title);
-    setVisitDate(selectedVisitDate ?? savedDraft.visitDate);
-    setLocation(savedDraft.location);
+    setTicketTitle(savedDraft.title);
+    setTicketDate(savedDraft.visitDate);
+    setTicketPlace(savedDraft.location);
     go("decorate");
   };
 
@@ -693,7 +818,7 @@ export default function TicketCreationScreen({
       setHasNextPage(result.hasNextPage);
     } catch {
       setGalleryError(
-        "사진을 불러오지 못했어요. 사진 권한을 확인한 뒤 다시 시도해 주세요.",
+        "사진을 불러오지 못했어요. Android 앱 빌드와 사진 권한을 확인해 주세요.",
       );
     } finally {
       galleryBusy.current = false;
@@ -702,27 +827,19 @@ export default function TicketCreationScreen({
   };
 
   useEffect(() => {
-    if (!issuedTicket && step === "photos" && galleryPhotos.length === 0) {
+    if (step === "photos" && galleryPhotos.length === 0) {
       void loadGallery();
     }
   }, [step]);
 
   const go = (s: Step) => setStep(s);
-  const returnHome = () => {
-    if (onBackHome) onBackHome();
-    else go("photos");
-  };
   const back = () => {
     if (step === "photos") {
-      returnHome();
+      onBackHome();
       return;
     }
     if (step === "frontPreview") {
       go("decorate");
-      return;
-    }
-    if (step === "reviewFront") {
-      go("backEdit");
       return;
     }
     if (step === "stickers") {
@@ -751,17 +868,57 @@ export default function TicketCreationScreen({
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsMultipleSelection: forBack,
-        selectionLimit: forBack ? TEMP_BACK_PHOTO_LIMIT : 1,
+        selectionLimit: forBack ? FREE_BACK_PHOTO_LIMIT : 1,
         quality: 0.9,
+        preferredAssetRepresentationMode:
+          ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
       });
       if (result.canceled) return;
-      const uris = result.assets.map((a) => a.uri);
-      if (forBack) setBacks(uris.slice(0, TEMP_BACK_PHOTO_LIMIT));
-      else setFront(uris[0] ?? null);
-    } catch {
-      Alert.alert("사진 선택 오류", "갤러리를 열 수 없습니다.");
+
+      const uris: string[] = [];
+      for (const asset of result.assets.slice(
+        0,
+        forBack ? FREE_BACK_PHOTO_LIMIT : 1,
+      )) {
+        uris.push(await prepareSelectedPhoto(asset));
+      }
+      if (forBack) {
+        setBacks(uris);
+      } else {
+        setFront(uris[0] ?? null);
+        setSelectedGalleryId(null);
+      }
+    } catch (error) {
+      showPhotoSelectionError(error);
     }
   };
+
+  // Android의 getAssetInfoAsync는 사진 위치(EXIF) 권한까지 요구할 수 있어,
+  // 사진 선택에 필요한 URI·파일명은 getAssetsAsync가 준 값을 그대로 사용합니다.
+  // iOS는 ph:// URI를 이미지 변환기에 전달할 수 없어서 로컬 파일 URI를 별도로 구합니다.
+  const selectGalleryPhoto = async (asset: MediaLibrary.Asset) => {
+    try {
+      let uri = asset.uri;
+      if (Platform.OS === "ios") {
+        const info = await MediaLibrary.getAssetInfoAsync(asset);
+        uri = info.localUri ?? info.uri;
+      }
+      if (!uri.startsWith("file://")) {
+        throw new PhotoPreparationError(
+          "사진 원본을 불러올 수 없어요. 시스템 갤러리에서 다시 선택해 주세요.",
+        );
+      }
+      const normalizedUri = await prepareSelectedPhoto({
+        uri,
+        fileName: asset.filename,
+      });
+      setFront(normalizedUri);
+      setSelectedGalleryId(asset.id);
+    } catch (error) {
+      showPhotoSelectionError(error);
+    }
+  };
+
   const shoot = async () => {
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -773,19 +930,23 @@ export default function TicketCreationScreen({
         mediaTypes: ["images"],
         quality: 0.9,
       });
-      if (!result.canceled) setFront(result.assets[0]?.uri ?? null);
-    } catch {
-      Alert.alert(
-        "카메라 오류",
-        "카메라를 실행할 수 없어요. 갤러리에서 사진을 선택하거나 다시 시도해 주세요.",
-      );
+      if (result.canceled || !result.assets[0]) return;
+      const uri = await prepareSelectedPhoto(result.assets[0]);
+      setFront(uri);
+      setSelectedGalleryId(null);
+    } catch (error) {
+      showPhotoSelectionError(error);
     }
   };
 
   const nextFromPhotos = () => {
+    if (!front) {
+      Alert.alert("사진 선택", "갤러리에서 앞면 사진 1장을 선택해 주세요.");
+      return;
+    }
     go("frames");
   };
-  const renderTicket = ({ backSide = false }: { backSide?: boolean }) => (
+  const Ticket = ({ backSide = false }: { backSide?: boolean }) => (
     <View
       style={[
         styles.ticket,
@@ -798,10 +959,10 @@ export default function TicketCreationScreen({
       {backSide ? (
         <BackTicketContent
           photos={backs}
-          text={memo}
-          visitDate={visitDate}
+          text={backText}
+          date={ticketDate}
           color={backColor}
-          onMore={() => setExpandedText(memo)}
+          onMore={() => setExpandedText(backText)}
         />
       ) : (
         <>
@@ -820,13 +981,13 @@ export default function TicketCreationScreen({
             {sticker} {caption || "MEMO:RE"}
           </Text>
           <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"TITLE  " + title}
+            {"TITLE  " + ticketTitle}
           </Text>
           <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"DATE  " + visitDate}
+            {"DATE  " + ticketDate}
           </Text>
           <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"PLACE  " + location}
+            {"PLACE  " + ticketPlace}
           </Text>
         </>
       )}
@@ -834,11 +995,7 @@ export default function TicketCreationScreen({
   );
   // 1-2-3 프레임 선택 화면 전용 미리보기. 이후 꾸미기 화면의 Ticket은 유지합니다.
 
-  const renderFrameSelection = ({
-    confirmed = false,
-  }: {
-    confirmed?: boolean;
-  }) => (
+  const FrameSelection = ({ confirmed = false }: { confirmed?: boolean }) => (
     <View style={styles.frameScreen}>
       <Text style={styles.frameHelper}>
         선택한 사진에 어울리는 티켓 디자인을 골라주세요.
@@ -849,11 +1006,11 @@ export default function TicketCreationScreen({
           large
           frame={frame}
           front={front}
-          title={title}
-          visitDate={visitDate}
-          location={location}
-          setTitle={setTitle}
-          setLocation={setLocation}
+          ticketTitle={ticketTitle}
+          ticketDate={ticketDate}
+          ticketPlace={ticketPlace}
+          setTicketTitle={setTicketTitle}
+          setTicketPlace={setTicketPlace}
         />
       </View>
       <View style={styles.framePickerArea}>
@@ -904,11 +1061,26 @@ export default function TicketCreationScreen({
     </View>
   );
 
+  const Action = ({
+    label,
+    onPress,
+  }: {
+    label: string;
+    onPress: () => void;
+  }) => (
+    <View style={styles.bottomWrap}>
+      <Pressable style={styles.action} onPress={onPress}>
+        <Text style={styles.actionText}>{label}</Text>
+      </Pressable>
+    </View>
+  );
   const [issuingTicket, setIssuingTicket] = useState(false);
+  const [, setIssuedSnapshot] = useState<IssuedTicket | null>(null);
   const [readOnlyBack, setReadOnlyBack] = useState(false);
 
   const resetTicket = () => {
     setFront(null);
+    setSelectedGalleryId(null);
     setBacks([]);
     setFrame(0);
     setFrameChosen(false);
@@ -917,26 +1089,33 @@ export default function TicketCreationScreen({
     stickerId.current = 0;
     setCaption("");
     setTicketFont("sans-serif");
-    setTitle("");
-    setLocation("");
+    setTicketTitle("");
+    setTicketPlace("");
     setBackStyle(0);
-    setMemo("");
+    setBackText("");
     setBackColor("#F2E8DC");
-    setVisitDate("");
+    setSide("front");
+    setTicketDate("");
     setTab(1);
+    setIssuedSnapshot(null);
     if (onCreateNew) onCreateNew();
     else {
-      returnHome();
+      onBackHome();
     }
   };
 
   const finishIssuing = async () => {
     if (issuingTicket) return;
+    const date = ticketDate.trim();
+    if (!/^\d{4}\.\d{2}\.\d{2}$/.test(date)) {
+      Alert.alert("날짜 확인", "먼저 달력에서 티켓 날짜를 선택해 주세요.");
+      return;
+    }
     const input = createTicketSchema.safeParse({
-      title,
-      location,
-      visitDate: visitDate.trim().replaceAll(".", "-"),
-      memo,
+      title: ticketTitle,
+      location: ticketPlace,
+      visitDate: date.replaceAll(".", "-"),
+      memo: backText,
     });
     if (!input.success) {
       Alert.alert(
@@ -948,7 +1127,7 @@ export default function TicketCreationScreen({
     setIssuingTicket(true);
     try {
       const snapshot: IssuedTicket = {
-        visitDate: input.data.visitDate,
+        visitDate: date.replaceAll(".", "-"),
         front,
         backs,
         frame,
@@ -956,10 +1135,10 @@ export default function TicketCreationScreen({
         caption,
         sticker,
         ticketFont,
-        title: input.data.title,
-        location: input.data.location,
+        title: ticketTitle,
+        location: ticketPlace,
         backStyle,
-        memo,
+        memo: backText,
         backColor,
         issuedAt: new Date().toISOString(),
       };
@@ -969,9 +1148,10 @@ export default function TicketCreationScreen({
           "이미 발권한 날짜",
           "이 날짜에는 이미 티켓이 있어요. 달력에서 기존 티켓을 확인해 주세요.",
         );
-        returnHome();
+        onBackHome();
         return;
       }
+      setIssuedSnapshot(snapshot);
       go("issued");
     } catch {
       Alert.alert("발권 실패", "티켓을 저장하지 못했어요. 다시 시도해 주세요.");
@@ -986,19 +1166,8 @@ export default function TicketCreationScreen({
         return (
           <>
             <Text style={styles.helper}>
-              사진은 선택 사항이에요. 앞면 1장, 뒷면 최대{" "}
-              {TEMP_BACK_PHOTO_LIMIT}장을 선택할 수 있습니다.
+              앞면 사진 1장, 뒷면 사진 최대 3장을 선택할 수 있습니다.
             </Text>
-            {!selectedVisitDate && (
-              <TextInput
-                accessibilityLabel="방문 날짜, YYYY-MM-DD 형식"
-                value={visitDate}
-                onChangeText={setVisitDate}
-                placeholder="방문 날짜 (YYYY-MM-DD)"
-                autoCapitalize="none"
-                style={styles.backTextInput}
-              />
-            )}
             <View style={styles.rule} />
             <View style={styles.filterContainer}>
               {["임시 저장", "최근 항목"].map((name, i) => (
@@ -1069,14 +1238,18 @@ export default function TicketCreationScreen({
                         styles.galleryItem,
                         { width: cell, height: cell },
                       ]}
-                      onPress={() => setFront(item.uri)}
+                      onPress={() => {
+                        if ("filename" in item) {
+                          void selectGalleryPhoto(item);
+                        }
+                      }}
                     >
                       <Image
                         source={{ uri: item.uri }}
                         style={styles.fillImage}
                         resizeMode="cover"
                       />
-                      {front === item.uri && (
+                      {selectedGalleryId === item.id && (
                         <View style={styles.selected}>
                           <Text style={styles.selectedText}>✓</Text>
                         </View>
@@ -1109,9 +1282,9 @@ export default function TicketCreationScreen({
           </>
         );
       case "frames":
-        return renderFrameSelection({});
+        return <FrameSelection />;
       case "frameConfirm":
-        return renderFrameSelection({ confirmed: true });
+        return <FrameSelection confirmed />;
       case "decorate":
       case "stickerPlace":
         return (
@@ -1129,11 +1302,11 @@ export default function TicketCreationScreen({
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
-                title={title}
-                visitDate={visitDate}
-                location={location}
-                setTitle={setTitle}
-                setLocation={setLocation}
+                ticketTitle={ticketTitle}
+                ticketDate={ticketDate}
+                ticketPlace={ticketPlace}
+                setTicketTitle={setTicketTitle}
+                setTicketPlace={setTicketPlace}
               />
             </View>
             {!keyboardVisible && (
@@ -1183,11 +1356,11 @@ export default function TicketCreationScreen({
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
-                title={title}
-                visitDate={visitDate}
-                location={location}
-                setTitle={setTitle}
-                setLocation={setLocation}
+                ticketTitle={ticketTitle}
+                ticketDate={ticketDate}
+                ticketPlace={ticketPlace}
+                setTicketTitle={setTicketTitle}
+                setTicketPlace={setTicketPlace}
               />
             </View>
             <View style={styles.stickerSheet}>
@@ -1301,11 +1474,11 @@ export default function TicketCreationScreen({
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
-                title={title}
-                visitDate={visitDate}
-                location={location}
-                setTitle={setTitle}
-                setLocation={setLocation}
+                ticketTitle={ticketTitle}
+                ticketDate={ticketDate}
+                ticketPlace={ticketPlace}
+                setTicketTitle={setTicketTitle}
+                setTicketPlace={setTicketPlace}
               />
             </View>
             <View style={styles.decorateTabs}>
@@ -1351,11 +1524,11 @@ export default function TicketCreationScreen({
                   onStickerMove={moveSticker}
                   frame={frame}
                   front={front}
-                  title={title}
-                  visitDate={visitDate}
-                  location={location}
-                  setTitle={setTitle}
-                  setLocation={setLocation}
+                  ticketTitle={ticketTitle}
+                  ticketDate={ticketDate}
+                  ticketPlace={ticketPlace}
+                  setTicketTitle={setTicketTitle}
+                  setTicketPlace={setTicketPlace}
                 />
               </View>
             )}
@@ -1430,41 +1603,45 @@ export default function TicketCreationScreen({
                     <Text style={styles.textFieldLabel}>TITLE</Text>
                     <TextInput
                       style={styles.textFieldInput}
-                      value={title}
-                      onChangeText={setTitle}
+                      value={ticketTitle}
+                      onChangeText={setTicketTitle}
                       maxLength={TICKET_TITLE_MAX}
                       onBlur={() =>
-                        setTitle((value) => value.slice(0, TICKET_TITLE_MAX))
+                        setTicketTitle((value) =>
+                          Array.from(value).slice(0, TICKET_TITLE_MAX).join(""),
+                        )
                       }
-                      placeholder={`제목 입력 (최대 ${TICKET_TITLE_MAX}자)`}
+                      placeholder="제목 입력 (최대 15자)"
                       placeholderTextColor="#B9AAA0"
                       autoCorrect={false}
                       returnKeyType="done"
-                      accessibilityLabel={`TITLE 제목 입력, 최대 ${TICKET_TITLE_MAX}자`}
+                      accessibilityLabel="TITLE 제목 입력, 최대 15자"
                     />
                   </View>
                   <View style={styles.textFieldRow}>
                     <Text style={styles.textFieldLabel}>DATE</Text>
                     <Text style={styles.textDatePlaceholder}>
-                      {visitDate || "달력 연동 예정"}
+                      {ticketDate || "달력 연동 예정"}
                     </Text>
                   </View>
                   <View style={styles.textFieldRow}>
                     <Text style={styles.textFieldLabel}>PLACE</Text>
                     <TextInput
                       style={styles.textFieldInput}
-                      value={location}
-                      onChangeText={setLocation}
+                      value={ticketPlace}
+                      onChangeText={setTicketPlace}
                       maxLength={TICKET_LOCATION_MAX}
                       onBlur={() =>
-                        setLocation((value) =>
-                          value.slice(0, TICKET_LOCATION_MAX),
+                        setTicketPlace((value) =>
+                          Array.from(value)
+                            .slice(0, TICKET_LOCATION_MAX)
+                            .join(""),
                         )
                       }
-                      placeholder={`장소 입력 (최대 ${TICKET_LOCATION_MAX}자)`}
+                      placeholder="장소 입력 (최대 15자)"
                       placeholderTextColor="#B9AAA0"
                       returnKeyType="done"
-                      accessibilityLabel={`PLACE 장소 입력, 최대 ${TICKET_LOCATION_MAX}자`}
+                      accessibilityLabel="PLACE 장소 입력, 최대 15자"
                     />
                   </View>
                 </ScrollView>
@@ -1516,11 +1693,11 @@ export default function TicketCreationScreen({
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
-                  title={title}
-                  visitDate={visitDate}
-                  location={location}
-                  setTitle={setTitle}
-                  setLocation={setLocation}
+                  ticketTitle={ticketTitle}
+                  ticketDate={ticketDate}
+                  ticketPlace={ticketPlace}
+                  setTicketTitle={setTicketTitle}
+                  setTicketPlace={setTicketPlace}
                 />
               </View>
             </View>
@@ -1546,7 +1723,7 @@ export default function TicketCreationScreen({
                   </Text>
                 </View>
               )}
-              {!keyboardVisible && renderTicket({ backSide: true })}
+              {!keyboardVisible && <Ticket backSide />}
               {!keyboardVisible && (
                 <View style={styles.backPalette}>
                   {BACK_COLORS.map((color) => (
@@ -1570,24 +1747,24 @@ export default function TicketCreationScreen({
                   onPress={() => void pick(true)}
                 >
                   <Text style={styles.backPhotoButtonText}>
-                    사진 추가 및 변경 ({backs.length}/{TEMP_BACK_PHOTO_LIMIT})
+                    사진 추가 및 변경 ({backs.length}/{FREE_BACK_PHOTO_LIMIT})
                   </Text>
                 </Pressable>
               )}
               <Text style={styles.backInputLabel}>
-                뒷면에 남길 글 · 최대 {TICKET_MEMO_MAX}자
+                뒷면에 남길 글 · 최대 80자
               </Text>
               <TextInput
                 style={styles.backTextInput}
                 multiline
                 maxLength={TICKET_MEMO_MAX}
-                value={memo}
-                onChangeText={setMemo}
+                value={backText}
+                onChangeText={setBackText}
                 placeholder="이날의 기억을 적어 주세요"
                 placeholderTextColor="#987966"
               />
               <Text style={styles.backCount}>
-                {memo.length}/{TICKET_MEMO_MAX}
+                {Array.from(backText).length}/80
               </Text>
             </ScrollView>
             {keyboardVisible ? (
@@ -1611,13 +1788,11 @@ export default function TicketCreationScreen({
         return (
           <>
             <View style={styles.center}>
-              {renderTicket({ backSide: true })}
+              <Ticket backSide />
             </View>
             <View style={styles.options}>
               <F onPress={() => void pick(false)}>앞면 사진 변경</F>
-              <F onPress={() => void pick(true)}>
-                뒷면 사진 변경 (최대 {TEMP_BACK_PHOTO_LIMIT}장)
-              </F>
+              <F onPress={() => void pick(true)}>뒷면 사진 변경 (최대 3장)</F>
             </View>
             <Action
               label="저장 전 확인하기  →"
@@ -1637,11 +1812,11 @@ export default function TicketCreationScreen({
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
-                  title={title}
-                  visitDate={visitDate}
-                  location={location}
-                  setTitle={setTitle}
-                  setLocation={setLocation}
+                  ticketTitle={ticketTitle}
+                  ticketDate={ticketDate}
+                  ticketPlace={ticketPlace}
+                  setTicketTitle={setTicketTitle}
+                  setTicketPlace={setTicketPlace}
                 />
               </View>
             </View>
@@ -1665,10 +1840,10 @@ export default function TicketCreationScreen({
                 >
                   <BackTicketContent
                     photos={backs}
-                    text={memo}
-                    visitDate={visitDate}
+                    text={backText}
+                    date={ticketDate}
                     color={backColor}
-                    onMore={() => setExpandedText(memo)}
+                    onMore={() => setExpandedText(backText)}
                   />
                 </View>
               </View>
@@ -1704,11 +1879,11 @@ export default function TicketCreationScreen({
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
-                  title={title}
-                  visitDate={visitDate}
-                  location={location}
-                  setTitle={setTitle}
-                  setLocation={setLocation}
+                  ticketTitle={ticketTitle}
+                  ticketDate={ticketDate}
+                  ticketPlace={ticketPlace}
+                  setTicketTitle={setTicketTitle}
+                  setTicketPlace={setTicketPlace}
                 />
               </View>
             </View>
@@ -1730,11 +1905,11 @@ export default function TicketCreationScreen({
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
-                  title={title}
-                  visitDate={visitDate}
-                  location={location}
-                  setTitle={setTitle}
-                  setLocation={setLocation}
+                  ticketTitle={ticketTitle}
+                  ticketDate={ticketDate}
+                  ticketPlace={ticketPlace}
+                  setTicketTitle={setTicketTitle}
+                  setTicketPlace={setTicketPlace}
                 />
               </View>
             </View>
@@ -1765,8 +1940,8 @@ export default function TicketCreationScreen({
           onClose={() => setExpandedText(null)}
         />
         <View style={styles.header}>
-          <Pressable onPress={returnHome} style={styles.back}>
-            <Text style={styles.backButtonText}>‹</Text>
+          <Pressable onPress={onBackHome} style={styles.back}>
+            <Text style={styles.backText}>‹</Text>
           </Pressable>
           <Text style={styles.headerTitle}>
             발권한 티켓 · {readOnlyBack ? "뒷면" : "앞면"}
@@ -1787,7 +1962,7 @@ export default function TicketCreationScreen({
               <BackTicketContent
                 photos={issuedTicket.backs ?? []}
                 text={issuedTicket.memo ?? ""}
-                visitDate={issuedTicket.visitDate}
+                date={issuedTicket.visitDate}
                 color={issuedTicket.backColor ?? "#F2E8DC"}
                 onMore={() => setExpandedText(issuedTicket.memo ?? "")}
               />
@@ -1800,11 +1975,11 @@ export default function TicketCreationScreen({
               stickers={issuedTicket.placedStickers}
               frame={readOnlyFrame}
               front={issuedTicket.front}
-              title={issuedTicket.title}
-              visitDate={issuedTicket.visitDate}
-              location={issuedTicket.location}
-              setTitle={setTitle}
-              setLocation={setLocation}
+              ticketTitle={issuedTicket.title}
+              ticketDate={issuedTicket.visitDate}
+              ticketPlace={issuedTicket.location}
+              setTicketTitle={setTicketTitle}
+              setTicketPlace={setTicketPlace}
             />
           )}
           <Text style={styles.info}>
@@ -1842,7 +2017,7 @@ export default function TicketCreationScreen({
       >
         <View style={styles.header}>
           <Pressable onPress={back} style={styles.back}>
-            <Text style={styles.backButtonText}>‹</Text>
+            <Text style={styles.backText}>‹</Text>
           </Pressable>
           <Text style={styles.headerTitle}>
             {step === "decorate" ||
@@ -2398,7 +2573,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  backButtonText: { color: C.brown, fontSize: 34, lineHeight: 39 },
+  backText: { color: C.brown, fontSize: 34, lineHeight: 39 },
   headerTitle: { color: C.brown, fontSize: 16, fontWeight: "500" },
   body: { flex: 1 },
   helper: {
