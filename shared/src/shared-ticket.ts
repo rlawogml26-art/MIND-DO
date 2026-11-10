@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { GROUP_MAX_MEMBERS } from "./groups.js";
-import { PHOTO_UPLOAD_MAX_COUNT, PHOTO_UPLOAD_MIN_COUNT } from "./photo-upload.js";
+import {
+  PHOTO_UPLOAD_MAX_COUNT,
+  PHOTO_UPLOAD_MIN_COUNT,
+} from "./photo-upload.js";
 import { ticketDesignSchema } from "./ticket-design.js";
 
 export const JOINT_TITLE_MAX = 12;

@@ -177,9 +177,7 @@ export const findSharedTicketDetail = async ({
     creatorId: sharedTicket.creatorId,
     createdAt: sharedTicket.createdAt,
     leaderId: sharedTicket.group.leaderId,
-    currentMemberIds: sharedTicket.group.members.map(
-      (member) => member.userId,
-    ),
+    currentMemberIds: sharedTicket.group.members.map((member) => member.userId),
     invitees: sharedTicket.invitees,
     tickets: sharedTicket.tickets.map((ticket) => ({
       ticketId: ticket.id,
