@@ -8,6 +8,7 @@ const positiveInt = z.coerce.number().int().positive();
 
 const aiDraftsEnvSchema = z.object({
   AWS_REGION: z.string().min(1),
+  S3_BUCKET_NAME: z.string().min(1),
   BEDROCK_MODEL_ID: z.string().min(1),
   AI_TIMEOUT_MS: positiveInt, // Bedrock 1회 호출 제한 시간
   AI_IMAGE_MAX_SIDE: positiveInt, // AI에 보내는 사진의 긴 변(px)
@@ -19,6 +20,7 @@ const aiDraftsEnvSchema = z.object({
 
 export type AiDraftsConfig = {
   region: string;
+  bucketName: string;
   modelId: string;
   timeoutMs: number;
   imageMaxSide: number;
@@ -39,6 +41,7 @@ export function readAiDraftsConfig(
   const e = parsed.data;
   return {
     region: e.AWS_REGION,
+    bucketName: e.S3_BUCKET_NAME,
     modelId: e.BEDROCK_MODEL_ID,
     timeoutMs: e.AI_TIMEOUT_MS,
     imageMaxSide: e.AI_IMAGE_MAX_SIDE,
@@ -48,3 +51,5 @@ export function readAiDraftsConfig(
     temperature: e.AI_TEMPERATURE,
   };
 }
+
+export const aiDraftsConfig = readAiDraftsConfig();

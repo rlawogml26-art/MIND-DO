@@ -10,15 +10,15 @@ export const TEMPLATE_INFO: Record<
   CompositeTemplateId,
   { name: string; description: string }
 > = {
-  blend: {
+  blend_fade: {
     name: "자연스러운 장면",
     description: "사진들의 색감을 이어 자연스럽게 한 장면처럼 합성",
   },
-  collage: {
+  collage_grid: {
     name: "감각적인 조합",
     description: "사진의 주요 장면을 자유롭게 겹쳐 배치",
   },
-  light: {
+  light_basic: {
     name: "광원·색감·질감",
     description: "빛과 색, 질감으로 분위기를 강조",
   },

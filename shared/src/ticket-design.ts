@@ -9,7 +9,11 @@ export const TICKET_DESIGN_VERSION = 1;
 
 // 카탈로그 ID (중간 발표용 임시값, 카탈로그 v4에서 확정)
 // 사진 합성 템플릿: 자연스러운 장면 / 감각적인 조합 / 광원·색감·질감
-export const COMPOSITE_TEMPLATE_IDS = ["blend", "collage", "light"] as const;
+export const COMPOSITE_TEMPLATE_IDS = [
+  "blend_fade",
+  "collage_grid",
+  "light_basic",
+] as const;
 // 팔레트: 따뜻한 노을 / 차분한 푸른빛 / 밤의 조명 / 파스텔 / 선명한 색 / 빈티지 흑백
 // 팔레트는 색 하나가 아니라 "사진에서 뽑은 색을 어떻게 다듬을지"의 규칙이다.
 // 실제 색(backgroundColor)은 서버가 사진의 주요 색과 팔레트 규칙으로 만든다.
