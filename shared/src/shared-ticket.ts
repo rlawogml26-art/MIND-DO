@@ -128,3 +128,37 @@ export type IssuedTicketResponse = z.infer<typeof issuedTicketResponseSchema>;
 export type SharedTicketDetailResponse = z.infer<
   typeof sharedTicketDetailResponseSchema
 >;
+
+// 공동 티켓 목록 조회 (GET /api/groups/{groupId}/shared-tickets)
+// month: 이 달만 (YYYY-MM). 없으면 전체
+export const sharedTicketListQuerySchema = z.object({
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+    .optional(),
+});
+
+export const sharedTicketSummarySchema = z.object({
+  sharedTicketId: positiveIdSchema,
+  ticketDate: ticketDateSchema,
+  title: z.string().nullable(),
+  creatorId: positiveIdSchema,
+  // 슬롯 수(= 초대자 수) / 개인 티켓을 저장한 수
+  slotCount: z.number().int().min(0).max(GROUP_MAX_MEMBERS),
+  completedCount: z.number().int().min(0).max(GROUP_MAX_MEMBERS),
+  isInvited: z.boolean(),
+  // 내 슬롯 상태. 초대자가 아니면 null
+  myStatus: z.enum([SLOT_STATUS_EMPTY, SLOT_STATUS_COMPLETED]).nullable(),
+  // 가장 먼저 저장된 개인 티켓의 대표 사진(1번). 없으면 null
+  coverPhotoUrl: z.url().nullable(),
+});
+
+export const sharedTicketListResponseSchema = z.object({
+  sharedTickets: z.array(sharedTicketSummarySchema),
+});
+
+export type SharedTicketListQuery = z.infer<typeof sharedTicketListQuerySchema>;
+export type SharedTicketSummary = z.infer<typeof sharedTicketSummarySchema>;
+export type SharedTicketListResponse = z.infer<
+  typeof sharedTicketListResponseSchema
+>;

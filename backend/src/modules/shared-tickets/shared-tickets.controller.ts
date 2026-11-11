@@ -7,6 +7,8 @@ import {
   issueTicketRequestSchema,
   sharedTicketDetailResponseSchema,
   sharedTicketIdParamsSchema,
+  sharedTicketListQuerySchema,
+  sharedTicketListResponseSchema,
   sharedTicketPhotoUploadParamsSchema,
   sharedTicketPhotoUploadRequestSchema,
   sharedTicketPhotoUploadUrlsResponseSchema,
@@ -18,6 +20,7 @@ import {
 import {
   createSharedTicket,
   createSharedTicketPhotoUploadUrls,
+  getGroupSharedTicketList,
   getSharedTicketDetail,
   GroupNotFoundError,
   InvalidDesignError,
@@ -233,6 +236,28 @@ export const postIssuedTicket = async (req: Request, res: Response) => {
     return res
       .status(201)
       .json({ data: issuedTicketResponseSchema.parse(ticket) });
+  } catch (error: unknown) {
+    if (sendKnownError(res, error)) return;
+    throw error;
+  }
+};
+
+export const getGroupSharedTickets = async (req: Request, res: Response) => {
+  const parsedParams = groupIdParamsSchema.safeParse(req.params);
+  const parsedQuery = sharedTicketListQuerySchema.safeParse(req.query);
+  if (!parsedParams.success || !parsedQuery.success) {
+    return sendInvalidInput(res);
+  }
+
+  try {
+    const list = await getGroupSharedTicketList(
+      req.headers.cookie,
+      parsedParams.data.groupId,
+      parsedQuery.data.month,
+    );
+    return res
+      .status(200)
+      .json({ data: sharedTicketListResponseSchema.parse(list) });
   } catch (error: unknown) {
     if (sendKnownError(res, error)) return;
     throw error;

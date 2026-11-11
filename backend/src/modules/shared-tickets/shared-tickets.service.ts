@@ -7,6 +7,8 @@ import {
   ticketDesignSchema,
   type CreateSharedTicketRequest,
   type IssueTicketRequest,
+  type SharedTicketListResponse,
+  type SharedTicketSummary,
   type SharedTicketPhotoUploadRequest,
 } from "@mind-do/shared";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
@@ -270,4 +272,44 @@ export const issueTicket = async (
     design: design.data,
     createdAt: result.createdAt.toISOString(),
   };
+};
+
+// 공동 티켓 목록. 초대받지 않은 공동 티켓도 그룹의 현재 멤버면 볼 수 있다 (API 명세)
+export const getGroupSharedTicketList = async (
+  cookieHeader: string | undefined,
+  groupId: number,
+  month: string | undefined,
+): Promise<SharedTicketListResponse> => {
+  const userId = getRequesterId(cookieHeader);
+  const rows = await repository.findGroupSharedTickets({
+    groupId,
+    userId,
+    month,
+  });
+  if (!rows) throw new GroupNotFoundError();
+
+  const sharedTickets = await Promise.all(
+    rows.map(async (row): Promise<SharedTicketSummary> => {
+      const isInvited = row.inviteeIds.includes(userId);
+      return {
+        sharedTicketId: row.sharedTicketId,
+        ticketDate: row.ticketDate,
+        title: row.title,
+        creatorId: row.creatorId,
+        slotCount: row.inviteeIds.length,
+        completedCount: row.completedUserIds.length,
+        isInvited,
+        myStatus: isInvited
+          ? row.completedUserIds.includes(userId)
+            ? SLOT_STATUS_COMPLETED
+            : SLOT_STATUS_EMPTY
+          : null,
+        // 사진 링크는 열람 권한(그룹 현재 멤버)을 확인한 뒤에만 발급한다
+        coverPhotoUrl: row.coverPhotoKey
+          ? await createPhotoViewUrl(row.coverPhotoKey)
+          : null,
+      };
+    }),
+  );
+  return { sharedTickets };
 };
