@@ -11,6 +11,28 @@ export const emailExists = async (email: string): Promise<boolean> =>
     select: { id: true },
   })) !== null;
 
+export const findUserForLogin = (email: string) =>
+  getPrismaClient().user.findUnique({
+    where: { email, deletedAt: null },
+    select: { id: true, nickname: true, passwordHash: true },
+  });
+
+export const createLoginSession = async (
+  userId: number,
+  tokenHash: string,
+  expiresAt: Date,
+): Promise<void> => {
+  const now = new Date();
+  await getPrismaClient().$transaction(async (transaction) => {
+    await transaction.refreshToken.deleteMany({
+      where: { userId, expiresAt: { lte: now } },
+    });
+    await transaction.refreshToken.create({
+      data: { userId, tokenHash, expiresAt },
+    });
+  });
+};
+
 type CreateSignupInput = {
   email: string;
   name: string;

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { signup } from "./auth.controller.js";
+import { login, signup } from "./auth.controller.js";
 
 const router = Router();
 
@@ -7,7 +7,7 @@ const router = Router();
  * @swagger
  * tags:
  *   name: 인증
- *   description: 회원가입
+ *   description: 회원가입 및 로그인
  */
 
 /**
@@ -61,5 +61,56 @@ const router = Router();
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post("/signup", signup);
+
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: 로그인
+ *     tags: [인증]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/LoginRequest'
+ *           example:
+ *             email: user@example.com
+ *             password: password123
+ *     responses:
+ *       200:
+ *         description: 로그인 성공. accessToken과 refreshToken은 HttpOnly 쿠키로 설정됩니다.
+ *         headers:
+ *           Set-Cookie:
+ *             description: accessToken (Path=/), refreshToken (Path=/api/auth) HttpOnly 쿠키
+ *             schema:
+ *               type: string
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   $ref: '#/components/schemas/LoginResponse'
+ *       400:
+ *         description: 입력값 검증 실패
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: 이메일 또는 비밀번호 불일치
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: 서버 오류
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post("/login", login);
 
 export default router;

@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "3.1164.0",
+    "@aws-sdk/client-s3": "3.1164.0",
+    "@aws-sdk/s3-presigned-post": "3.1164.0",
     "@mind-do/shared": "0.0.0",
     "@prisma/adapter-mariadb": "7.10.1",
     "@prisma/client": "7.10.1",
