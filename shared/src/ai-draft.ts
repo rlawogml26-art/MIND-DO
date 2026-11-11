@@ -1,9 +1,11 @@
 import { z } from "zod";
+import {
+  PHOTO_UPLOAD_MAX_COUNT,
+  PHOTO_UPLOAD_MIN_COUNT,
+} from "./photo-upload.js";
 import { ticketDesignSchema } from "./ticket-design.js";
 
 // AI 초안 (AGENTS.md "AI 초안", 노션 API 명세 "AI 초안 생성")
-// 요청 스키마(사진 키 1~4장)는 사진 업로드 상수와 함께 AI 초안 API PR에서 추가한다.
-
 // 분위기 프롬프트 최대 글자 수 (임시값, AGENTS.md "임시값". AI 테스트 후 확정)
 // 개인 티켓 뒷면 메모(500자)와 다른 값이다.
 export const MOOD_PROMPT_MAX = 50;
@@ -22,6 +24,23 @@ export const moodPromptSchema = z
   .nullish()
   .transform((value) => (value ? value : null));
 
+export const aiDraftsParamsSchema = z.object({
+  sharedTicketId: z
+    .string()
+    .regex(/^[1-9]\d*$/)
+    .transform(Number)
+    .pipe(z.number().int().positive().max(Number.MAX_SAFE_INTEGER)),
+});
+
+export const aiDraftsRequestSchema = z.object({
+  photoKeys: z
+    .array(z.string().min(1).max(255))
+    .min(PHOTO_UPLOAD_MIN_COUNT)
+    .max(PHOTO_UPLOAD_MAX_COUNT)
+    .refine((photoKeys) => new Set(photoKeys).size === photoKeys.length),
+  moodPrompt: moodPromptSchema.optional(),
+});
+
 export const aiDraftSchema = z.object({
   draftNo: z.number().int().min(1).max(AI_DRAFT_COUNT), // 1번이 추천안
   source: z.enum(AI_DRAFT_SOURCES),
@@ -33,5 +52,6 @@ export const aiDraftsResponseSchema = z.object({
 });
 
 export type AiDraftSource = (typeof AI_DRAFT_SOURCES)[number];
+export type AiDraftsRequest = z.infer<typeof aiDraftsRequestSchema>;
 export type AiDraft = z.infer<typeof aiDraftSchema>;
 export type AiDraftsResponse = z.infer<typeof aiDraftsResponseSchema>;

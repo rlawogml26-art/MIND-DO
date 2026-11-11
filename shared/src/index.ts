@@ -8,3 +8,4 @@ export * from "./ticket-design.js";
 export * from "./ai-draft.js";
 export * from "./mood-tags.js";
 export * from "./shared-ticket.js";
+export * from "./photo-upload.js";
