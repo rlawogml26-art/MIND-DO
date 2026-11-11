@@ -248,3 +248,66 @@ export const createIssuedTicket = async ({
     throw error;
   }
 };
+
+type FindGroupSharedTicketsInput = {
+  groupId: number;
+  userId: number;
+  month?: string;
+};
+
+// 그룹의 공동 티켓 목록 (날짜 최신순). 요청자가 그룹의 현재 멤버가 아니면 null.
+// 초대자·완성 티켓·대표 사진을 관계 조회로 한 번에 가져온다 (공동 티켓마다 따로 조회하지 않는다)
+export const findGroupSharedTickets = async ({
+  groupId,
+  userId,
+  month,
+}: FindGroupSharedTicketsInput) => {
+  const membership = await getPrismaClient().groupMember.findFirst({
+    where: { groupId, userId, leftAt: null, group: { deletedAt: null } },
+    select: { id: true },
+  });
+  if (!membership) return null;
+
+  const monthRange = month
+    ? {
+        gte: fromDateOnly(`${month}-01`),
+        lt: new Date(
+          Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1),
+        ),
+      }
+    : undefined;
+
+  const sharedTickets = await getPrismaClient().sharedTicket.findMany({
+    where: { groupId, ...(monthRange ? { ticketDate: monthRange } : {}) },
+    orderBy: [{ ticketDate: "desc" }],
+    select: {
+      id: true,
+      ticketDate: true,
+      title: true,
+      creatorId: true,
+      invitees: { select: { userId: true } },
+      tickets: {
+        where: { status: "COMPLETED", deletedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: {
+          userId: true,
+          images: {
+            orderBy: { sortOrder: "asc" },
+            take: 1,
+            select: { s3Key: true },
+          },
+        },
+      },
+    },
+  });
+
+  return sharedTickets.map((sharedTicket) => ({
+    sharedTicketId: sharedTicket.id,
+    ticketDate: toDateOnly(sharedTicket.ticketDate),
+    title: sharedTicket.title,
+    creatorId: sharedTicket.creatorId,
+    inviteeIds: sharedTicket.invitees.map((invitee) => invitee.userId),
+    completedUserIds: sharedTicket.tickets.map((ticket) => ticket.userId),
+    coverPhotoKey: sharedTicket.tickets[0]?.images[0]?.s3Key ?? null,
+  }));
+};

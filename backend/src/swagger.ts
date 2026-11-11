@@ -21,6 +21,7 @@ import {
   signupRequestSchema,
   signupResponseSchema,
   sharedTicketDetailResponseSchema,
+  sharedTicketListResponseSchema,
   sharedTicketPhotoUploadRequestSchema,
   sharedTicketPhotoUploadUrlsResponseSchema,
   updateTicketSchema,
@@ -120,6 +121,10 @@ const options: swaggerJsdoc.Options = {
         CreateSharedTicketRequest: z.toJSONSchema(
           createSharedTicketRequestSchema,
           { target: "openapi-3.0", io: "input" },
+        ),
+        SharedTicketListResponse: z.toJSONSchema(
+          sharedTicketListResponseSchema,
+          { target: "openapi-3.0", io: "output" },
         ),
         SharedTicketDetailResponse: z.toJSONSchema(
           sharedTicketDetailResponseSchema,

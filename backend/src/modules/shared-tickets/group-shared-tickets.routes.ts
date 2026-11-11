@@ -1,7 +1,10 @@
 import { Router } from "express";
-import { postSharedTicket } from "./shared-tickets.controller.js";
+import {
+  getGroupSharedTickets,
+  postSharedTicket,
+} from "./shared-tickets.controller.js";
 
-// 공동 티켓 생성은 그룹 아래 주소(/api/groups/{groupId}/shared-tickets)라 server.ts에서 /api/groups에 따로 연결한다.
+// 공동 티켓 생성·목록은 그룹 아래 주소(/api/groups/{groupId}/shared-tickets)라 server.ts에서 /api/groups에 따로 연결한다.
 const router = Router();
 
 /**
@@ -62,5 +65,59 @@ const router = Router();
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post("/:groupId/shared-tickets", postSharedTicket);
+
+/**
+ * @swagger
+ * /api/groups/{groupId}/shared-tickets:
+ *   get:
+ *     summary: 공동 티켓 목록 조회
+ *     description: 그룹 화면에 보여줄 공동 티켓 목록(날짜 최신순). 초대받지 않은 공동 티켓도 그룹의 현재 멤버면 볼 수 있습니다. myStatus는 내 슬롯 상태(초대자가 아니면 null), coverPhotoUrl은 가장 먼저 저장된 개인 티켓의 대표 사진 링크입니다.
+ *     tags: [공동 티켓]
+ *     security:
+ *       - AccessTokenCookie: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *       - in: query
+ *         name: month
+ *         required: false
+ *         description: 이 달만 (YYYY-MM). 없으면 전체
+ *         schema:
+ *           type: string
+ *           example: "2026-11"
+ *     responses:
+ *       200:
+ *         description: 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   $ref: '#/components/schemas/SharedTicketListResponse'
+ *       400:
+ *         description: groupId 또는 month 형식 오류 (INVALID_INPUT)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: 인증 실패 (UNAUTHORIZED 또는 ACCESS_TOKEN_EXPIRED)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: 그룹이 없거나 내가 멤버가 아님 (GROUP_NOT_FOUND)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get("/:groupId/shared-tickets", getGroupSharedTickets);
 
 export default router;
