@@ -7,7 +7,10 @@ import HomeScreen from "../components/HomeScreen";
 import MyPageScreen, { type Profile } from "../components/MyPageScreen";
 import TicketCreationScreen from "../components/TicketEditor";
 import LoginScreen from "../components/LoginScreen";
-import GroupScreen, { type DemoGroup } from "../components/GroupScreen";
+import GroupScreen, {
+  kstDate,
+  type DemoGroup,
+} from "../components/GroupScreen";
 import { ApiError, getMyGroups } from "../lib/api";
 
 type RootScreen = "home" | "group" | "my" | "dateSelection" | "ticket";
@@ -50,6 +53,8 @@ function AppContent() {
             isDefault: group.isDefault,
             members: group.memberCount,
             maxMembers: group.maxMembers,
+            // 그룹을 만든 날짜(한국시간 YYYY-MM-DD). 그룹 목록 카드에 표시
+            createdAt: kstDate(group.createdAt),
             tickets: [],
           })),
         );
@@ -130,6 +135,7 @@ function AppContent() {
         onOpenMy={() => setScreen("my")}
         groups={groups}
         onGroupsChange={setGroups}
+        currentUserId={user.userId}
       />
     );
   }
