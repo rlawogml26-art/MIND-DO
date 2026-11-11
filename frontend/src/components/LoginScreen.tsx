@@ -1,5 +1,10 @@
 // 후속 Issue #51: 화면 시연 동작을 실제 인증 API와 쿠키 인증으로 연결한다.
-import { signupRequestSchema } from "@mind-do/shared";
+import {
+  ErrorCode,
+  signupRequestSchema,
+  type LoginResponse,
+} from "@mind-do/shared";
+import { ApiError, login, NETWORK_ERROR } from "../lib/api";
 
 const authEmailSchema = signupRequestSchema.shape.email;
 const authPasswordSchema = signupRequestSchema.shape.password;
@@ -33,15 +38,16 @@ const palette = {
 };
 
 type LoginScreenProps = {
-  // 서버 연결 전 홈 화면 이동을 확인하는 기존 콜백입니다.
-  onPreviewHome: () => void;
+  // 로그인에 성공하면 서버가 쿠키를 설정하고, 사용자 정보를 넘깁니다.
+  onLoggedIn: (user: LoginResponse) => void;
 };
 
-export default function LoginScreen({ onPreviewHome }: LoginScreenProps) {
+export default function LoginScreen({ onLoggedIn }: LoginScreenProps) {
   const [splashVisible, setSplashVisible] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
   const [showSignup, setShowSignup] = useState(false);
 
   // 기존 시작 로고 화면을 1.5초 동안 표시합니다.
@@ -53,31 +59,40 @@ export default function LoginScreen({ onPreviewHome }: LoginScreenProps) {
     return () => clearTimeout(timer);
   }, []);
 
-  // 서버 연결 전 사용하는 화면 입력 검사입니다.
-  // 비밀번호 8자리 기준은 기존 코드와 동일하게 유지합니다.
+  // 서버에 보내기 전 화면 입력 검사입니다. 기준은 shared 회원가입 스키마와 같습니다.
   const emailValid = authEmailSchema.safeParse(email.trim()).success;
   const passwordValid = authPasswordSchema.safeParse(password).success;
 
   // 피그마 오류 화면처럼 두 입력란에 공통 오류 상태를 적용합니다.
   const hasError = submitted && (!emailValid || !passwordValid);
 
-  const tryLogin = () => {
+  const tryLogin = async () => {
     setSubmitted(true);
 
-    if (!emailValid || !passwordValid) return;
+    if (!emailValid || !passwordValid || loggingIn) return;
 
     Keyboard.dismiss();
-
-    // TODO: 서버 연결 시 실제 로그인 요청으로 교체합니다.
-    // 현재는 계정을 인증하지 않고 홈 화면 이동만 확인합니다.
-    Alert.alert(
-      "로그인 화면 테스트",
-      "아직 실제 계정 인증은 연결되지 않았어요. 화면 확인용으로 홈에 들어갈까요?",
-      [
-        { text: "취소", style: "cancel" },
-        { text: "홈으로 이동", onPress: onPreviewHome },
-      ],
-    );
+    setLoggingIn(true);
+    try {
+      const user = await login({ email: email.trim(), password });
+      onLoggedIn(user);
+    } catch (error: unknown) {
+      if (
+        error instanceof ApiError &&
+        error.code === ErrorCode.INVALID_CREDENTIALS
+      ) {
+        Alert.alert("로그인 실패", "이메일 또는 비밀번호가 맞지 않아요.");
+      } else if (error instanceof ApiError && error.code === NETWORK_ERROR) {
+        Alert.alert(
+          "연결 오류",
+          "서버에 연결할 수 없어요. 인터넷 연결을 확인해 주세요.",
+        );
+      } else {
+        Alert.alert("로그인 오류", "잠시 후 다시 시도해 주세요.");
+      }
+    } finally {
+      setLoggingIn(false);
+    }
   };
 
   const showPending = (name: string) => {
@@ -186,7 +201,7 @@ export default function LoginScreen({ onPreviewHome }: LoginScreenProps) {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="로그인"
-                onPress={tryLogin}
+                onPress={() => void tryLogin()}
                 style={({ pressed }) => [
                   styles.loginButton,
                   pressed && styles.pressed,

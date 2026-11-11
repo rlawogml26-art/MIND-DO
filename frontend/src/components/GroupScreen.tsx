@@ -33,11 +33,6 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
-/**
- * MEMO:RE 피그마 05. GROUP 화면.
- * 기존 App.tsx의 props / DemoGroup / initialGroups 인터페이스 유지.
- * 그룹·티켓 추가와 초대 확인은 앱 안에서만 바뀌는 시연 데이터이며 서버에 저장되지 않음.
- */
 export type JointTicket = {
   date: string;
   title: string;
@@ -48,7 +43,9 @@ export type JointTicket = {
 export type DemoGroup = {
   id: string;
   name: string;
+  isDefault: boolean;
   members: number;
+  maxMembers: number;
   tickets: JointTicket[];
   createdAt?: string;
 };
@@ -106,34 +103,6 @@ const C = {
   input: "#F9F0EB",
 };
 
-// 피그마 05-1 / 05-2에 보이는 시연용 데이터. 서버 API나 실제 유저 기록이 아님.
-export const initialGroups: DemoGroup[] = [
-  {
-    id: "figma-minddo",
-    name: "마인두!",
-    members: 5,
-    createdAt: "2026-09-12",
-    tickets: [
-      { date: "2026-10-30", title: "가을 산책", completed: 5, invitees: 5 },
-      { date: "2026-10-24", title: "우리의 주말", completed: 5, invitees: 5 },
-    ],
-  },
-  {
-    id: "figma-cute",
-    name: "귀여운 녀석들",
-    members: 3,
-    createdAt: "2026-10-14",
-    tickets: [],
-  },
-  {
-    id: "figma-baseball",
-    name: "야구부",
-    members: 4,
-    createdAt: "2025-03-27",
-    tickets: [],
-  },
-];
-
 const avatarColors = [
   "#F1DFD8",
   "#EADCD4",
@@ -151,7 +120,6 @@ const avatarTextColors = [
   "#555473",
 ];
 const avatarLetters = ["나", "A", "B", "C", "D", "E"];
-const GROUP_CAPACITY = GROUP_MAX_MEMBERS;
 
 const DEMO_INVITE_URL = "memo.re/invite/weekend";
 
@@ -275,16 +243,18 @@ function TicketStub({
 
 function MemberProfiles({
   members,
+  maxMembers,
   onInvite,
   letters,
 }: {
   members: number;
+  maxMembers: number;
   onInvite: () => void;
   letters?: string[];
 }) {
   const currentLetters =
-    letters ?? avatarLetters.slice(1, Math.min(members, GROUP_CAPACITY));
-  const visibleLetters = ["나", ...currentLetters].slice(0, GROUP_CAPACITY);
+    letters ?? avatarLetters.slice(1, Math.min(members, maxMembers));
+  const visibleLetters = ["나", ...currentLetters].slice(0, maxMembers);
   const count = visibleLetters.length;
   return (
     <View style={styles.membersWrap}>
@@ -296,7 +266,7 @@ function MemberProfiles({
               style={[
                 styles.avatar,
                 { backgroundColor: avatarColors[colorIndex] },
-                i === 0 && count < GROUP_CAPACITY && styles.myAvatar,
+                i === 0 && count < maxMembers && styles.myAvatar,
               ]}
             >
               <Text
@@ -314,7 +284,7 @@ function MemberProfiles({
           </View>
         );
       })}
-      {count < GROUP_CAPACITY && (
+      {count < maxMembers && (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="초대 링크 생성"
@@ -341,7 +311,7 @@ export default function GroupScreen({
   onGroupsChange: setGroups,
 }: GroupScreenProps) {
   const [page, setPage] = useState<Page>("groups");
-  const [selectedGroupId, setSelectedGroupId] = useState("figma-minddo");
+  const [selectedGroupId, setSelectedGroupId] = useState("");
   const [popup, setPopup] = useState<Popup>("none");
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
   const [groupName, setGroupName] = useState("");
@@ -386,11 +356,14 @@ export default function GroupScreen({
 
   const selectedGroup =
     groups.find((g) => g.id === selectedGroupId) ?? groups[0];
+  const regularGroups = groups.filter((group) => !group.isDefault);
+  const defaultGroup = groups.find((group) => group.isDefault);
+  const regularGroupCount = regularGroups.length;
   const currentMemberLetters = useMemo(() => {
     if (!selectedGroup) return [];
     const removed = removedMembersByGroup[selectedGroup.id] ?? [];
     const availableBeforeRemoval = Math.min(
-      GROUP_CAPACITY - 1,
+      selectedGroup.maxMembers - 1,
       Math.max(0, selectedGroup.members - 1 + removed.length),
     );
     return avatarLetters
@@ -477,7 +450,7 @@ export default function GroupScreen({
     return date;
   }
   function newGroup() {
-    if (groups.length >= USER_GROUP_MAX) {
+    if (regularGroupCount >= USER_GROUP_MAX) {
       Alert.alert(
         "그룹 수 제한",
         `기본 그룹을 제외하고 최대 ${USER_GROUP_MAX}개까지 참여할 수 있어요.`,
@@ -510,7 +483,7 @@ export default function GroupScreen({
       Alert.alert("입력 확인", "그룹 이름과 제목을 확인해 주세요.");
       return;
     }
-    if (groups.length >= USER_GROUP_MAX) {
+    if (regularGroupCount >= USER_GROUP_MAX) {
       setPage("groupFail");
       return;
     }
@@ -518,7 +491,9 @@ export default function GroupScreen({
       id: `local-${Date.now()}`,
       name: name.data,
       createdAt: dateToday(),
+      isDefault: false,
       members: 1,
+      maxMembers: GROUP_MAX_MEMBERS,
       tickets: [{ date, title: title.data, completed: 0, invitees: 1 }],
     };
     setGroups((old) => [...old, item]);
@@ -584,11 +559,11 @@ export default function GroupScreen({
     ]);
   }
   function joinDemo() {
-    if (!selectedGroup) return;
-    if (selectedGroup.members >= GROUP_CAPACITY) {
+    if (!selectedGroup || selectedGroup.isDefault) return;
+    if (selectedGroup.members >= selectedGroup.maxMembers) {
       Alert.alert(
         "참여할 수 없어요",
-        `그룹 정원은 최대 ${GROUP_CAPACITY}명이에요.`,
+        `그룹 정원은 최대 ${selectedGroup.maxMembers}명이에요.`,
       );
       return;
     }
@@ -600,7 +575,7 @@ export default function GroupScreen({
     setGroups((old) =>
       old.map((g) =>
         g.id === selectedGroup.id
-          ? { ...g, members: Math.min(GROUP_CAPACITY, g.members + 1) }
+          ? { ...g, members: Math.min(selectedGroup.maxMembers, g.members + 1) }
           : g,
       ),
     );
@@ -613,6 +588,7 @@ export default function GroupScreen({
     );
   }
   async function shareInvite() {
+    if (!selectedGroup || selectedGroup.isDefault) return;
     // Figma의 memo.re/invite/weekend는 예시 주소. 실제 초대 URL로 오인하지 않도록 명시.
     try {
       await Share.share({
@@ -629,6 +605,7 @@ export default function GroupScreen({
     );
   }
   function startLeave() {
+    if (selectedGroup?.isDefault) return;
     setPopup("none");
     setLeaveRecordChoice("keep");
     setNewLeaderName(null);
@@ -662,6 +639,7 @@ export default function GroupScreen({
     finishLeave();
   }
   function finishLeave() {
+    if (selectedGroup?.isDefault) return;
     if (!selectedGroup) return;
     // 기록 유지/제거 선택은 UI 시연용이며 개인 티켓 원본은 수정하지 않음.
     // 서버 API 연결 전이므로 현재 앱 화면의 그룹 목록만 변경.
@@ -670,6 +648,7 @@ export default function GroupScreen({
     setPage("leaveDone");
   }
   function startKick() {
+    if (selectedGroup?.isDefault) return;
     setPopup("none");
     if (currentMemberLetters.length === 0) {
       Alert.alert("내보낼 멤버가 없어요", "현재 그룹에는 다른 멤버가 없어요.");
@@ -704,7 +683,7 @@ export default function GroupScreen({
     setPopup("kickSuccess");
   }
 
-  const countText = `(${groups.length}/${USER_GROUP_MAX})`;
+  const countText = `(${regularGroupCount}/${USER_GROUP_MAX})`;
   const isDetail = page === "group";
   const isForm =
     page === "newGroup" ||
@@ -733,16 +712,25 @@ export default function GroupScreen({
                   accessibilityLabel="MEMO:RE 로고"
                 />
               </View>
-              <View style={styles.personalCard}>
-                <Text style={styles.personalTitle}>다인의 기록</Text>
-                <Text style={styles.personalSub}>멤버 1명</Text>
-              </View>
+              {defaultGroup && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${defaultGroup.name} 그룹 상세`}
+                  onPress={() => openGroup(defaultGroup.id)}
+                  style={styles.personalCard}
+                >
+                  <Text style={styles.personalTitle}>{defaultGroup?.name}</Text>
+                  <Text style={styles.personalSub}>
+                    멤버 {defaultGroup?.members} / {defaultGroup?.maxMembers}명
+                  </Text>
+                </Pressable>
+              )}
               <View style={styles.groupSectionHeader}>
                 <Text style={styles.sectionHeading}>나의 그룹</Text>
                 <Text style={styles.sectionHeading}>{countText}</Text>
               </View>
               <View style={styles.groupCards}>
-                {groups.map((group) => (
+                {regularGroups.map((group) => (
                   <Pressable
                     key={group.id}
                     accessibilityRole="button"
@@ -765,13 +753,13 @@ export default function GroupScreen({
                         )}
                       </Text>
                       <Text style={styles.groupCardDate}>
-                        ({Math.min(group.members, GROUP_CAPACITY)}/
-                        {GROUP_CAPACITY})
+                        ({Math.min(group.members, group.maxMembers)}/
+                        {group.maxMembers})
                       </Text>
                     </View>
                   </Pressable>
                 ))}
-                {groups.length === 0 && (
+                {regularGroupCount === 0 && (
                   <Text style={styles.hintText}>
                     아직 그룹이 없어요. 새 그룹을 만들어 보세요.
                   </Text>
@@ -782,7 +770,7 @@ export default function GroupScreen({
               <TextButton
                 text="새 그룹 만들기"
                 onPress={newGroup}
-                disabled={groups.length >= USER_GROUP_MAX}
+                disabled={regularGroupCount >= USER_GROUP_MAX}
               />
             </View>
             <View style={styles.bottomNav}>
@@ -849,7 +837,10 @@ export default function GroupScreen({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="그룹 더보기"
-                  onPress={() => setPopup(popup === "more" ? "none" : "more")}
+                  onPress={() => {
+                    if (selectedGroup?.isDefault) return;
+                    setPopup(popup === "more" ? "none" : "more");
+                  }}
                   style={styles.ellipsisBox}
                 >
                   <Text style={styles.ellipsis}>•••</Text>
@@ -869,14 +860,20 @@ export default function GroupScreen({
                   <View style={styles.inlineTitle}>
                     <Text style={styles.detailSectionTitle}>그룹 참여자</Text>
                     <Text style={styles.sectionCount}>
-                      {Math.min(selectedGroup.members, GROUP_CAPACITY)}/
-                      {GROUP_CAPACITY}
+                      {Math.min(
+                        selectedGroup.members,
+                        selectedGroup.maxMembers,
+                      )}
+                      /{selectedGroup.maxMembers}
                     </Text>
                   </View>
                   <MemberProfiles
                     members={selectedGroup.members}
+                    maxMembers={selectedGroup.maxMembers}
                     letters={currentMemberLetters}
-                    onInvite={() => setPopup("invite")}
+                    onInvite={() =>
+                      selectedGroup.isDefault ? newGroup() : setPopup("invite")
+                    }
                   />
                 </View>
                 <View style={styles.ticketSection}>

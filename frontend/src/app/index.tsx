@@ -1,3 +1,4 @@
+import { ErrorCode, type LoginResponse } from "@mind-do/shared";
 import { useState } from "react";
 import { Alert } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -6,10 +7,8 @@ import HomeScreen from "../components/HomeScreen";
 import MyPageScreen, { type Profile } from "../components/MyPageScreen";
 import TicketCreationScreen from "../components/TicketEditor";
 import LoginScreen from "../components/LoginScreen";
-import GroupScreen, {
-  initialGroups,
-  type DemoGroup,
-} from "../components/GroupScreen";
+import GroupScreen, { type DemoGroup } from "../components/GroupScreen";
+import { ApiError, getMyGroups } from "../lib/api";
 
 type RootScreen = "home" | "group" | "my" | "dateSelection" | "ticket";
 
@@ -22,9 +21,9 @@ export default function App() {
 }
 
 function AppContent() {
-  // 후속 Issue #51: 화면 진입 상태를 실제 로그인 API 성공과 쿠키 인증으로 교체한다.
-  const [loginPreviewFinished, setLoginPreviewFinished] = useState(false);
-  const [demoGroups, setDemoGroups] = useState<DemoGroup[]>(initialGroups);
+  // 로그인한 사용자. 로그인 토큰은 쿠키에 있고 앱은 읽지 않는다 (AGENTS.md "보안")
+  const [user, setUser] = useState<LoginResponse | null>(null);
+  const [groups, setGroups] = useState<DemoGroup[]>([]);
   const [screen, setScreen] = useState<RootScreen>("home");
   const [selectedVisitDate, setSelectedVisitDate] = useState<
     string | undefined
@@ -36,6 +35,42 @@ function AppContent() {
     username: "my.memory",
     photoUri: null,
   });
+
+  // GROUP 탭을 열 때마다 서버에서 내 그룹 목록을 받아 온다 (기본 1인 그룹이 맨 앞)
+  // 공동 티켓 목록은 공동 티켓 목록 API가 생기면 그룹 화면에서 받아 온다
+  const openGroups = () => {
+    setScreen("group");
+    void (async () => {
+      try {
+        const result = await getMyGroups();
+        setGroups(
+          result.groups.map((group) => ({
+            id: String(group.groupId),
+            name: group.name,
+            isDefault: group.isDefault,
+            members: group.memberCount,
+            maxMembers: group.maxMembers,
+            tickets: [],
+          })),
+        );
+      } catch (error: unknown) {
+        // 로그인이 안 됐거나 만료되면 로그인 화면으로 보낸다 (AGENTS.md 에러 코드: UNAUTHORIZED → 로그인 화면)
+        if (
+          error instanceof ApiError &&
+          (error.code === ErrorCode.UNAUTHORIZED ||
+            error.code === ErrorCode.ACCESS_TOKEN_EXPIRED)
+        ) {
+          Alert.alert("로그인 만료", "다시 로그인해 주세요.");
+          setUser(null);
+          return;
+        }
+        Alert.alert(
+          "그룹 불러오기 오류",
+          "그룹 목록을 불러오지 못했어요. 다시 시도해 주세요.",
+        );
+      }
+    })();
+  };
 
   const openTickets = (visitDate?: string) => {
     if (!visitDate) {
@@ -58,8 +93,8 @@ function AppContent() {
     })();
   };
 
-  if (!loginPreviewFinished) {
-    return <LoginScreen onPreviewHome={() => setLoginPreviewFinished(true)} />;
+  if (!user) {
+    return <LoginScreen onLoggedIn={setUser} />;
   }
 
   if (screen === "ticket") {
@@ -82,7 +117,7 @@ function AppContent() {
         dateSelectionMode
         onCancelDateSelection={() => setScreen("home")}
         onOpenMy={() => setScreen("my")}
-        onOpenGroup={() => setScreen("group")}
+        onOpenGroup={openGroups}
         onOpenTickets={openTickets}
       />
     );
@@ -93,8 +128,8 @@ function AppContent() {
         onOpenHome={() => setScreen("home")}
         onOpenTickets={() => openTickets()}
         onOpenMy={() => setScreen("my")}
-        groups={demoGroups}
-        onGroupsChange={setDemoGroups}
+        groups={groups}
+        onGroupsChange={setGroups}
       />
     );
   }
@@ -111,15 +146,15 @@ function AppContent() {
   return (
     <HomeScreen
       onOpenMy={() => setScreen("my")}
-      onOpenGroup={() => setScreen("group")}
+      onOpenGroup={openGroups}
       onOpenTickets={openTickets}
       onLogout={() => {
-        // 개발용 로그인 화면으로 돌아갑니다. 저장된 티켓은 삭제하지 않습니다.
+        // 로그인 화면으로 돌아갑니다. 서버 로그아웃 API가 생기면 여기서 호출한다. 저장된 티켓은 삭제하지 않습니다.
         setScreen("home");
         setViewTicket(null);
         setSelectedVisitDate(undefined);
-        setDemoGroups(initialGroups);
-        setLoginPreviewFinished(false);
+        setGroups([]);
+        setUser(null);
       }}
     />
   );
