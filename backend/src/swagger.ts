@@ -3,8 +3,17 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
   createTicketSchema,
+  createGroupRequestSchema,
+  createGroupInviteResponseSchema,
+  currentUserResponseSchema,
+  groupResponseSchema,
+  loginRequestSchema,
+  loginResponseSchema,
+  joinGroupResponseSchema,
   signupRequestSchema,
   signupResponseSchema,
+  sharedTicketPhotoUploadRequestSchema,
+  sharedTicketPhotoUploadUrlsResponseSchema,
   updateTicketSchema,
 } from "@mind-do/shared";
 import swaggerUi from "swagger-ui-express";
@@ -28,6 +37,51 @@ const options: swaggerJsdoc.Options = {
           target: "openapi-3.0",
           io: "output",
         }),
+        LoginRequest: z.toJSONSchema(loginRequestSchema, {
+          target: "openapi-3.0",
+          io: "input",
+        }),
+        LoginResponse: z.toJSONSchema(loginResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
+        CurrentUserResponse: z.toJSONSchema(currentUserResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
+        CreateGroupRequest: z.toJSONSchema(createGroupRequestSchema, {
+          target: "openapi-3.0",
+          io: "input",
+        }),
+        GroupResponse: z.toJSONSchema(groupResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
+        CreateGroupInviteResponse: z.toJSONSchema(
+          createGroupInviteResponseSchema,
+          {
+            target: "openapi-3.0",
+            io: "output",
+          },
+        ),
+        JoinGroupResponse: z.toJSONSchema(joinGroupResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
+        SharedTicketPhotoUploadRequest: z.toJSONSchema(
+          sharedTicketPhotoUploadRequestSchema,
+          {
+            target: "openapi-3.0",
+            io: "input",
+          },
+        ),
+        SharedTicketPhotoUploadUrlsResponse: z.toJSONSchema(
+          sharedTicketPhotoUploadUrlsResponseSchema,
+          {
+            target: "openapi-3.0",
+            io: "output",
+          },
+        ),
         ErrorResponse: z.toJSONSchema(
           z.object({
             error: z.object({
@@ -56,7 +110,10 @@ const options: swaggerJsdoc.Options = {
   },
   apis: [
     fileURLToPath(
-      new URL("./modules/{auth,ticket}/*.routes.{ts,js}", import.meta.url),
+      new URL(
+        "./modules/{auth,groups,shared-tickets,ticket,users}/*.routes.{ts,js}",
+        import.meta.url,
+      ),
     ).replaceAll("\\", "/"),
   ],
 };
