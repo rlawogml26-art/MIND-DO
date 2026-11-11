@@ -125,6 +125,13 @@ const toPhotoResponses = (photos: { photoKey: string; sortOrder: number }[]) =>
     })),
   );
 
+// 저장된 디자인을 지금 형식으로 검사한다. 맞지 않으면(디자인 형식이 바뀐 뒤의 예전 티켓) null로 내려
+// 그 티켓만 빈 디자인으로 보이게 하고, 공동 티켓 전체 조회는 실패하지 않게 한다
+const toStoredDesign = (design: unknown) => {
+  const parsed = ticketDesignSchema.safeParse(design);
+  return parsed.success ? parsed.data : null;
+};
+
 export const getSharedTicketDetail = async (
   cookieHeader: string | undefined,
   sharedTicketId: number,
@@ -158,7 +165,7 @@ async function buildSharedTicketDetail(sharedTicketId: number, userId: number) {
               ticketId: ticket.ticketId,
               photos: await toPhotoResponses(ticket.photos),
               memo: ticket.memo,
-              design: ticketDesignSchema.parse(ticket.design),
+              design: toStoredDesign(ticket.design),
               createdAt: ticket.createdAt.toISOString(),
             }
           : null,

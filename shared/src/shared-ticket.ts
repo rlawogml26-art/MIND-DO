@@ -100,7 +100,9 @@ export const sharedTicketSlotResponseSchema = z.object({
       ticketId: z.number().int().positive(),
       photos: z.array(ticketPhotoResponseSchema),
       memo: z.string().nullable(),
-      design: ticketDesignSchema,
+      // 저장된 디자인이 지금 형식과 맞지 않으면(디자인 형식이 바뀐 뒤의 예전 티켓) null.
+      // 티켓 하나 때문에 공동 티켓 전체 조회가 실패하지 않게 한다
+      design: ticketDesignSchema.nullable(),
       createdAt: z.iso.datetime(),
     })
     .nullable(),
