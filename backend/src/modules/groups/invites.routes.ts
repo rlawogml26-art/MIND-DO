@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { postJoinGroup } from "./groups.controller.js";
+import { getInvite, postJoinGroup } from "./groups.controller.js";
 
 const router = Router();
 
@@ -53,6 +53,52 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
+/**
+ * @swagger
+ * /api/invites/{token}:
+ *   get:
+ *     summary: 초대 링크 조회
+ *     description: 초대 링크를 열었을 때 보여줄 그룹 요약과 가입 가능 여부. 가입은 하지 않고, 멤버 목록·이메일은 주지 않습니다.
+ *     tags: [그룹]
+ *     security:
+ *       - AccessTokenCookie: []
+ *     parameters:
+ *       - in: path
+ *         name: token
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   $ref: '#/components/schemas/InviteInfoResponse'
+ *       401:
+ *         description: 로그인 또는 유효한 액세스 토큰 필요
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: 초대 링크가 없거나 만료·무효됨 (INVITE_INVALID)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: 서버 오류
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get("/:token", getInvite);
+
 router.post("/:token/join", postJoinGroup);
 
 export default router;

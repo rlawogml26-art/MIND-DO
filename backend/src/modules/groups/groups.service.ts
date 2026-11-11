@@ -1,8 +1,15 @@
 import {
+  DEFAULT_GROUP_MAX_MEMBERS,
+  ErrorCode,
   GROUP_INVITE_TTL_HOURS_MIN,
+  GROUP_MAX_MEMBERS,
   GROUP_ROLE_LEADER,
   GROUP_ROLE_MEMBER,
+  USER_GROUP_MAX,
   type CreateGroupRequest,
+  type GroupDetailResponse,
+  type GroupListResponse,
+  type InviteInfoResponse,
 } from "@mind-do/shared";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -143,5 +150,116 @@ export const joinGroupByInvite = async (
     myRole: GROUP_ROLE_MEMBER,
     memberCount: result.memberCount,
     joinedAt: result.joinedAt.toISOString(),
+  };
+};
+
+const roleOf = (
+  leaderId: number,
+  userId: number,
+): typeof GROUP_ROLE_LEADER | typeof GROUP_ROLE_MEMBER =>
+  leaderId === userId ? GROUP_ROLE_LEADER : GROUP_ROLE_MEMBER;
+
+const maxMembersOf = (isDefault: boolean) =>
+  isDefault ? DEFAULT_GROUP_MAX_MEMBERS : GROUP_MAX_MEMBERS;
+
+// 참여 그룹 목록. 기본 1인 그룹이 항상 맨 앞, 나머지는 들어온 순서
+export const getMyGroups = async (
+  cookieHeader: string | undefined,
+): Promise<GroupListResponse> => {
+  const userId = getAuthenticatedUserId(
+    getAccessTokenFromCookieHeader(cookieHeader),
+  );
+  const rows = await repository.findGroupsForUser(userId);
+  const groups = rows
+    .map(({ group }) => ({
+      groupId: group.id,
+      name: group.name,
+      isDefault: group.isDefault,
+      myRole: roleOf(group.leaderId, userId),
+      memberCount: group._count.members,
+      maxMembers: maxMembersOf(group.isDefault),
+      createdAt: group.createdAt.toISOString(),
+    }))
+    .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+  const joinedCount = groups.filter((group) => !group.isDefault).length;
+  return {
+    groups,
+    joinableCount: Math.max(0, USER_GROUP_MAX - joinedCount),
+  };
+};
+
+// 그룹 상세. 멤버는 그룹장이 맨 앞, 나머지는 들어온 순서
+export const getGroupDetail = async (
+  cookieHeader: string | undefined,
+  groupId: number,
+): Promise<GroupDetailResponse> => {
+  const userId = getAuthenticatedUserId(
+    getAccessTokenFromCookieHeader(cookieHeader),
+  );
+  const group = await repository.findGroupDetailForMember(groupId, userId);
+  if (!group) throw new GroupNotFoundError();
+
+  const members = group.members
+    .map((member) => ({
+      userId: member.userId,
+      name: member.user.nickname,
+      role: roleOf(group.leaderId, member.userId),
+      joinedAt: member.joinedAt.toISOString(),
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.role === GROUP_ROLE_LEADER) -
+        Number(a.role === GROUP_ROLE_LEADER),
+    );
+
+  return {
+    groupId: group.id,
+    name: group.name,
+    isDefault: group.isDefault,
+    leaderId: group.leaderId,
+    myRole: roleOf(group.leaderId, userId),
+    memberCount: members.length,
+    maxMembers: maxMembersOf(group.isDefault),
+    createdAt: group.createdAt.toISOString(),
+    members,
+  };
+};
+
+// 초대 링크 조회. 가입은 하지 않고, 요청자 기준 가입 가능 여부만 계산한다
+export const getInviteInfo = async (
+  cookieHeader: string | undefined,
+  token: string,
+): Promise<InviteInfoResponse> => {
+  const userId = getAuthenticatedUserId(
+    getAccessTokenFromCookieHeader(cookieHeader),
+  );
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const invite = await repository.findValidInvite(tokenHash, new Date());
+  if (!invite) throw new InviteInvalidError();
+
+  const { group } = invite;
+  const memberCount = group._count.members;
+  const alreadyMember = await repository.isCurrentGroupMember(group.id, userId);
+  const joinedCount = alreadyMember
+    ? 0
+    : await repository.countJoinedGroups(userId);
+  const cannotJoinReason = alreadyMember
+    ? ErrorCode.ALREADY_GROUP_MEMBER
+    : memberCount >= GROUP_MAX_MEMBERS
+      ? ErrorCode.GROUP_FULL
+      : joinedCount >= USER_GROUP_MAX
+        ? ErrorCode.GROUP_LIMIT_EXCEEDED
+        : null;
+
+  return {
+    groupId: group.id,
+    groupName: group.name,
+    leaderName: group.leader.nickname,
+    memberCount,
+    maxMembers: GROUP_MAX_MEMBERS,
+    expiresAt: invite.expiresAt.toISOString(),
+    alreadyMember,
+    canJoin: cannotJoinReason === null,
+    cannotJoinReason,
   };
 };
