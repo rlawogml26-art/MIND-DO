@@ -6,9 +6,12 @@ import {
   aiDraftsResponseSchema,
   createTicketSchema,
   createGroupRequestSchema,
+  createSharedTicketRequestSchema,
   createGroupInviteResponseSchema,
   currentUserResponseSchema,
   groupResponseSchema,
+  issuedTicketResponseSchema,
+  issueTicketRequestSchema,
   loginRequestSchema,
   loginResponseSchema,
   joinGroupResponseSchema,
@@ -17,6 +20,7 @@ import {
   inviteInfoResponseSchema,
   signupRequestSchema,
   signupResponseSchema,
+  sharedTicketDetailResponseSchema,
   sharedTicketPhotoUploadRequestSchema,
   sharedTicketPhotoUploadUrlsResponseSchema,
   updateTicketSchema,
@@ -113,6 +117,22 @@ const options: swaggerJsdoc.Options = {
             io: "output",
           },
         ),
+        CreateSharedTicketRequest: z.toJSONSchema(
+          createSharedTicketRequestSchema,
+          { target: "openapi-3.0", io: "input" },
+        ),
+        SharedTicketDetailResponse: z.toJSONSchema(
+          sharedTicketDetailResponseSchema,
+          { target: "openapi-3.0", io: "output" },
+        ),
+        IssueTicketRequest: z.toJSONSchema(issueTicketRequestSchema, {
+          target: "openapi-3.0",
+          io: "input",
+        }),
+        IssuedTicketResponse: z.toJSONSchema(issuedTicketResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
         ErrorResponse: z.toJSONSchema(
           z.object({
             error: z.object({
