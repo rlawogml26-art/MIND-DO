@@ -42,7 +42,11 @@ type JointTicket = {
 export type DemoGroup = {
   id: string;
   name: string;
+  // 기본 1인 그룹(가입 때 자동 생성, 초대 불가). 서버 응답의 isDefault
+  isDefault: boolean;
   members: number;
+  // 정원. 서버 응답의 maxMembers (일반 그룹 6, 기본 1인 그룹 1)
+  maxMembers: number;
   tickets: JointTicket[];
 };
 
@@ -63,30 +67,6 @@ const colors = {
   soft: "#F0C8BE",
   error: "#B85E5C",
 };
-
-// 피그마에 표시된 예시 기록입니다. 실제 DB 데이터가 아닙니다.
-export const initialGroups: DemoGroup[] = [
-  {
-    id: "sample-weekend",
-    name: "우리의 주말",
-    members: 3,
-    tickets: [
-      {
-        date: "2026-10-30",
-        title: "가을 산책",
-        completed: 1,
-        invitees: 3,
-      },
-      {
-        date: "2026-10-24",
-        title: "함께한 하루",
-        completed: 3,
-        invitees: 3,
-      },
-    ],
-  },
-  { id: "sample-solo", name: "혼자 남긴 기억", members: 1, tickets: [] },
-];
 
 import ticketIcon from "../../assets/images/memore/ticket-icon.png";
 
@@ -216,7 +196,7 @@ export default function GroupScreen({
   onGroupsChange: setGroups,
 }: GroupScreenProps) {
   const [page, setPage] = useState<GroupPage>("groups");
-  const [selectedGroupId, setSelectedGroupId] = useState("sample-weekend");
+  const [selectedGroupId, setSelectedGroupId] = useState("");
   const [groupName, setGroupName] = useState("");
   const [firstDate, setFirstDate] = useState(displayDate(localToday()));
   const [firstTitle, setFirstTitle] = useState("");
@@ -285,10 +265,7 @@ export default function GroupScreen({
       );
       return;
     }
-    if (
-      groups.filter((group) => group.id !== "sample-solo").length >=
-      USER_GROUP_MAX
-    ) {
+    if (groups.filter((group) => !group.isDefault).length >= USER_GROUP_MAX) {
       Alert.alert(
         "그룹 개수 확인",
         "기본 1인 그룹 외에는 최대 4개까지 참여할 수 있어요.",
@@ -307,7 +284,9 @@ export default function GroupScreen({
     const newGroup: DemoGroup = {
       id: `demo-${Date.now()}`,
       name,
+      isDefault: false,
       members: 1,
+      maxMembers: GROUP_MAX_MEMBERS,
       tickets: [
         {
           date,
@@ -444,7 +423,7 @@ export default function GroupScreen({
                   key={group.id}
                   title={group.name}
                   subtitle={
-                    group.members === 1
+                    group.isDefault
                       ? `멤버 1명 · 나만의 기록`
                       : `멤버 ${group.members}명 · 날짜별 기록 ${group.tickets.length}개`
                   }
@@ -487,7 +466,8 @@ export default function GroupScreen({
           {page === "group" && selectedGroup && (
             <View style={styles.stack}>
               <Text style={styles.description}>
-                비공개 · 멤버 {selectedGroup.members} / {GROUP_MAX_MEMBERS}명
+                비공개 · 멤버 {selectedGroup.members} /{" "}
+                {selectedGroup.maxMembers}명
               </Text>
               {selectedGroup.tickets.map((ticket) => (
                 <ListRow
@@ -520,7 +500,7 @@ export default function GroupScreen({
                 title="함께 기록할 사람 초대"
                 subtitle="초대 링크 · 초대자 관리"
                 onPress={() => {
-                  if (selectedGroup.id === "sample-solo") {
+                  if (selectedGroup.isDefault) {
                     setPage("newGroup");
                     return;
                   }
