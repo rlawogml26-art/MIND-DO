@@ -6,6 +6,7 @@ import {
   groupNameSchema,
   jointTitleSchema,
 } from "@mind-do/shared";
+import { getGroupDetail, getGroupSharedTickets } from "../lib/api";
 import logo from "../../assets/images/memore/logo.png";
 import {
   useMemo,
@@ -38,6 +39,9 @@ export type JointTicket = {
   title: string;
   completed: number;
   invitees: number;
+  // 서버 공동 티켓 번호와 내 슬롯 상태 (서버에서 받은 공동 티켓만 있음)
+  sharedTicketId?: number;
+  myStatus?: "EMPTY" | "COMPLETED" | null;
 };
 
 export type DemoGroup = {
@@ -48,6 +52,11 @@ export type DemoGroup = {
   maxMembers: number;
   tickets: JointTicket[];
   createdAt?: string;
+  // 나를 뺀 현재 멤버. 닉네임은 겹칠 수 있어서 userId(문자열)로 구분하고,
+  // 닉네임과 가입일(한국시간 YYYY-MM-DD)은 userId로 찾는다. 그룹 상세 API에서 받는다
+  memberIds?: string[];
+  memberNames?: Record<string, string>;
+  memberJoinedAt?: Record<string, string>;
 };
 
 type GroupScreenProps = {
@@ -56,6 +65,8 @@ type GroupScreenProps = {
   onOpenMy: () => void;
   groups: DemoGroup[];
   onGroupsChange: Dispatch<SetStateAction<DemoGroup[]>>;
+  // 로그인한 사용자. 그룹 멤버 목록에서 나를 구분하는 데 쓴다
+  currentUserId: number;
 };
 
 type Page =
@@ -126,6 +137,23 @@ const DEMO_INVITE_URL = "memo.re/invite/weekend";
 function dateToday(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+// 멤버 표시. 서버 멤버는 userId로 닉네임을 찾고, 화면 시연용 글자(A~E)는 "멤버 A"
+function memberLabel(member: string, names?: Record<string, string>) {
+  return names?.[member] ?? `멤버 ${member}`;
+}
+function memberInitial(member: string, names?: Record<string, string>) {
+  return (names?.[member] ?? member).slice(0, 1);
+}
+
+// 서버 시각(UTC ISO)을 한국시간 날짜(YYYY-MM-DD)로. en-CA 형식이 YYYY-MM-DD
+export function kstDate(iso: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
 }
 function fmtDate(date: string) {
   return date.replace(/-/g, ".");
@@ -246,11 +274,13 @@ function MemberProfiles({
   maxMembers,
   onInvite,
   letters,
+  names,
 }: {
   members: number;
   maxMembers: number;
   onInvite: () => void;
   letters?: string[];
+  names?: Record<string, string>;
 }) {
   const currentLetters =
     letters ?? avatarLetters.slice(1, Math.min(members, maxMembers));
@@ -259,7 +289,7 @@ function MemberProfiles({
   return (
     <View style={styles.membersWrap}>
       {visibleLetters.map((letter, i) => {
-        const colorIndex = Math.max(0, avatarLetters.indexOf(letter));
+        const colorIndex = i % avatarColors.length;
         return (
           <View key={`member-${letter}`} style={styles.memberCell}>
             <View
@@ -275,11 +305,11 @@ function MemberProfiles({
                   { color: avatarTextColors[colorIndex] },
                 ]}
               >
-                {letter}
+                {i === 0 ? "나" : memberInitial(letter, names)}
               </Text>
             </View>
-            <Text style={styles.avatarCaption}>
-              {i === 0 ? "나" : `멤버 ${letter}`}
+            <Text numberOfLines={1} style={styles.avatarCaption}>
+              {i === 0 ? "나" : memberLabel(letter, names)}
             </Text>
           </View>
         );
@@ -309,6 +339,7 @@ export default function GroupScreen({
   onOpenMy,
   groups,
   onGroupsChange: setGroups,
+  currentUserId,
 }: GroupScreenProps) {
   const [page, setPage] = useState<Page>("groups");
   const [selectedGroupId, setSelectedGroupId] = useState("");
@@ -362,6 +393,9 @@ export default function GroupScreen({
   const currentMemberLetters = useMemo(() => {
     if (!selectedGroup) return [];
     const removed = removedMembersByGroup[selectedGroup.id] ?? [];
+    if (selectedGroup.memberIds) {
+      return selectedGroup.memberIds.filter((id) => !removed.includes(id));
+    }
     const availableBeforeRemoval = Math.min(
       selectedGroup.maxMembers - 1,
       Math.max(0, selectedGroup.members - 1 + removed.length),
@@ -389,6 +423,57 @@ export default function GroupScreen({
     setMonthFilter(null);
     setPopup("none");
     setPage("group");
+    void loadGroup(id);
+  }
+
+  // 그룹을 열 때 서버에서 멤버 목록(그룹 상세)과 공동 티켓 목록을 받아 온다.
+  // 화면 안에서만 만든 그룹(id가 숫자가 아님)은 서버에 없으므로 건너뛴다
+  async function loadGroup(id: string) {
+    const groupId = Number(id);
+    if (!Number.isSafeInteger(groupId)) return;
+    try {
+      const [detail, list] = await Promise.all([
+        getGroupDetail(groupId),
+        getGroupSharedTickets(groupId),
+      ]);
+      const others = detail.members.filter(
+        (member) => member.userId !== currentUserId,
+      );
+      setGroups((previous) =>
+        previous.map((group) =>
+          group.id === id
+            ? {
+                ...group,
+                members: detail.memberCount,
+                maxMembers: detail.maxMembers,
+                memberIds: others.map((member) => String(member.userId)),
+                memberNames: Object.fromEntries(
+                  others.map((member) => [String(member.userId), member.name]),
+                ),
+                memberJoinedAt: Object.fromEntries(
+                  others.map((member) => [
+                    String(member.userId),
+                    kstDate(member.joinedAt),
+                  ]),
+                ),
+                tickets: list.sharedTickets.map((ticket) => ({
+                  date: ticket.ticketDate,
+                  title: ticket.title ?? "",
+                  completed: ticket.completedCount,
+                  invitees: ticket.slotCount,
+                  sharedTicketId: ticket.sharedTicketId,
+                  myStatus: ticket.myStatus,
+                })),
+              }
+            : group,
+        ),
+      );
+    } catch {
+      Alert.alert(
+        "그룹 불러오기 오류",
+        "그룹 정보를 불러오지 못했어요. 다시 시도해 주세요.",
+      );
+    }
   }
   function back() {
     if (popup !== "none") {
@@ -871,6 +956,7 @@ export default function GroupScreen({
                     members={selectedGroup.members}
                     maxMembers={selectedGroup.maxMembers}
                     letters={currentMemberLetters}
+                    names={selectedGroup.memberNames}
                     onInvite={() =>
                       selectedGroup.isDefault ? newGroup() : setPopup("invite")
                     }
@@ -940,10 +1026,10 @@ export default function GroupScreen({
               <>
                 <View style={styles.joinBody}>
                   <Text style={styles.joinHeading}>
-                    {selectedGroup?.name || "마인두!"}에 초대받았어요
+                    {selectedGroup?.name ?? "그룹"}에 초대받았어요
                   </Text>
                   <Text style={styles.joinSubtitle}>
-                    비공개 그룹 · 멤버 {selectedGroup?.members || 3}명
+                    비공개 그룹 · 멤버 {selectedGroup?.members ?? 0}명
                   </Text>
                 </View>
                 <View style={styles.formBottom}>
@@ -1004,15 +1090,23 @@ export default function GroupScreen({
                               style={[styles.jointAvatar, styles.managedAvatar]}
                             >
                               <Text style={styles.jointAvatarText}>
-                                {letter}
+                                {memberInitial(
+                                  letter,
+                                  selectedGroup?.memberNames,
+                                )}
                               </Text>
                             </View>
                             <View style={styles.managedMemberInfo}>
                               <Text style={styles.memberManageText}>
-                                멤버 {letter}
+                                {memberLabel(
+                                  letter,
+                                  selectedGroup?.memberNames,
+                                )}
                               </Text>
                               <Text style={styles.managedMemberDate}>
-                                2026.11.09
+                                {fmtDate(
+                                  selectedGroup?.memberJoinedAt?.[letter] ?? "",
+                                )}
                               </Text>
                             </View>
                             <Pressable
@@ -1020,7 +1114,7 @@ export default function GroupScreen({
                                 memberMenuAnchors.current[letter] = node;
                               }}
                               accessibilityRole="button"
-                              accessibilityLabel={`멤버 ${letter} 관리`}
+                              accessibilityLabel={`${memberLabel(letter, selectedGroup?.memberNames)} 관리`}
                               onPress={() => {
                                 setSelectedKickMember(letter);
                                 memberMenuAnchors.current[
@@ -1057,12 +1151,18 @@ export default function GroupScreen({
                               style={[styles.jointAvatar, styles.managedAvatar]}
                             >
                               <Text style={styles.jointAvatarText}>
-                                {letter}
+                                {memberInitial(
+                                  letter,
+                                  selectedGroup?.memberNames,
+                                )}
                               </Text>
                             </View>
                             <View style={styles.managedMemberInfo}>
                               <Text style={styles.memberManageText}>
-                                멤버 {letter}
+                                {memberLabel(
+                                  letter,
+                                  selectedGroup?.memberNames,
+                                )}
                               </Text>
                               <Text style={styles.managedMemberDate}>
                                 탈퇴한 멤버
@@ -1100,14 +1200,21 @@ export default function GroupScreen({
                           <View
                             style={[styles.jointAvatar, styles.managedAvatar]}
                           >
-                            <Text style={styles.jointAvatarText}>{letter}</Text>
+                            <Text style={styles.jointAvatarText}>
+                              {memberInitial(
+                                letter,
+                                selectedGroup?.memberNames,
+                              )}
+                            </Text>
                           </View>
                           <View style={styles.managedMemberInfo}>
                             <Text style={styles.memberManageText}>
-                              멤버 {letter}
+                              {memberLabel(letter, selectedGroup?.memberNames)}
                             </Text>
                             <Text style={styles.managedMemberDate}>
-                              2026.11.09
+                              {fmtDate(
+                                selectedGroup?.memberJoinedAt?.[letter] ?? "",
+                              )}
                             </Text>
                           </View>
                         </Pressable>
@@ -1387,7 +1494,12 @@ export default function GroupScreen({
                         </View>
                         {selectedJointMembers.map((letter) => (
                           <View key={letter} style={styles.jointAvatar}>
-                            <Text style={styles.jointAvatarText}>{letter}</Text>
+                            <Text style={styles.jointAvatarText}>
+                              {memberInitial(
+                                letter,
+                                selectedGroup?.memberNames,
+                              )}
+                            </Text>
                           </View>
                         ))}
                         <Pressable
@@ -1602,9 +1714,13 @@ export default function GroupScreen({
                       <View
                         style={[styles.jointAvatar, styles.participantAvatar]}
                       >
-                        <Text style={styles.jointAvatarText}>{letter}</Text>
+                        <Text style={styles.jointAvatarText}>
+                          {memberInitial(letter, selectedGroup?.memberNames)}
+                        </Text>
                       </View>
-                      <Text style={styles.memberManageText}>멤버 {letter}</Text>
+                      <Text style={styles.memberManageText}>
+                        {memberLabel(letter, selectedGroup?.memberNames)}
+                      </Text>
                       <Text style={styles.participantCheck}>
                         {selected ? "✓" : ""}
                       </Text>
