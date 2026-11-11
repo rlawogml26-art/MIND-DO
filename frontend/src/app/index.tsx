@@ -1,3 +1,4 @@
+import type { LoginResponse } from "@mind-do/shared";
 import { useState } from "react";
 import { Alert } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -22,8 +23,8 @@ export default function App() {
 }
 
 function AppContent() {
-  // 후속 Issue #51: 화면 진입 상태를 실제 로그인 API 성공과 쿠키 인증으로 교체한다.
-  const [loginPreviewFinished, setLoginPreviewFinished] = useState(false);
+  // 로그인한 사용자. 로그인 토큰은 쿠키에 있고 앱은 읽지 않는다 (AGENTS.md "보안")
+  const [user, setUser] = useState<LoginResponse | null>(null);
   const [demoGroups, setDemoGroups] = useState<DemoGroup[]>(initialGroups);
   const [screen, setScreen] = useState<RootScreen>("home");
   const [selectedVisitDate, setSelectedVisitDate] = useState<
@@ -58,8 +59,8 @@ function AppContent() {
     })();
   };
 
-  if (!loginPreviewFinished) {
-    return <LoginScreen onPreviewHome={() => setLoginPreviewFinished(true)} />;
+  if (!user) {
+    return <LoginScreen onLoggedIn={setUser} />;
   }
 
   if (screen === "ticket") {
@@ -114,12 +115,12 @@ function AppContent() {
       onOpenGroup={() => setScreen("group")}
       onOpenTickets={openTickets}
       onLogout={() => {
-        // 개발용 로그인 화면으로 돌아갑니다. 저장된 티켓은 삭제하지 않습니다.
+        // 로그인 화면으로 돌아갑니다. 서버 로그아웃 API가 생기면 여기서 호출한다. 저장된 티켓은 삭제하지 않습니다.
         setScreen("home");
         setViewTicket(null);
         setSelectedVisitDate(undefined);
         setDemoGroups(initialGroups);
-        setLoginPreviewFinished(false);
+        setUser(null);
       }}
     />
   );
