@@ -31,6 +31,8 @@ model User {
   email           String    @unique @db.VarChar(255)
   passwordHash    String    @map("password_hash") @db.VarChar(255)
   nickname        String    @db.VarChar(15)
+  // 마이페이지 소개(선택, 최대 15자 = shared의 PROFILE_BIO_MAX). 비우면 NULL.
+  bio             String?   @db.VarChar(15)
   profileImageKey String?   @map("profile_image_key") @db.VarChar(255)
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
