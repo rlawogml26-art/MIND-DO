@@ -169,3 +169,91 @@ export const joinGroupByInvite = ({ userId, tokenHash }: JoinGroupInput) =>
       joinedAt: membership.joinedAt,
     };
   });
+
+// 참여 그룹 목록: 지금 멤버인 그룹(삭제된 그룹 제외), 들어온 순서
+export const findGroupsForUser = (userId: number) =>
+  getPrismaClient().groupMember.findMany({
+    where: { userId, leftAt: null, group: { deletedAt: null } },
+    orderBy: { joinedAt: "asc" },
+    select: {
+      group: {
+        select: {
+          id: true,
+          name: true,
+          isDefault: true,
+          leaderId: true,
+          createdAt: true,
+          _count: { select: { members: { where: { leftAt: null } } } },
+        },
+      },
+    },
+  });
+
+// 그룹 상세: 요청자가 지금 멤버가 아니면 null (없는 그룹과 구분하지 않는다)
+export const findGroupDetailForMember = async (
+  groupId: number,
+  userId: number,
+) => {
+  const membership = await getPrismaClient().groupMember.findFirst({
+    where: { groupId, userId, leftAt: null, group: { deletedAt: null } },
+    select: { id: true },
+  });
+  if (!membership) return null;
+
+  return getPrismaClient().group.findUnique({
+    where: { id: groupId },
+    select: {
+      id: true,
+      name: true,
+      isDefault: true,
+      leaderId: true,
+      createdAt: true,
+      members: {
+        where: { leftAt: null },
+        orderBy: { joinedAt: "asc" },
+        select: {
+          userId: true,
+          joinedAt: true,
+          user: { select: { nickname: true } },
+        },
+      },
+    },
+  });
+};
+
+// 초대 링크 조회: 만료 전·무효 아님·그룹 삭제 안 됨인 링크만
+export const findValidInvite = (tokenHash: string, now: Date) =>
+  getPrismaClient().groupInvite.findFirst({
+    where: {
+      tokenHash,
+      expiresAt: { gt: now },
+      revokedAt: null,
+      group: { deletedAt: null },
+    },
+    select: {
+      expiresAt: true,
+      group: {
+        select: {
+          id: true,
+          name: true,
+          leader: { select: { nickname: true } },
+          _count: { select: { members: { where: { leftAt: null } } } },
+        },
+      },
+    },
+  });
+
+export const isCurrentGroupMember = async (groupId: number, userId: number) =>
+  (await getPrismaClient().groupMember.count({
+    where: { groupId, userId, leftAt: null },
+  })) > 0;
+
+// 기본 1인 그룹을 뺀 참여 그룹 수 (그룹 수 제한 계산용)
+export const countJoinedGroups = (userId: number) =>
+  getPrismaClient().groupMember.count({
+    where: {
+      userId,
+      leftAt: null,
+      group: { isDefault: false, deletedAt: null },
+    },
+  });
