@@ -1,7 +1,7 @@
 import { ErrorCode, type LoginResponse } from "@mind-do/shared";
 import { useState } from "react";
-import { Alert } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { Alert, StyleSheet } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { getIssuedTicket, type IssuedTicket } from "../storage/issued-tickets";
 import HomeScreen from "../components/HomeScreen";
 import MyPageScreen, { type Profile } from "../components/MyPageScreen";
@@ -16,12 +16,21 @@ import { ApiError, getMyGroups } from "../lib/api";
 type RootScreen = "home" | "group" | "my" | "dateSelection" | "ticket";
 
 export default function App() {
+  // 안드로이드는 앱 화면을 하단 시스템 버튼(뒤로가기·홈) 아래까지 그린다.
+  // 화면마다 처리하지 않아도 아래 탭 바가 가려지지 않도록 최상위에서 하단 시스템 영역만큼 띄운다
   return (
     <SafeAreaProvider>
-      <AppContent />
+      <SafeAreaView edges={["bottom"]} style={styles.root}>
+        <AppContent />
+      </SafeAreaView>
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  // 하단 시스템 버튼 뒤에 보이는 색. 앱 기본 배경색과 같게 둔다
+  root: { flex: 1, backgroundColor: "#FFF8EF" },
+});
 
 function AppContent() {
   // 로그인한 사용자. 로그인 토큰은 쿠키에 있고 앱은 읽지 않는다 (AGENTS.md "보안")
