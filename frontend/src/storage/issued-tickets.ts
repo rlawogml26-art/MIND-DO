@@ -3,6 +3,7 @@ import {
   createTicketSchema,
   TICKET_TITLE_MAX,
   TICKET_LOCATION_MAX,
+  PERSONAL_TICKET_MEMO_MAX,
 } from "@mind-do/shared";
 import { z } from "zod";
 
@@ -28,6 +29,7 @@ export const placedStickerSchema = z.object({
 const issuedTicketSchema = z.object({
   visitDate: z.string().transform(normalizeTicketDate),
   front: localPhotoSchema.nullable(),
+  photoOrientation: z.enum(["landscape", "portrait"]).optional(),
   backs: z.array(localPhotoSchema),
   frame: z.number().int().nonnegative(),
   placedStickers: z.array(placedStickerSchema),
@@ -35,9 +37,9 @@ const issuedTicketSchema = z.object({
   sticker: z.string(),
   ticketFont: z.enum(["sans-serif", "serif", "monospace"]),
   title: createTicketSchema.shape.title,
-  location: createTicketSchema.shape.location,
+  location: z.string().trim().max(TICKET_LOCATION_MAX),
   backStyle: z.number().int().nonnegative(),
-  memo: createTicketSchema.shape.memo,
+  memo: z.string().max(PERSONAL_TICKET_MEMO_MAX).optional(),
   backColor: z
     .string()
     .regex(/^#[0-9a-f]{6}$/i)
@@ -112,6 +114,8 @@ const DRAFT_KEY = "@memore/front_ticket_draft_v1";
 const frontDraftSchema = (frameCount: number) =>
   z.object({
     front: localPhotoSchema.nullable(),
+    backs: z.array(localPhotoSchema).optional(),
+    photoOrientation: z.enum(["landscape", "portrait"]).optional(),
     frame: z
       .number()
       .int()
