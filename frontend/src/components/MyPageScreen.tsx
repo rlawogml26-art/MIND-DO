@@ -4,7 +4,6 @@ import {
   Alert,
   Keyboard,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -178,10 +177,7 @@ export default function MyPageScreen({
     );
   }
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <KeyboardAvoidingView style={styles.screen} behavior="padding">
       <View style={styles.app}>
         <ScrollView
           style={styles.scroll}

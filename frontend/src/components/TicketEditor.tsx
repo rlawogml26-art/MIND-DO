@@ -837,10 +837,17 @@ export default function TicketCreationScreen({
   );
   const cell = width / 3;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  // 첫 화면은 스크롤 안에 분위기 입력칸이 있어, 키보드만큼 화면이 줄어도 입력칸 쪽으로 내려가지 않는다.
+  // 분위기 입력 중에 키보드가 뜨면 스크롤을 맨 아래(입력칸·초안 만들기 버튼)로 내린다
+  const photosScrollRef = useRef<ScrollView>(null);
+  const moodInputFocused = useRef(false);
+  const scrollToMoodInput = () =>
+    photosScrollRef.current?.scrollToEnd({ animated: true });
   useEffect(() => {
-    const show = Keyboard.addListener("keyboardDidShow", () =>
-      setKeyboardVisible(true),
-    );
+    const show = Keyboard.addListener("keyboardDidShow", () => {
+      setKeyboardVisible(true);
+      if (moodInputFocused.current) scrollToMoodInput();
+    });
     const hide = Keyboard.addListener("keyboardDidHide", () =>
       setKeyboardVisible(false),
     );
@@ -1542,7 +1549,9 @@ export default function TicketCreationScreen({
         return (
           <View style={styles.creationStart}>
             <ScrollView
+              ref={photosScrollRef}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.creationStartContent}
             >
               <Text style={styles.creationTitle}>내 티켓 만들기</Text>
@@ -1697,6 +1706,13 @@ export default function TicketCreationScreen({
                   multiline
                   value={caption}
                   onChangeText={setCaption}
+                  onFocus={() => {
+                    moodInputFocused.current = true;
+                    if (keyboardVisible) scrollToMoodInput();
+                  }}
+                  onBlur={() => {
+                    moodInputFocused.current = false;
+                  }}
                   maxLength={MOOD_PROMPT_MAX}
                   placeholder="예: 따뜻한 노을빛 여행 / 세련된 전시회 기록"
                   placeholderTextColor="#A99A90"
@@ -2641,12 +2657,14 @@ export default function TicketCreationScreen({
       </Modal>
       <KeyboardAvoidingView
         style={styles.root}
+        // 안드로이드도 키보드를 피한다. 화면을 시스템 영역까지 그리는 안드로이드에서는 시스템이 화면을 줄여 주지 않아
+        // 처리하지 않으면 키보드가 입력칸(분위기·뒷면 메모 등)을 덮는다
         behavior={
           Platform.OS === "ios"
             ? "padding"
             : step === "textInput" || step === "backEdit"
               ? "height"
-              : undefined
+              : "padding"
         }
       >
         <View

@@ -15,7 +15,6 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -121,10 +120,7 @@ export default function LoginScreen({ onLoggedIn }: LoginScreenProps) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={styles.fill}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+      <KeyboardAvoidingView style={styles.fill} behavior="padding">
         <ScrollView
           style={styles.fill}
           contentContainerStyle={styles.scrollContent}

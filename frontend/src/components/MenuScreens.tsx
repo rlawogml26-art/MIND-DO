@@ -5,7 +5,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -423,10 +422,7 @@ function MenuSupportScreen({
   }
 
   return (
-    <KeyboardAvoidingView
-      style={supportStyles.fill}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <KeyboardAvoidingView style={supportStyles.fill} behavior="padding">
       <MenuHeader title="1:1 문의하기" onBack={back} />
       <View style={supportStyles.tabs}>
         <TabButton
