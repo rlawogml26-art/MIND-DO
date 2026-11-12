@@ -79,10 +79,40 @@ backgroundColor: "#CE7A3B"      ← 서버가 사진 색으로 만든 배경색
 
 - 서버 주소와 요청은 `lib/api.ts`에만 둔다. **화면에서 `fetch`를 직접 쓰지 않는다**
 - 응답은 `shared/`의 zod 스키마로 검사하고, 실패는 `ApiError`의 `code`로 판단한다 (문구로 판단하지 않는다)
+  - 서버 에러 코드는 `shared`의 `ErrorCode`로 비교한다 (문자열 직접 비교 금지). 앱 전용 코드는 `NETWORK_ERROR`, `SERVER_ERROR`, `REQUEST_TIMEOUT`
+- AI 초안 요청만 35초 대기 제한이 있다 (AI 초안 생성 명세 5절). 넘으면 `REQUEST_TIMEOUT`
 - 사진 업로드는 `uploadTicketPhotos(공동 티켓 ID, 사진 주소들)` 하나로 한다
   - 모든 사진을 JPEG로 바꾸고, 서버 제한(10MB)을 넘을 때만 줄인다
   - 사진은 서버를 거치지 않고 S3에 직접 올라간다. 돌려받은 사진 키를 AI 초안·저장에 그대로 쓴다
+  - S3 업로드는 `fetch`가 아니라 `XMLHttpRequest`로 보낸다. Expo 57이 바꿔 끼운 전역 `fetch`는 React Native 방식 파일 첨부(`{ uri, name, type }`)를 지원하지 않아서, `fetch`로 보내면 "서버에 연결하지 못했어요"가 난다
 - 사진 링크(서명 링크)는 앱에 저장하지 않는다. 만료되면 다시 조회한다
+
+## Expo Go 시연 임시 처리 (시연 후 되돌림)
+
+Expo Go(안드로이드)는 사진첩 전체 읽기(`expo-media-library`)를 막아서, 앱 안 사진 격자 화면이 "사진을 불러오지 못했어요"로 멈춘다.
+중간 발표를 Expo Go로 시연하기 위해 아래를 임시로 넣었고, **시연 후 커밋 하나를 되돌린다** (후속 Issue #93).
+커밋 제목 `chore: Expo Go 시연용 사진 앱 고르기 추가 (시연 후 되돌림, #93)` (만든 때 번호 `7a2c630`). 번호가 바뀌었을 수 있으니 제목으로 찾는다:
+
+```bash
+git revert $(git log --format=%h --grep="Expo Go 시연용 사진 앱 고르기" -1 origin/develop)
+```
+
+- Expo Go에서만 빈 사진 칸을 누르면 "사진 앱에서 고르기 / 촬영하기" 선택 창 (`TicketEditor.tsx`의 `IS_EXPO_GO`, `openPhotoPicker`)
+- 사진첩 오류 화면에 "사진 앱에서 고르기" 버튼 (`pickFromSystemLibrary`)
+- 실제 앱(빌드한 앱)은 원래대로 앱 안 사진 격자 화면을 연다
+
+실제 앱 빌드 때 확인할 것: 격자 화면이 사진첩을 불러오는지, 권한 창이 뜨는지, `app.json`에 사진첩 권한 설정이 필요한지 (#93)
+
+## 화면 아래 여백 (안드로이드 하단 시스템 버튼)
+
+안드로이드는 앱 화면을 하단 시스템 버튼(뒤로가기·홈) 아래까지 그린다. 그래서 `app/index.tsx` 최상위에 하단 안전 영역(`SafeAreaView edges={["bottom"]}`)을 두어 모든 화면이 시스템 버튼 위에서 끝나게 했다.
+화면마다 아래 여백을 따로 넣지 않는다. 넣으면 여백이 두 번 생긴다.
+
+## 키보드가 입력칸을 가리지 않게 (안드로이드)
+
+같은 이유로 안드로이드도 키보드가 올라올 때 화면을 줄여 주지 않는다. 입력칸이 있는 화면은 `KeyboardAvoidingView`의 `behavior`를 아이폰·안드로이드 모두 지정한다 (`"padding"`, 티켓 만들기의 글자 입력·뒷면 메모 단계는 기존대로 `"height"`).
+`Platform.OS === "ios" ? "padding" : undefined`처럼 안드로이드를 비워 두면 키보드가 입력칸을 덮는다.
+스크롤 화면 안의 입력칸은 화면이 줄어도 자동으로 내려가지 않을 수 있다. 티켓 만들기 첫 화면의 분위기 입력칸은 키보드가 뜨면 스크롤을 맨 아래로 내린다 (`photosScrollRef`).
 
 ## 아직 안 된 것
 
