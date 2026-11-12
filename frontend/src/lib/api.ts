@@ -26,6 +26,8 @@ import { z } from "zod";
 // 서버가 응답하지 못했을 때(연결 실패, 500번대) 앱에서만 쓰는 코드
 export const NETWORK_ERROR = "NETWORK_ERROR";
 export const SERVER_ERROR = "SERVER_ERROR";
+// 정해 둔 시간 안에 서버가 답하지 않았을 때 앱에서만 쓰는 코드
+export const REQUEST_TIMEOUT = "REQUEST_TIMEOUT";
 
 export class ApiError extends Error {
   constructor(
@@ -54,11 +56,17 @@ const dataBodySchema = z.object({ data: z.unknown() });
 async function request<S extends z.ZodType>(
   path: string,
   schema: S,
-  init: { method?: string; body?: unknown } = {},
+  init: { method?: string; body?: unknown; timeoutMs?: number } = {},
 ): Promise<z.infer<S>> {
   let response: Response;
+  const controller = new AbortController();
+  const timer =
+    init.timeoutMs === undefined
+      ? undefined
+      : setTimeout(() => controller.abort(), init.timeoutMs);
   try {
     response = await fetch(`${baseUrl()}${path}`, {
+      signal: controller.signal,
       method: init.method ?? "GET",
       credentials: "include",
       headers:
@@ -68,7 +76,12 @@ async function request<S extends z.ZodType>(
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     });
   } catch {
-    throw new ApiError(0, NETWORK_ERROR);
+    throw new ApiError(
+      0,
+      controller.signal.aborted ? REQUEST_TIMEOUT : NETWORK_ERROR,
+    );
+  } finally {
+    clearTimeout(timer);
   }
 
   if (response.status >= HTTP_SERVER_ERROR_MIN) {
@@ -130,6 +143,9 @@ export const getPhotoUploadUrls = (
     { method: "POST", body: input },
   );
 
+// AI 초안 생성 명세 5절: 서버는 최대 약 30초 안에 답하므로 앱은 35초까지 기다린다
+const AI_DRAFTS_TIMEOUT_MS = 35_000;
+
 export const createAiDrafts = (
   sharedTicketId: number,
   input: AiDraftsRequest,
@@ -140,6 +156,7 @@ export const createAiDrafts = (
     {
       method: "POST",
       body: input,
+      timeoutMs: AI_DRAFTS_TIMEOUT_MS,
     },
   );
 

@@ -6,6 +6,7 @@ import {
   PERSONAL_TICKET_MEMO_MAX,
   MOOD_PROMPT_MAX,
   PHOTO_UPLOAD_MAX_COUNT,
+  ErrorCode,
   type AiDraft,
 } from "@mind-do/shared";
 import React, { useEffect, useRef, useState } from "react";
@@ -35,7 +36,13 @@ import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as MediaLibrary from "expo-media-library/legacy";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { ApiError, createAiDrafts, issueTicket } from "../lib/api";
+import {
+  ApiError,
+  NETWORK_ERROR,
+  REQUEST_TIMEOUT,
+  createAiDrafts,
+  issueTicket,
+} from "../lib/api";
 import { PHOTO_TOO_LARGE, uploadTicketPhotos } from "../lib/photo-upload";
 import TicketRenderer from "./TicketRenderer";
 import {
@@ -793,14 +800,16 @@ function serverTicketErrorMessage(error: unknown): string {
   switch (code) {
     case PHOTO_TOO_LARGE:
       return "사진 용량이 너무 커요. 다른 사진을 선택해 주세요.";
-    case "AI_DRAFT_ALREADY_GENERATED":
+    case ErrorCode.AI_DRAFT_ALREADY_GENERATED:
       return "AI 초안은 한 사람당 한 번만 만들 수 있어요.";
-    case "TICKET_ALREADY_COMPLETED":
+    case ErrorCode.TICKET_ALREADY_COMPLETED:
       return "이 공동 티켓에는 이미 내 티켓이 있어요.";
-    case "NETWORK_ERROR":
+    case NETWORK_ERROR:
       return "서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.";
-    case "UNAUTHORIZED":
-    case "ACCESS_TOKEN_EXPIRED":
+    case REQUEST_TIMEOUT:
+      return "응답이 늦어지고 있어요. 잠시 후 다시 시도해 주세요.";
+    case ErrorCode.UNAUTHORIZED:
+    case ErrorCode.ACCESS_TOKEN_EXPIRED:
       return "로그인이 만료됐어요. 다시 로그인해 주세요.";
     default:
       return "잠시 후 다시 시도해 주세요.";
