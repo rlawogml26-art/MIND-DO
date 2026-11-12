@@ -40,6 +40,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import TicketCreationScreen, { IssuedTicketFlipPreview } from "./TicketEditor";
+import TicketRenderer from "./TicketRenderer";
 import type { IssuedTicket } from "../storage/issued-tickets";
 
 export type JointTicket = {
@@ -372,6 +373,10 @@ export default function GroupScreen({
   const [personalTicketReturnPage, setPersonalTicketReturnPage] = useState<
     "jointDone" | "ticketMembers"
   >("jointDone");
+  // 서버 공동 티켓의 내 슬롯을 채울 때 그 공동 티켓 ID
+  const [serverCreateTicketId, setServerCreateTicketId] = useState<
+    number | null
+  >(null);
   const [serverTicketDetail, setServerTicketDetail] =
     useState<SharedTicketDetailResponse | null>(null);
   const [selectedTicketKey, setSelectedTicketKey] = useState<string | null>(
@@ -855,11 +860,37 @@ export default function GroupScreen({
   if (page === "personalTicket") {
     return (
       <TicketCreationScreen
-        selectedVisitDate={validDate(jointDate) ?? undefined}
+        selectedVisitDate={
+          serverCreateTicketId !== null && serverTicketDetail
+            ? serverTicketDetail.ticketDate.replaceAll("-", ".")
+            : (validDate(jointDate) ?? undefined)
+        }
         originGroupName={selectedGroup?.name}
         originGroupId={selectedGroup?.id}
-        originJointTitle={jointTitle.trim()}
-        onBackHome={() => setPage(personalTicketReturnPage)}
+        originJointTitle={
+          serverCreateTicketId !== null && serverTicketDetail
+            ? (serverTicketDetail.title ?? "")
+            : jointTitle.trim()
+        }
+        sharedTicketId={serverCreateTicketId ?? undefined}
+        onServerTicketIssued={() => {
+          const id = serverCreateTicketId;
+          setServerCreateTicketId(null);
+          if (id === null) return;
+          // 저장한 티켓이 일괄 보기와 공동 티켓 목록(완료 수)에 바로 보이도록 다시 받아 온다
+          // 후속 Issue #93: 홈 달력·보관함은 아직 기기 임시 저장만 읽어서 서버에 저장한 티켓이 보이지 않는다
+          void getSharedTicketDetail(id)
+            .then((detail) => {
+              setServerTicketDetail(detail);
+              setPage("ticketMembers");
+            })
+            .catch(() => setPage("ticketMembers"));
+          if (selectedGroup) void loadGroup(selectedGroup.id);
+        }}
+        onBackHome={() => {
+          setServerCreateTicketId(null);
+          setPage(personalTicketReturnPage);
+        }}
         onCreateNew={() => {}}
         onTicketIssued={(ticket) => {
           const groupId = selectedGroup?.id;
@@ -948,33 +979,76 @@ export default function GroupScreen({
           </Text>
         </View>
         <ScrollView contentContainerStyle={styles.memberTicketContent}>
-          {serverTicketDetail.slots.map((slot) => (
-            <View key={slot.userId} style={styles.memberTicketRow}>
-              <Text style={styles.memberTicketName}>
-                {slot.userId === currentUserId ? "나" : slot.name}
-              </Text>
-              {slot.ticket ? (
-                <>
-                  {slot.ticket.photos.map((photo) => (
-                    <Image
-                      key={photo.sortOrder}
-                      source={{ uri: photo.url }}
-                      style={{
-                        width: Math.min(300, windowWidth - 64),
-                        height: 120,
-                      }}
-                      resizeMode="cover"
-                    />
-                  ))}
-                  <Text style={styles.hintText}>{slot.ticket.memo}</Text>
-                </>
-              ) : (
-                <Text style={styles.emptyMemberTicketText}>
-                  아직 티켓을 만들지 않았어요
+          {serverTicketDetail.slots.map((slot) => {
+            const mine = slot.userId === currentUserId;
+            // 일괄 보기 한 줄 = 공동 티켓 쪽(0.5) + 개인 티켓(2) = 2.5 : 1
+            const rowWidth = Math.min(340, windowWidth - 48);
+            const stubWidth = rowWidth / 5;
+            const artWidth = rowWidth - stubWidth;
+            return (
+              <View key={slot.userId} style={styles.memberTicketRow}>
+                <Text style={styles.memberTicketName}>
+                  {mine ? "나" : slot.name}
                 </Text>
-              )}
-            </View>
-          ))}
+                {slot.ticket ? (
+                  <>
+                    <View style={styles.serverTicketPass}>
+                      <View
+                        style={[
+                          styles.serverTicketStub,
+                          { width: stubWidth, height: artWidth / 2 },
+                        ]}
+                      >
+                        <Text style={styles.serverTicketStubBrand}>
+                          MEMO:RE
+                        </Text>
+                        <Text
+                          style={styles.serverTicketStubTitle}
+                          numberOfLines={2}
+                        >
+                          {serverTicketDetail.title ?? ""}
+                        </Text>
+                        <Text style={styles.serverTicketStubDate}>
+                          {serverTicketDetail.ticketDate.replaceAll("-", ".")}
+                        </Text>
+                      </View>
+                      <TicketRenderer
+                        photos={slot.ticket.photos.map((photo) => ({
+                          uri: photo.url,
+                        }))}
+                        design={slot.ticket.design}
+                        width={artWidth}
+                      />
+                    </View>
+                    {slot.ticket.memo ? (
+                      <Text style={styles.hintText}>{slot.ticket.memo}</Text>
+                    ) : null}
+                  </>
+                ) : mine && slot.isCurrentMember ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="내 티켓 만들기"
+                    style={styles.serverCreateTicketButton}
+                    onPress={() => {
+                      setServerCreateTicketId(
+                        serverTicketDetail.sharedTicketId,
+                      );
+                      setPersonalTicketReturnPage("ticketMembers");
+                      setPage("personalTicket");
+                    }}
+                  >
+                    <Text style={styles.serverCreateTicketText}>
+                      + 내 티켓 만들기
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Text style={styles.emptyMemberTicketText}>
+                    아직 티켓을 만들지 않았어요
+                  </Text>
+                )}
+              </View>
+            );
+          })}
         </ScrollView>
       </SafeAreaView>
     );
@@ -2218,6 +2292,34 @@ export default function GroupScreen({
 }
 
 const styles = StyleSheet.create({
+  serverTicketPass: {
+    flexDirection: "row",
+    alignSelf: "center",
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  serverTicketStub: {
+    backgroundColor: "#F0C8BE",
+    paddingHorizontal: 6,
+    paddingVertical: 8,
+    justifyContent: "space-between",
+    borderRightWidth: 1,
+    borderRightColor: "#FFFDF8",
+    borderStyle: "dashed",
+  },
+  serverTicketStubBrand: { fontSize: 8, color: "#654C40", fontWeight: "700" },
+  serverTicketStubTitle: { fontSize: 10, color: "#352722", fontWeight: "700" },
+  serverTicketStubDate: { fontSize: 8, color: "#654C40" },
+  serverCreateTicketButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 18,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#C58F80",
+  },
+  serverCreateTicketText: { fontSize: 14, color: "#654C40", fontWeight: "700" },
   handoffDescription: {
     color: C.detailMuted,
     fontSize: 12,

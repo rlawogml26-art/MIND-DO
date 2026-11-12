@@ -6,6 +6,7 @@ import {
   PERSONAL_TICKET_MEMO_MAX,
   MOOD_PROMPT_MAX,
   PHOTO_UPLOAD_MAX_COUNT,
+  type AiDraft,
 } from "@mind-do/shared";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -33,6 +34,9 @@ import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as MediaLibrary from "expo-media-library/legacy";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ApiError, createAiDrafts, issueTicket } from "../lib/api";
+import { PHOTO_TOO_LARGE, uploadTicketPhotos } from "../lib/photo-upload";
+import TicketRenderer from "./TicketRenderer";
 import {
   issueTicketOnce,
   loadFrontDraft,
@@ -284,6 +288,8 @@ type FramePreviewProps = {
   stickers?: PlacedSticker[];
   onStickerMove?: (id: number, x: number, y: number) => void;
   previewOnly?: boolean;
+  // 서버 AI 초안. 있으면 사진 영역을 frame번 초안의 디자인으로 그린다
+  drafts?: AiDraft[] | null;
   setTicketTitle: React.Dispatch<React.SetStateAction<string>>;
   setTicketPlace: React.Dispatch<React.SetStateAction<string>>;
 };
@@ -298,6 +304,7 @@ const FramePreview = ({
   stickers = [],
   onStickerMove,
   previewOnly = false,
+  drafts = null,
   frame,
   front,
   ticketTitle,
@@ -317,6 +324,10 @@ const FramePreview = ({
     selectedPhotos?.length ? selectedPhotos : front ? [front] : []
   ).slice(0, 3);
   const stubTextStyle = { fontFamily: ticketFont };
+  const draftDesign = drafts?.[frame]?.design ?? null;
+  const rendererPhotos = (
+    selectedPhotos?.length ? selectedPhotos : front ? [front] : []
+  ).map((uri) => ({ uri }));
   // Figma Photo Pass 2.5 기본 배치: 왼쪽 큰 사진, 오른쪽 위 사진, 중앙 아래 겹친 사진.
   // Collage 변형은 흰 테두리가 있는 별도 배치로 보여 줍니다.
   const naturalPositions = [
@@ -468,6 +479,15 @@ const FramePreview = ({
           },
         ]}
       >
+        {draftDesign && (
+          <View pointerEvents="none" style={styles.rendererOverlay}>
+            <TicketRenderer
+              photos={rendererPhotos}
+              design={draftDesign}
+              width={artWidth}
+            />
+          </View>
+        )}
         <View
           style={[
             styles.ticketPassArtCanvas,
@@ -756,7 +776,30 @@ type TicketCreationScreenProps = {
   onOpenGroupTickets?: () => void;
   issuedTicket?: IssuedTicket | null;
   onCreateNew?: () => void;
+  // 서버 공동 티켓의 내 슬롯을 채울 때. 있으면 사진 업로드 → AI 초안 → 저장을 서버로 한다
+  sharedTicketId?: number;
+  onServerTicketIssued?: () => void;
 };
+
+// 서버 오류 코드를 사용자 안내 문구로 바꾼다
+function serverTicketErrorMessage(error: unknown): string {
+  const code = error instanceof ApiError ? error.code : "";
+  switch (code) {
+    case PHOTO_TOO_LARGE:
+      return "사진 용량이 너무 커요. 다른 사진을 선택해 주세요.";
+    case "AI_DRAFT_ALREADY_GENERATED":
+      return "AI 초안은 한 사람당 한 번만 만들 수 있어요.";
+    case "TICKET_ALREADY_COMPLETED":
+      return "이 공동 티켓에는 이미 내 티켓이 있어요.";
+    case "NETWORK_ERROR":
+      return "서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.";
+    case "UNAUTHORIZED":
+    case "ACCESS_TOKEN_EXPIRED":
+      return "로그인이 만료됐어요. 다시 로그인해 주세요.";
+    default:
+      return "잠시 후 다시 시도해 주세요.";
+  }
+}
 
 export default function TicketCreationScreen({
   onBackHome,
@@ -768,6 +811,8 @@ export default function TicketCreationScreen({
   onCreateNew,
   onTicketIssued,
   onOpenGroupTickets,
+  sharedTicketId,
+  onServerTicketIssued,
 }: TicketCreationScreenProps) {
   const { width, height } = useWindowDimensions();
   // Figma의 완성 티켓 320×128(2.5:1)을 화면 폭과 세로 공간에 맞춰 표시합니다.
@@ -809,6 +854,12 @@ export default function TicketCreationScreen({
           : 3;
   const [front, setFront] = useState<string | null>(null);
   const [memoryPhotos, setMemoryPhotos] = useState<string[]>([]);
+  // 서버 모드: 올린 사진의 키와 AI 초안. 사진이 바뀌지 않았으면 다시 부르지 않는다(AI 초안은 1인 1회)
+  const serverMode = sharedTicketId !== undefined;
+  const [aiDrafts, setAiDrafts] = useState<AiDraft[] | null>(null);
+  const [draftPhotoKeys, setDraftPhotoKeys] = useState<string[] | null>(null);
+  const [draftPhotosSignature, setDraftPhotosSignature] = useState("");
+  const [preparingDrafts, setPreparingDrafts] = useState(false);
   const [selectedMemoryIds, setSelectedMemoryIds] = useState<string[]>([]);
   const [photoPickerVisible, setPhotoPickerVisible] = useState(false);
   const [photoChangeVisible, setPhotoChangeVisible] = useState(false);
@@ -983,6 +1034,18 @@ export default function TicketCreationScreen({
   const go = (s: Step) => setStep(s);
   const back = () => {
     if (step === "photos") {
+      // 초안은 서버에 저장되지 않고, 일반 사용자는 다시 받을 수 없다 (AI 초안 생성 명세 5절)
+      if (serverMode && aiDrafts) {
+        Alert.alert(
+          "나가면 AI 초안이 사라져요",
+          "AI 초안은 한 번만 만들 수 있어서 다시 받을 수 없어요. 나갈까요?",
+          [
+            { text: "취소", style: "cancel" },
+            { text: "나가기", style: "destructive", onPress: onBackHome },
+          ],
+        );
+        return;
+      }
       onBackHome();
       return;
     }
@@ -991,7 +1054,7 @@ export default function TicketCreationScreen({
       return;
     }
     if (step === "backEdit") {
-      go("decorate");
+      go(serverMode ? "frameConfirm" : "decorate");
       return;
     }
     if (step === "stickers") {
@@ -1104,8 +1167,44 @@ export default function TicketCreationScreen({
       Alert.alert("사진 선택", "추억 사진을 한 장 이상 선택해 주세요.");
       return;
     }
+    if (serverMode) {
+      void prepareServerDrafts();
+      return;
+    }
     setFrameChosen(true);
     go("frames");
+  };
+
+  const prepareServerDrafts = async () => {
+    if (sharedTicketId === undefined || preparingDrafts) return;
+    const signature = memoryPhotos.join("|");
+    if (aiDrafts && signature === draftPhotosSignature) {
+      setFrameChosen(true);
+      go("frames");
+      return;
+    }
+    setPreparingDrafts(true);
+    try {
+      const photoKeys = await uploadTicketPhotos(sharedTicketId, memoryPhotos);
+      // 초안을 받은 뒤 사진만 바꾼 경우: AI를 다시 부르지 않고 같은 디자인에 사진만 바꾼다 (AI 초안 생성 명세 5절)
+      if (!aiDrafts) {
+        const moodPrompt = caption.trim();
+        const { drafts } = await createAiDrafts(sharedTicketId, {
+          photoKeys,
+          ...(moodPrompt ? { moodPrompt } : {}),
+        });
+        setAiDrafts(drafts);
+        setFrame(0);
+      }
+      setDraftPhotoKeys(photoKeys);
+      setDraftPhotosSignature(signature);
+      setFrameChosen(true);
+      go("frames");
+    } catch (error) {
+      Alert.alert("AI 초안을 만들지 못했어요", serverTicketErrorMessage(error));
+    } finally {
+      setPreparingDrafts(false);
+    }
   };
   // 1-2-3 프레임 선택 화면 전용 미리보기. 이후 꾸미기 화면의 Ticket은 유지합니다.
 
@@ -1116,6 +1215,7 @@ export default function TicketCreationScreen({
       </Text>
       <View style={styles.framePreviewArea}>
         <FramePreview
+          drafts={aiDrafts}
           ticketFont={ticketFont}
           decorateWidth={Math.max(150, Math.min(390, width - 16))}
           frame={frame}
@@ -1135,6 +1235,14 @@ export default function TicketCreationScreen({
           <Pressable
             accessibilityRole="button"
             onPress={() => {
+              // 후속 Issue #93: VIP 재생성(그룹별 하루 3회)이 생기면 남은 횟수에 따라 서버에 다시 요청한다
+              if (serverMode) {
+                Alert.alert(
+                  "다시 만들기",
+                  "AI 초안은 한 사람당 한 번만 만들 수 있어요. 01~03 중에서 골라 주세요.",
+                );
+                return;
+              }
               const next = (frame + 1 + Math.floor(Math.random() * 2)) % 3;
               setFrame(next);
               setFrameChosen(true);
@@ -1167,6 +1275,7 @@ export default function TicketCreationScreen({
             >
               <View style={styles.designThumbnail}>
                 <FramePreview
+                  drafts={aiDrafts}
                   previewOnly
                   decorateWidth={108}
                   frame={index}
@@ -1195,7 +1304,11 @@ export default function TicketCreationScreen({
         </ScrollView>
       </View>
       {(confirmed || frameChosen) && (
-        <Action label="이 디자인 선택" onPress={() => go("decorate")} />
+        <Action
+          label="이 디자인 선택"
+          // 후속 Issue #93: 서버 디자인 형식이 스티커·글자를 받게 되면(지금 0개만 허용) 서버 모드에서도 꾸미기로 보낸다
+          onPress={() => go(serverMode ? "backEdit" : "decorate")}
+        />
       )}
     </View>
   );
@@ -1245,6 +1358,16 @@ export default function TicketCreationScreen({
   };
 
   const validateIssueInput = () => {
+    if (serverMode) {
+      if (Array.from(backText.trim()).length > PERSONAL_TICKET_MEMO_MAX) {
+        Alert.alert(
+          "뒷면 문구 확인",
+          `뒷면 문구는 최대 ${PERSONAL_TICKET_MEMO_MAX}자까지 입력할 수 있어요.`,
+        );
+        return false;
+      }
+      return true;
+    }
     const date = ticketDate.trim();
     if (!/^\d{4}\.\d{2}\.\d{2}$/.test(date)) {
       Alert.alert("날짜 확인", "먼저 달력에서 티켓 날짜를 선택해 주세요.");
@@ -1276,6 +1399,18 @@ export default function TicketCreationScreen({
     const date = ticketDate.trim();
     setIssuingTicket(true);
     try {
+      if (sharedTicketId !== undefined) {
+        const design = aiDrafts?.[frame]?.design;
+        if (!design || !draftPhotoKeys) throw new Error("NO_DRAFT");
+        const memo = backText.trim();
+        await issueTicket(sharedTicketId, {
+          photoKeys: draftPhotoKeys,
+          ...(memo ? { memo } : {}),
+          design,
+        });
+        onServerTicketIssued?.();
+        return;
+      }
       const snapshot: IssuedTicket = {
         visitDate: date.replaceAll(".", "-"),
         photoOrientation,
@@ -1305,9 +1440,14 @@ export default function TicketCreationScreen({
       setIssuedSnapshot(snapshot);
       if (originGroupId) onTicketIssued?.(snapshot);
       go("issued");
-    } catch {
+    } catch (error) {
       setIssueFailed(true);
-      Alert.alert("발권 실패", "티켓을 저장하지 못했어요. 다시 시도해 주세요.");
+      Alert.alert(
+        "발권 실패",
+        serverMode
+          ? serverTicketErrorMessage(error)
+          : "티켓을 저장하지 못했어요. 다시 시도해 주세요.",
+      );
     } finally {
       setIssuingTicket(false);
       ticketIssueLock.current = false;
@@ -1450,6 +1590,7 @@ export default function TicketCreationScreen({
                       ]}
                     >
                       <FramePreview
+                        drafts={aiDrafts}
                         previewOnly
                         decorateWidth={130}
                         frame={0}
@@ -1517,7 +1658,7 @@ export default function TicketCreationScreen({
                 accessibilityState={{
                   disabled: memoryPhotos.length === 0,
                 }}
-                disabled={memoryPhotos.length === 0}
+                disabled={memoryPhotos.length === 0 || preparingDrafts}
                 onPress={nextFromPhotos}
                 style={[
                   styles.action,
@@ -1526,7 +1667,9 @@ export default function TicketCreationScreen({
                   memoryPhotos.length === 0 && styles.creationActionDisabled,
                 ]}
               >
-                <Text style={styles.creationActionText}>초안 만들기</Text>
+                <Text style={styles.creationActionText}>
+                  {preparingDrafts ? "AI 초안 만드는 중..." : "초안 만들기"}
+                </Text>
               </Pressable>
             </ScrollView>
           </View>
@@ -1546,6 +1689,7 @@ export default function TicketCreationScreen({
               ]}
             >
               <FramePreview
+                drafts={aiDrafts}
                 ticketFont={ticketFont}
                 decorateWidth={decorateWidth}
                 stickers={placedStickers}
@@ -1606,6 +1750,7 @@ export default function TicketCreationScreen({
           <View style={styles.stickerEditorScreen}>
             <View style={styles.stickerEditorPreview}>
               <FramePreview
+                drafts={aiDrafts}
                 ticketFont={ticketFont}
                 decorateWidth={stickerEditWidth}
                 stickers={placedStickers}
@@ -1731,6 +1876,7 @@ export default function TicketCreationScreen({
           <View style={styles.decorateScreen}>
             <View style={styles.decoratePreviewArea}>
               <FramePreview
+                drafts={aiDrafts}
                 ticketFont={ticketFont}
                 decorateWidth={decorateWidth}
                 stickers={placedStickers}
@@ -1782,6 +1928,7 @@ export default function TicketCreationScreen({
             {!keyboardVisible && (
               <View style={styles.textEditorPreview}>
                 <FramePreview
+                  drafts={aiDrafts}
                   ticketFont={ticketFont}
                   decorateWidth={
                     keyboardVisible
@@ -2002,6 +2149,7 @@ export default function TicketCreationScreen({
               <View style={styles.ticketReviewItem}>
                 <Text style={styles.ticketReviewLabel}>앞면</Text>
                 <FramePreview
+                  drafts={aiDrafts}
                   previewOnly
                   ticketFont={ticketFont}
                   decorateWidth={Math.min(decorateWidth, width - 32)}
@@ -2069,6 +2217,7 @@ export default function TicketCreationScreen({
                   }}
                 >
                   <FramePreview
+                    drafts={aiDrafts}
                     previewOnly
                     ticketFont={ticketFont}
                     decorateWidth={dispenserTicketWidth}
@@ -2115,6 +2264,7 @@ export default function TicketCreationScreen({
                 ]}
               >
                 <FramePreview
+                  drafts={aiDrafts}
                   previewOnly
                   ticketFont={ticketFont}
                   decorateWidth={dispenserTicketWidth}
@@ -2148,6 +2298,7 @@ export default function TicketCreationScreen({
             <View style={styles.center}>
               <View style={styles.archiveTicketOffset}>
                 <FramePreview
+                  drafts={aiDrafts}
                   previewOnly
                   ticketFont={ticketFont}
                   decorateWidth={decorateWidth}
@@ -2194,6 +2345,7 @@ export default function TicketCreationScreen({
         </View>
         <View style={styles.center}>
           <FramePreview
+            drafts={aiDrafts}
             previewOnly
             ticketFont={issuedTicket.ticketFont}
             decorateWidth={decorateWidth}
@@ -2528,6 +2680,14 @@ export default function TicketCreationScreen({
   );
 }
 const styles = StyleSheet.create({
+  // AI 초안 디자인을 기존 사진 영역 위에 덮어 그린다
+  rendererOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    zIndex: 100,
+    elevation: 100,
+  },
   creationStart: { flex: 1, backgroundColor: C.bg },
   creationStartContent: {
     paddingHorizontal: 20,
