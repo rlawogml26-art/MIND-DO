@@ -1,3 +1,4 @@
+// 후속 Issue #25: 그룹 개인 티켓 발권을 서버 공동·개인 티켓 API에 연결한다.
 import {
   GROUP_NAME_MAX,
   GROUP_MAX_MEMBERS,
@@ -5,8 +6,13 @@ import {
   JOINT_TITLE_MAX,
   groupNameSchema,
   jointTitleSchema,
+  type SharedTicketDetailResponse,
 } from "@mind-do/shared";
-import { getGroupDetail, getGroupSharedTickets } from "../lib/api";
+import {
+  getGroupDetail,
+  getGroupSharedTickets,
+  getSharedTicketDetail,
+} from "../lib/api";
 import logo from "../../assets/images/memore/logo.png";
 import {
   useMemo,
@@ -33,6 +39,8 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import TicketCreationScreen, { IssuedTicketFlipPreview } from "./TicketEditor";
+import type { IssuedTicket } from "../storage/issued-tickets";
 
 export type JointTicket = {
   date: string;
@@ -42,6 +50,13 @@ export type JointTicket = {
   // 서버 공동 티켓 번호와 내 슬롯 상태 (서버에서 받은 공동 티켓만 있음)
   sharedTicketId?: number;
   myStatus?: "EMPTY" | "COMPLETED" | null;
+  invitedMemberIds?: string[];
+  kind?: "joint" | "personal";
+  memberTickets?: {
+    memberId: string;
+    memberName: string;
+    ticket: IssuedTicket;
+  }[];
 };
 
 export type DemoGroup = {
@@ -76,6 +91,9 @@ type Page =
   | "newGroup"
   | "newJoint"
   | "jointDone"
+  | "personalTicket"
+  | "ticketMembers"
+  | "ticketDetail"
   | "duplicate"
   | "firstTicket"
   | "groupCreated"
@@ -351,6 +369,18 @@ export default function GroupScreen({
   const [createdGroup, setCreatedGroup] = useState<DemoGroup | null>(null);
   const [jointDate, setJointDate] = useState(fmtDate(dateToday()));
   const [jointTitle, setJointTitle] = useState("");
+  const [personalTicketReturnPage, setPersonalTicketReturnPage] = useState<
+    "jointDone" | "ticketMembers"
+  >("jointDone");
+  const [serverTicketDetail, setServerTicketDetail] =
+    useState<SharedTicketDetailResponse | null>(null);
+  const [selectedTicketKey, setSelectedTicketKey] = useState<string | null>(
+    null,
+  );
+  const [selectedMemberTicket, setSelectedMemberTicket] = useState<{
+    memberName: string;
+    ticket: IssuedTicket;
+  } | null>(null);
   const [selectedJointMembers, setSelectedJointMembers] = useState<string[]>(
     [],
   );
@@ -404,12 +434,42 @@ export default function GroupScreen({
       .slice(1, availableBeforeRemoval + 1)
       .filter((letter) => !removed.includes(letter));
   }, [selectedGroup, removedMembersByGroup]);
+  const groupTicketsForDisplay = useMemo(() => {
+    const tickets = selectedGroup?.tickets ?? [];
+    const sharedTickets = tickets.filter(
+      (ticket) => ticket.kind !== "personal",
+    );
+    const personalTickets = tickets.filter(
+      (ticket) => ticket.kind === "personal",
+    );
+    const mergedSharedTickets = sharedTickets.map((shared) => {
+      const sameDayTickets = personalTickets
+        .filter((personal) => personal.date === shared.date)
+        .flatMap((personal) => personal.memberTickets ?? []);
+      const byMember = new Map<string, (typeof sameDayTickets)[number]>();
+      [...(shared.memberTickets ?? []), ...sameDayTickets].forEach((entry) =>
+        byMember.set(entry.memberId, entry),
+      );
+      return byMember.size
+        ? { ...shared, memberTickets: Array.from(byMember.values()) }
+        : shared;
+    });
+    const personalWithoutSharedDate = personalTickets.filter(
+      (personal) =>
+        !sharedTickets.some((shared) => shared.date === personal.date),
+    );
+    return [...mergedSharedTickets, ...personalWithoutSharedDate];
+  }, [selectedGroup]);
+  const ticketKey = (ticket: JointTicket) =>
+    `${ticket.date}-${ticket.kind ?? "joint"}-${ticket.title}`;
+  const selectedGroupTicket = selectedGroup?.tickets.find(
+    (ticket) => ticketKey(ticket) === selectedTicketKey,
+  );
   const sortedTickets = useMemo(() => {
-    const tickets = selectedGroup?.tickets || [];
-    return [...tickets]
+    return [...groupTicketsForDisplay]
       .filter((t) => !monthFilter || t.date.startsWith(monthFilter))
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [selectedGroup, monthFilter]);
+  }, [groupTicketsForDisplay, monthFilter]);
   const availableMonths = useMemo(
     () =>
       Array.from(
@@ -607,6 +667,7 @@ export default function GroupScreen({
       title: title.data,
       completed: 0,
       invitees: selectedJointMembers.length + 1,
+      invitedMemberIds: ["me", ...selectedJointMembers],
     };
     setGroups((old) =>
       old.map((g) =>
@@ -683,11 +744,25 @@ export default function GroupScreen({
       Alert.alert("공유하기 오류", "기기의 공유 기능을 실행하지 못했어요.");
     }
   }
-  function handleTicketPress() {
-    Alert.alert(
-      "공동 티켓",
-      "이번 05 화면에서는 티켓 목록까지만 구현했어요. 공동 티켓 상세 화면은 06 디자인이 완성되면 연결합니다.",
-    );
+  function openTicketMembers(ticket: JointTicket) {
+    if (ticket.sharedTicketId) {
+      setServerTicketDetail(null);
+      void getSharedTicketDetail(ticket.sharedTicketId)
+        .then((detail) => {
+          setServerTicketDetail(detail);
+          setPage("ticketMembers");
+        })
+        .catch(() =>
+          Alert.alert("티켓 조회 오류", "티켓을 불러오지 못했어요."),
+        );
+      setSelectedTicketKey(ticketKey(ticket));
+      return;
+    }
+    setServerTicketDetail(null);
+    setSelectedTicketKey(ticketKey(ticket));
+    setJointDate(fmtDate(ticket.date));
+    setJointTitle(ticket.title);
+    setPage("ticketMembers");
   }
   function startLeave() {
     if (selectedGroup?.isDefault) return;
@@ -775,6 +850,290 @@ export default function GroupScreen({
     page === "firstTicket" ||
     page === "newJoint" ||
     page === "duplicate";
+
+  // 그룹 공동 티켓 완료 뒤에는 공동 티켓 날짜를 이어받아 개인 티켓을 만듭니다.
+  if (page === "personalTicket") {
+    return (
+      <TicketCreationScreen
+        selectedVisitDate={validDate(jointDate) ?? undefined}
+        originGroupName={selectedGroup?.name}
+        originGroupId={selectedGroup?.id}
+        originJointTitle={jointTitle.trim()}
+        onBackHome={() => setPage(personalTicketReturnPage)}
+        onCreateNew={() => {}}
+        onTicketIssued={(ticket) => {
+          const groupId = selectedGroup?.id;
+          if (!groupId) return;
+          const personalEntry: JointTicket = {
+            date: ticket.visitDate,
+            title: ticket.title,
+            completed: 0,
+            invitees: 1,
+            kind: "personal",
+            memberTickets: [{ memberId: "me", memberName: "나", ticket }],
+          };
+          setGroups((old) =>
+            old.map((group) => {
+              if (group.id !== groupId) return group;
+              const shared = group.tickets.find(
+                (item) =>
+                  item.date === ticket.visitDate && item.kind !== "personal",
+              );
+              if (!shared) {
+                return {
+                  ...group,
+                  tickets: [
+                    personalEntry,
+                    ...group.tickets.filter(
+                      (item) =>
+                        item.kind !== "personal" ||
+                        item.date !== ticket.visitDate,
+                    ),
+                  ],
+                };
+              }
+              return {
+                ...group,
+                tickets: group.tickets
+                  .filter(
+                    (item) =>
+                      item.kind !== "personal" ||
+                      item.date !== ticket.visitDate,
+                  )
+                  .map((item) =>
+                    item === shared
+                      ? {
+                          ...item,
+                          memberTickets: [
+                            ...(item.memberTickets ?? []).filter(
+                              (entry) => entry.memberId !== "me",
+                            ),
+                            ...(personalEntry.memberTickets ?? []),
+                          ],
+                        }
+                      : item,
+                  ),
+              };
+            }),
+          );
+        }}
+        onOpenGroupTickets={() =>
+          setPage(
+            personalTicketReturnPage === "ticketMembers"
+              ? "ticketMembers"
+              : "group",
+          )
+        }
+      />
+    );
+  }
+
+  if (page === "ticketMembers" && serverTicketDetail) {
+    return (
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <View style={styles.detailHeader}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="그룹으로 돌아가기"
+            onPress={() => {
+              setServerTicketDetail(null);
+              setPage("group");
+            }}
+            style={styles.backBox}
+          >
+            <Text style={styles.backLabel}>‹</Text>
+          </Pressable>
+          <Text style={styles.detailHeaderTitle}>
+            {serverTicketDetail.groupName} 티켓
+          </Text>
+        </View>
+        <ScrollView contentContainerStyle={styles.memberTicketContent}>
+          {serverTicketDetail.slots.map((slot) => (
+            <View key={slot.userId} style={styles.memberTicketRow}>
+              <Text style={styles.memberTicketName}>
+                {slot.userId === currentUserId ? "나" : slot.name}
+              </Text>
+              {slot.ticket ? (
+                <>
+                  {slot.ticket.photos.map((photo) => (
+                    <Image
+                      key={photo.sortOrder}
+                      source={{ uri: photo.url }}
+                      style={{
+                        width: Math.min(300, windowWidth - 64),
+                        height: 120,
+                      }}
+                      resizeMode="cover"
+                    />
+                  ))}
+                  <Text style={styles.hintText}>{slot.ticket.memo}</Text>
+                </>
+              ) : (
+                <Text style={styles.emptyMemberTicketText}>
+                  아직 티켓을 만들지 않았어요
+                </Text>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (page === "ticketMembers" && selectedGroup && selectedGroupTicket) {
+    const ticketWidth = Math.min(300, windowWidth - 64);
+    const roster = [
+      { memberId: "me", memberName: "나" },
+      ...(selectedGroupTicket.invitedMemberIds ?? [])
+        .filter((id) => id !== "me")
+        .map((letter) => ({
+          memberId: letter,
+          memberName: memberLabel(letter, selectedGroup.memberNames),
+        })),
+    ];
+    const ticketsForDate = selectedGroup.tickets
+      .filter((ticket) => ticket.date === selectedGroupTicket.date)
+      .flatMap((ticket) => ticket.memberTickets ?? []);
+
+    return (
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <View style={styles.detailHeader}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="그룹 티켓으로 돌아가기"
+            onPress={() => setPage("group")}
+            style={styles.backBox}
+          >
+            <Text style={styles.backLabel}>‹</Text>
+          </Pressable>
+          <Text numberOfLines={1} style={styles.detailHeaderTitle}>
+            {selectedGroup.name} 티켓
+          </Text>
+          <View style={styles.ellipsisBox} />
+        </View>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.memberTicketContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View>
+            <Text style={styles.detailSectionTitle}>멤버별 티켓</Text>
+            <Text style={styles.memberTicketSubtitle}>
+              {fmtDate(selectedGroupTicket.date)} · {selectedGroupTicket.title}
+            </Text>
+          </View>
+          {roster.map((member) => {
+            const issued = ticketsForDate.find(
+              (entry) => entry.memberId === member.memberId,
+            );
+            return (
+              <View key={member.memberId} style={styles.memberTicketRow}>
+                <Text style={styles.memberTicketName}>{member.memberName}</Text>
+                {issued ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${member.memberName} 티켓 앞면 보기`}
+                    onPress={() => {
+                      setSelectedMemberTicket({
+                        memberName: member.memberName,
+                        ticket: issued.ticket,
+                      });
+                      setPage("ticketDetail");
+                    }}
+                    style={styles.memberTicketPreviewButton}
+                  >
+                    <IssuedTicketFlipPreview
+                      ticket={issued.ticket}
+                      showingBack={false}
+                      ticketWidth={ticketWidth}
+                      onMore={() =>
+                        Alert.alert(
+                          "뒷면 문구",
+                          issued.ticket.memo || "문구가 없어요.",
+                        )
+                      }
+                    />
+                    <Text style={styles.memberTicketTapHint}>
+                      앞면 · 눌러서 앞·뒷면 보기
+                    </Text>
+                  </Pressable>
+                ) : member.memberId === "me" ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="내 티켓 만들기"
+                    onPress={() => {
+                      setJointDate(fmtDate(selectedGroupTicket.date));
+                      setJointTitle(selectedGroupTicket.title);
+                      setPersonalTicketReturnPage("ticketMembers");
+                      setPage("personalTicket");
+                    }}
+                    style={styles.emptyMemberTicketSlot}
+                  >
+                    <Text style={styles.emptyMemberTicketPlus}>＋</Text>
+                    <Text style={styles.emptyMemberTicketText}>
+                      아직 티켓을 만들지 않았어요
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.emptyMemberTicketSlot}>
+                    <Text style={styles.emptyMemberTicketPlus}>＋</Text>
+                    <Text style={styles.emptyMemberTicketText}>
+                      아직 티켓을 만들지 않았어요
+                    </Text>
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (page === "ticketDetail" && selectedMemberTicket) {
+    const ticketWidth = Math.min(320, windowWidth - 40);
+    const ticket = selectedMemberTicket.ticket;
+    const onMore = () =>
+      Alert.alert("뒷면 문구", ticket.memo || "문구가 없어요.");
+    return (
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <View style={styles.detailHeader}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="멤버 티켓 목록으로 돌아가기"
+            onPress={() => setPage("ticketMembers")}
+            style={styles.backBox}
+          >
+            <Text style={styles.backLabel}>‹</Text>
+          </Pressable>
+          <Text numberOfLines={1} style={styles.detailHeaderTitle}>
+            {selectedMemberTicket.memberName}의 티켓
+          </Text>
+          <View style={styles.ellipsisBox} />
+        </View>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.ticketSidesContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.ticketSideLabel}>앞면</Text>
+          <IssuedTicketFlipPreview
+            ticket={ticket}
+            showingBack={false}
+            ticketWidth={ticketWidth}
+            onMore={onMore}
+          />
+          <Text style={styles.ticketSideLabel}>뒷면</Text>
+          <IssuedTicketFlipPreview
+            ticket={ticket}
+            showingBack
+            ticketWidth={ticketWidth}
+            onMore={onMore}
+          />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -1009,10 +1368,10 @@ export default function GroupScreen({
                   </Pressable>
                   {sortedTickets.map((ticket) => (
                     <TicketStub
-                      key={`${ticket.date}-${ticket.title}`}
+                      key={`${ticket.date}-${ticket.kind ?? "joint"}-${ticket.title}`}
                       ticket={ticket}
                       groupName={selectedGroup.name}
-                      onPress={handleTicketPress}
+                      onPress={() => openTicketMembers(ticket)}
                     />
                   ))}
                   {sortedTickets.length === 0 && (
@@ -1366,7 +1725,10 @@ export default function GroupScreen({
                 <View style={[styles.formBottom, styles.createdActions]}>
                   <TextButton
                     text="나의 티켓 만들기"
-                    onPress={() => setPage("group")}
+                    onPress={() => {
+                      setPersonalTicketReturnPage("jointDone");
+                      setPage("personalTicket");
+                    }}
                   />
                   <TextButton
                     text="나가기"
@@ -2336,6 +2698,71 @@ const styles = StyleSheet.create({
     color: C.primary,
   },
   ticketMore: { fontSize: 12, lineHeight: 16, color: C.accent },
+  memberTicketContent: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 30,
+    gap: 14,
+  },
+  memberTicketSubtitle: {
+    marginTop: 4,
+    color: C.detailMuted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  memberTicketRow: {
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+    gap: 10,
+    alignItems: "flex-start",
+  },
+  memberTicketName: {
+    color: C.text,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  memberTicketPreviewButton: {
+    alignSelf: "center",
+    alignItems: "center",
+    gap: 6,
+  },
+  memberTicketTapHint: { color: C.detailMuted, fontSize: 11, lineHeight: 16 },
+  emptyMemberTicketSlot: {
+    width: "100%",
+    minHeight: 112,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: C.border,
+    backgroundColor: C.canvas,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  emptyMemberTicketPlus: { color: C.muted, fontSize: 23, lineHeight: 28 },
+  emptyMemberTicketText: { color: C.detailMuted, fontSize: 12 },
+  ticketSidesContent: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 32,
+    gap: 10,
+  },
+  ticketSideLabel: {
+    alignSelf: "flex-start",
+    color: C.text,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "700",
+    marginTop: 8,
+  },
   noTicketText: { fontSize: 12, color: C.detailMuted, padding: 12 },
   hintText: { fontSize: 12, lineHeight: 19, color: C.detailMuted },
   joinBody: { flex: 1, paddingHorizontal: 20, paddingTop: 16, gap: 16 },

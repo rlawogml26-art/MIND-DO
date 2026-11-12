@@ -5,6 +5,7 @@ import {
   loginRequestSchema,
   loginResponseSchema,
   sharedTicketListResponseSchema,
+  sharedTicketDetailResponseSchema,
   type LoginRequest,
 } from "@mind-do/shared";
 import { z } from "zod";
@@ -103,4 +104,10 @@ export const getGroupSharedTickets = (groupId: number) =>
   request(
     `/api/groups/${groupId}/shared-tickets`,
     sharedTicketListResponseSchema,
+  );
+
+export const getSharedTicketDetail = (sharedTicketId: number) =>
+  request(
+    `/api/shared-tickets/${sharedTicketId}`,
+    sharedTicketDetailResponseSchema,
   );

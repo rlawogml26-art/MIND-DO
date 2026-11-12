@@ -3,12 +3,15 @@ import {
   createTicketSchema,
   TICKET_TITLE_MAX,
   TICKET_LOCATION_MAX,
-  TICKET_MEMO_MAX,
+  PERSONAL_TICKET_MEMO_MAX,
+  MOOD_PROMPT_MAX,
+  PHOTO_UPLOAD_MAX_COUNT,
 } from "@mind-do/shared";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
+  Easing,
   FlatList,
   Image,
   Keyboard,
@@ -110,9 +113,6 @@ type Step =
   | "textInput"
   | "frontPreview"
   | "backEdit"
-  | "changePhoto"
-  | "reviewFront"
-  | "reviewBack"
   | "issuing"
   | "issued"
   | "archive"
@@ -122,6 +122,7 @@ const C = {
   bg: "#FFF8EF",
   brown: "#654C40",
   outline: "#987966",
+  accent: "#CF897C",
   gray: "#DFDFDF",
   cream: "#FFF8EF",
   white: "#FFFFFF",
@@ -137,9 +138,6 @@ const STEPS: Step[] = [
   "textInput",
   "frontPreview",
   "backEdit",
-  "changePhoto",
-  "reviewFront",
-  "reviewBack",
   "issuing",
   "issued",
   "archive",
@@ -154,11 +152,8 @@ const TITLES: Record<Step, string> = {
   stickerPlace: "스티커 배치",
   text: "텍스트 선택",
   textInput: "텍스트 입력",
-  frontPreview: "앞면 미리보기",
-  backEdit: "뒷면 디자인",
-  changePhoto: "사진 변경하기",
-  reviewFront: "저장 전 확인하기 · 앞면",
-  reviewBack: "저장 전 확인하기 · 뒷면",
+  frontPreview: "티켓 확인",
+  backEdit: "뒷면 문구",
   issuing: "티켓 발권",
   issued: "티켓 발권 완료",
   archive: "내 보관함",
@@ -200,25 +195,6 @@ const STICKER_ITEMS = [
   { symbol: "🍩", category: "음식" },
   { symbol: "🍦", category: "음식" },
 ];
-const F = ({
-  children,
-  onPress,
-  selected = false,
-}: {
-  children: React.ReactNode;
-  onPress: () => void;
-  selected?: boolean;
-}) => (
-  <Pressable
-    onPress={onPress}
-    style={[styles.chip, selected && styles.chipSelected]}
-  >
-    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-      {children}
-    </Text>
-  </Pressable>
-);
-
 type PlacedSticker = { id: number; symbol: string; x: number; y: number };
 
 const DraggableSticker = ({
@@ -296,12 +272,14 @@ type TicketFont = (typeof FONT_OPTIONS)[number]["family"];
 type FramePreviewProps = {
   editable?: boolean;
   ticketFont?: TicketFont;
+  selectedPhotos?: string[];
+  photoOrientation?: "landscape" | "portrait";
+  showOrientationSymbol?: boolean;
   frame: number;
   front: string | null;
   ticketTitle: string;
   ticketDate: string;
   ticketPlace: string;
-  large?: boolean;
   decorateWidth?: number;
   stickers?: PlacedSticker[];
   onStickerMove?: (id: number, x: number, y: number) => void;
@@ -313,7 +291,9 @@ type FramePreviewProps = {
 const FramePreview = ({
   editable = false,
   ticketFont = "sans-serif",
-  large = false,
+  selectedPhotos,
+  photoOrientation = "landscape",
+  showOrientationSymbol = false,
   decorateWidth,
   stickers = [],
   onStickerMove,
@@ -326,76 +306,77 @@ const FramePreview = ({
   setTicketTitle,
   setTicketPlace,
 }: FramePreviewProps) => {
-  // 티켓 너비에 비례해 TITLE / DATE / PLACE 라벨과 입력값 크기를 함께 조절합니다.
-  const ticketWidth = decorateWidth ?? (large ? 250 : 204);
-  const ticketTextSize = Math.max(10, Math.min(14, ticketWidth * 0.052));
-  const ticketLabelWidth = ticketWidth * 0.19;
-  const ticketTextStyle = { fontFamily: ticketFont, fontSize: ticketTextSize };
+  // Figma 기준 티켓은 전체 320×128(2.5:1)이고, 왼쪽 64px은 티켓 정보,
+  // 오른쪽 256px은 사진 아트 영역입니다. 화면 폭에 맞춰 같은 비율로 축소합니다.
+  const ticketWidth = decorateWidth ?? 320;
+  const scale = ticketWidth / 320;
+  const ticketHeight = ticketWidth * (128 / 320);
+  const stubWidth = ticketWidth * (64 / 320);
+  const artWidth = ticketWidth - stubWidth;
+  const previewPhotos = (
+    selectedPhotos?.length ? selectedPhotos : front ? [front] : []
+  ).slice(0, 3);
+  const stubTextStyle = { fontFamily: ticketFont };
+  // Figma Photo Pass 2.5 기본 배치: 왼쪽 큰 사진, 오른쪽 위 사진, 중앙 아래 겹친 사진.
+  // Collage 변형은 흰 테두리가 있는 별도 배치로 보여 줍니다.
+  const naturalPositions = [
+    { left: 0, top: 0, width: 0.64, height: 0.92 },
+    { left: 0.48, top: -0.03, width: 0.56, height: 0.85 },
+    { left: 0.26, top: 0.39, width: 0.52, height: 0.67 },
+  ];
+  const collagePositions = [
+    { left: 0.02, top: 0.03, width: 0.63, height: 0.91 },
+    { left: 0.49, top: 0.02, width: 0.51, height: 0.85 },
+    { left: 0.22, top: 0.42, width: 0.58, height: 0.61 },
+  ];
+  const collage = frame === 1;
+  const imagePositions = collage ? collagePositions : naturalPositions;
+  const artCanvasWidth =
+    photoOrientation === "portrait" ? ticketHeight : artWidth;
+  const artCanvasHeight =
+    photoOrientation === "portrait" ? artWidth : ticketHeight;
+
   return (
     <View
       style={[
-        styles.framePreview,
-        large && styles.framePreviewLarge,
-        decorateWidth !== undefined && {
-          width: decorateWidth,
-          height: decorateWidth * (348 / 204),
+        styles.ticketPass,
+        {
+          width: ticketWidth,
+          height: ticketHeight,
+          borderRadius: 10 * scale,
         },
-        { backgroundColor: FRAMES[frame].color },
       ]}
     >
       <View
         style={[
-          styles.framePreviewImage,
-          large && styles.framePreviewImageLarge,
-          decorateWidth !== undefined && {
-            height: decorateWidth * (256 / 204),
+          styles.ticketPassStub,
+          {
+            width: stubWidth,
+            height: ticketHeight,
+            padding: 8 * scale,
+            backgroundColor: "#F0C8BE",
           },
         ]}
       >
-        {front ? (
-          <Image
-            source={{ uri: front }}
-            style={styles.fillImage}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={[styles.fillImage, styles.photoEmpty]}>
-            <Text style={styles.muted}>선택한 사진</Text>
-          </View>
-        )}
-        {decorateWidth !== undefined &&
-          stickers.map((item) =>
-            previewOnly ? (
-              <View
-                key={item.id}
-                pointerEvents="none"
-                style={[
-                  styles.placedSticker,
-                  {
-                    left: item.x * Math.max(0, decorateWidth - 18 - 36),
-                    top: item.y * Math.max(0, decorateWidth * (256 / 204) - 36),
-                  },
-                ]}
-              >
-                <Text style={styles.placedStickerText}>{item.symbol}</Text>
-              </View>
-            ) : (
-              <DraggableSticker
-                key={item.id}
-                item={item}
-                imageWidth={decorateWidth - 18}
-                imageHeight={decorateWidth * (256 / 204)}
-                onMove={onStickerMove ?? (() => {})}
-              />
-            ),
-          )}
-      </View>
-      <View style={styles.frameMeta}>
+        <Text
+          style={[
+            styles.ticketPassBrand,
+            { fontSize: 8 * scale, lineHeight: 11 * scale },
+          ]}
+        >
+          MEMO:RE
+        </Text>
         {editable ? (
           <TextInput
-            style={[styles.frameMetaInput, ticketTextStyle]}
-            showSoftInputOnFocus={true}
-            keyboardType="default"
+            style={[
+              styles.ticketPassTitle,
+              stubTextStyle,
+              {
+                fontSize: 11 * scale,
+                lineHeight: 14 * scale,
+                minHeight: 24 * scale,
+              },
+            ]}
             value={ticketTitle}
             onChangeText={setTicketTitle}
             onBlur={() =>
@@ -403,45 +384,48 @@ const FramePreview = ({
                 Array.from(value).slice(0, TICKET_TITLE_MAX).join(""),
               )
             }
-            placeholder="TITLE"
-            placeholderTextColor="#292929"
+            placeholder="티켓 제목"
+            placeholderTextColor="#654C40"
             accessibilityLabel={`티켓 제목 입력 (최대 ${TICKET_TITLE_MAX}자)`}
+            multiline
+            numberOfLines={2}
           />
         ) : (
-          <View style={styles.ticketMetaRow}>
-            <Text
-              style={[
-                styles.ticketMetaLabel,
-                ticketTextStyle,
-                { width: ticketLabelWidth },
-              ]}
-            >
-              TITLE
-            </Text>
-            <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-              {ticketTitle}
-            </Text>
-          </View>
-        )}
-        <View style={styles.ticketMetaRow}>
           <Text
             style={[
-              styles.ticketMetaLabel,
-              ticketTextStyle,
-              { width: ticketLabelWidth },
+              styles.ticketPassTitle,
+              stubTextStyle,
+              {
+                fontSize: 11 * scale,
+                lineHeight: 14 * scale,
+                minHeight: 24 * scale,
+              },
             ]}
+            numberOfLines={2}
           >
-            DATE
+            {ticketTitle || "우리들의 여행"}
           </Text>
-          <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-            {ticketDate}
-          </Text>
-        </View>
+        )}
+        <Text
+          style={[
+            styles.ticketPassDate,
+            { fontSize: 8 * scale, lineHeight: 10 * scale },
+          ]}
+          numberOfLines={1}
+        >
+          {ticketDate}
+        </Text>
         {editable ? (
           <TextInput
-            style={[styles.frameMetaInput, ticketTextStyle]}
-            showSoftInputOnFocus={true}
-            keyboardType="default"
+            style={[
+              styles.ticketPassPlace,
+              stubTextStyle,
+              {
+                fontSize: 10 * scale,
+                lineHeight: 12 * scale,
+                minHeight: 18 * scale,
+              },
+            ]}
             value={ticketPlace}
             onChangeText={setTicketPlace}
             onBlur={() =>
@@ -449,55 +433,229 @@ const FramePreview = ({
                 Array.from(value).slice(0, TICKET_LOCATION_MAX).join(""),
               )
             }
-            placeholder="PLACE"
-            placeholderTextColor="#292929"
+            placeholder="장소"
+            placeholderTextColor="#654C40"
             accessibilityLabel={`티켓 장소 입력 (최대 ${TICKET_LOCATION_MAX}자)`}
+            multiline
+            numberOfLines={2}
           />
         ) : (
-          <View style={styles.ticketMetaRow}>
+          <Text
+            style={[
+              styles.ticketPassPlace,
+              stubTextStyle,
+              {
+                fontSize: 10 * scale,
+                lineHeight: 12 * scale,
+                minHeight: 18 * scale,
+              },
+            ]}
+            numberOfLines={2}
+          >
+            {ticketPlace}
+          </Text>
+        )}
+      </View>
+
+      <View
+        style={[
+          styles.ticketPassArt,
+          {
+            width: artWidth,
+            height: ticketHeight,
+            borderTopRightRadius: 10 * scale,
+            borderBottomRightRadius: 10 * scale,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.ticketPassArtCanvas,
+            photoOrientation === "portrait" &&
+              !showOrientationSymbol &&
+              styles.ticketPassArtCanvasPortrait,
+            { width: artCanvasWidth, height: artCanvasHeight },
+          ]}
+        >
+          {previewPhotos.length > 0 ? (
+            previewPhotos.length === 1 ? (
+              <Image
+                source={{ uri: previewPhotos[0] }}
+                style={styles.ticketPassSinglePhoto}
+                resizeMode="cover"
+              />
+            ) : (
+              previewPhotos.map((uri, index) => {
+                const position = imagePositions[index];
+                return (
+                  <Image
+                    key={`${index}-${uri}`}
+                    source={{ uri }}
+                    style={[
+                      styles.ticketPassCollagePhoto,
+                      {
+                        left: position.left * artCanvasWidth,
+                        top: position.top * artCanvasHeight,
+                        width: position.width * artCanvasWidth,
+                        height: position.height * artCanvasHeight,
+                        borderWidth: collage ? 3 * scale : 0,
+                        borderRadius: (collage ? 3 : 12) * scale,
+                        zIndex: index + 1,
+                      },
+                    ]}
+                    resizeMode="cover"
+                  />
+                );
+              })
+            )
+          ) : showOrientationSymbol ? (
+            <View style={styles.ticketPassEmpty}>
+              <View
+                style={[
+                  styles.ticketPassPersonSymbol,
+                  photoOrientation === "portrait" &&
+                    styles.ticketPassPersonSymbolPortrait,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.ticketPassSymbolHead,
+                    {
+                      width: 22 * scale,
+                      height: 22 * scale,
+                      borderRadius: 11 * scale,
+                    },
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.ticketPassSymbolBody,
+                    {
+                      width: 50 * scale,
+                      height: 18 * scale,
+                      marginTop: 4 * scale,
+                      borderTopLeftRadius: 25 * scale,
+                      borderTopRightRadius: 25 * scale,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          ) : (
+            <View style={styles.ticketPassEmpty}>
+              <Text style={styles.muted}>선택한 사진</Text>
+            </View>
+          )}
+
+          <View
+            pointerEvents="none"
+            style={[
+              styles.ticketPassWash,
+              {
+                opacity: previewPhotos.length > 0 ? (collage ? 0.16 : 0.08) : 0,
+              },
+            ]}
+          />
+          {!showOrientationSymbol && (
             <Text
+              pointerEvents="none"
               style={[
-                styles.ticketMetaLabel,
-                ticketTextStyle,
-                { width: ticketLabelWidth },
+                styles.ticketPassPhotoDate,
+                {
+                  fontSize: 8 * scale,
+                  lineHeight: 10 * scale,
+                  left: 8 * scale,
+                  bottom: 4 * scale,
+                },
               ]}
+              numberOfLines={1}
             >
-              PLACE
+              {ticketDate}
             </Text>
-            <Text style={[styles.ticketMetaValue, ticketTextStyle]}>
-              {ticketPlace}
-            </Text>
+          )}
+        </View>
+        {!showOrientationSymbol && stickers.length > 0 && (
+          <View
+            pointerEvents="box-none"
+            style={[
+              styles.stickerOverlayCanvas,
+              { width: artWidth, height: ticketHeight },
+            ]}
+          >
+            {stickers.map((item) =>
+              previewOnly ? (
+                <View
+                  key={item.id}
+                  pointerEvents="none"
+                  style={[
+                    styles.placedSticker,
+                    {
+                      left: item.x * Math.max(0, artWidth - 36),
+                      top: item.y * Math.max(0, ticketHeight - 36),
+                    },
+                  ]}
+                >
+                  <Text style={styles.placedStickerText}>{item.symbol}</Text>
+                </View>
+              ) : (
+                <DraggableSticker
+                  key={item.id}
+                  item={item}
+                  imageWidth={artWidth}
+                  imageHeight={ticketHeight}
+                  onMove={onStickerMove ?? (() => {})}
+                />
+              ),
+            )}
           </View>
         )}
       </View>
+      <View
+        pointerEvents="none"
+        style={[
+          styles.ticketPassPerforation,
+          {
+            left: stubWidth - 0.5 * scale,
+            top: 8 * scale,
+            height: ticketHeight - 16 * scale,
+          },
+        ]}
+      />
+      <View
+        pointerEvents="none"
+        style={[
+          styles.ticketPassPunchHole,
+          {
+            left: stubWidth - 5 * scale,
+            top: -5 * scale,
+            width: 10 * scale,
+            height: 10 * scale,
+          },
+        ]}
+      />
+      <View
+        pointerEvents="none"
+        style={[
+          styles.ticketPassPunchHole,
+          {
+            left: stubWidth - 5 * scale,
+            bottom: -5 * scale,
+            width: 10 * scale,
+            height: 10 * scale,
+          },
+        ]}
+      />
     </View>
   );
 };
 
-const BACK_COLORS = [
-  "#E8D8CA",
-  "#DFDFDF",
-  "#654C40",
-  "#987966",
-  "#B69986",
-  "#CF897C",
-  "#F0C8BE",
-  "#FFFDF8",
-  "#B8BEB0",
-  "#681D1D",
-];
-// 후속 Issue #25: 기존 시연용 사진 개수 제한을 확정된 shared 규칙으로 교체한다.
-const FREE_BACK_PHOTO_LIMIT = 3;
-
-// 뒷면 미리보기: 긴 글은 티켓 크기를 늘리지 않고 팝업으로 보여줍니다.
+// 개인 티켓 뒷면은 메모 텍스트만 표시합니다.
 function BackTicketContent({
-  photos,
   text,
   date,
   color,
   onMore,
 }: {
-  photos: string[];
   text: string;
   date: string;
   color: string;
@@ -508,40 +666,20 @@ function BackTicketContent({
     <View style={[styles.backTicketInner, { backgroundColor: color }]}>
       <Text style={styles.backTicketLogo}>MEMO:RE</Text>
       <View style={styles.backTicketRule} />
-      <View style={styles.backPhotoGrid}>
-        {photos.slice(0, FREE_BACK_PHOTO_LIMIT).map((uri, i) => (
-          <Image
-            key={`${i}-${uri}`}
-            source={{ uri }}
-            resizeMode="cover"
-            style={[
-              styles.backGridImage,
-              photos.length === 1 && styles.backGridImageSingle,
-            ]}
-          />
-        ))}
-        {photos.length === 0 && (
-          <Text style={styles.backEmptyPhoto}>
-            사진을 추가해 주세요 (최대 3장)
-          </Text>
+      <View style={styles.backMemoOnlyTextWrap}>
+        <Text style={styles.backMemoOnlyText} numberOfLines={shortened ? 3 : 5}>
+          {text || "이날의 기억을 적어 주세요"}
+        </Text>
+        {shortened && (
+          <Pressable
+            onPress={onMore}
+            accessibilityRole="button"
+            accessibilityLabel="뒷면 글 더보기"
+          >
+            <Text style={styles.backMore}>더보기 ›</Text>
+          </Pressable>
         )}
       </View>
-      {text.trim().length > 0 && (
-        <View style={styles.backPreviewTextWrap}>
-          <Text style={styles.backPreviewText} numberOfLines={2}>
-            {text}
-          </Text>
-          {shortened && (
-            <Pressable
-              onPress={onMore}
-              accessibilityRole="button"
-              accessibilityLabel="뒷면 글 더보기"
-            >
-              <Text style={styles.backMore}>더보기 ›</Text>
-            </Pressable>
-          )}
-        </View>
-      )}
       <Text style={styles.backTicketDate}>{date}</Text>
     </View>
   );
@@ -568,13 +706,12 @@ export function IssuedTicketFlipPreview({
           styles.reviewBackShell,
           {
             width: ticketWidth,
-            height: ticketWidth * (348 / 204),
+            height: ticketWidth * (128 / 320),
             backgroundColor: color,
           },
         ]}
       >
         <BackTicketContent
-          photos={ticket.backs ?? []}
           text={ticket.memo ?? ""}
           date={(ticket.visitDate ?? "").replace(/-/g, ".")}
           color={color}
@@ -588,9 +725,18 @@ export function IssuedTicketFlipPreview({
       previewOnly
       ticketFont={ticket.ticketFont ?? "sans-serif"}
       decorateWidth={ticketWidth}
+      photoOrientation={ticket.photoOrientation ?? "landscape"}
       stickers={ticket.placedStickers ?? []}
       frame={safeFrame}
       front={ticket.front ?? null}
+      selectedPhotos={
+        ticket.front
+          ? [ticket.front, ...(ticket.backs ?? [])].slice(
+              0,
+              PHOTO_UPLOAD_MAX_COUNT,
+            )
+          : []
+      }
       ticketTitle={ticket.title ?? ""}
       ticketDate={(ticket.visitDate ?? "").replace(/-/g, ".")}
       ticketPlace={ticket.location ?? ""}
@@ -600,38 +746,14 @@ export function IssuedTicketFlipPreview({
   );
 }
 
-function BackTextModal({
-  text,
-  onClose,
-}: {
-  text: string | null;
-  onClose: () => void;
-}) {
-  return (
-    <Modal
-      visible={text !== null}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View style={styles.backModalShade}>
-        <View style={styles.backModalCard}>
-          <Text style={styles.backModalTitle}>기억 보관함</Text>
-          <ScrollView style={{ maxHeight: 250 }}>
-            <Text style={styles.backModalText}>{text}</Text>
-          </ScrollView>
-          <Pressable style={styles.backModalClose} onPress={onClose}>
-            <Text style={styles.backPhotoButtonText}>닫기</Text>
-          </Pressable>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 type TicketCreationScreenProps = {
   onBackHome: () => void;
   selectedVisitDate?: string;
+  originGroupName?: string;
+  originGroupId?: string;
+  originJointTitle?: string;
+  onTicketIssued?: (ticket: IssuedTicket) => void;
+  onOpenGroupTickets?: () => void;
   issuedTicket?: IssuedTicket | null;
   onCreateNew?: () => void;
 };
@@ -639,19 +761,28 @@ type TicketCreationScreenProps = {
 export default function TicketCreationScreen({
   onBackHome,
   selectedVisitDate,
+  originGroupName,
+  originJointTitle,
+  originGroupId,
   issuedTicket = null,
   onCreateNew,
+  onTicketIssued,
+  onOpenGroupTickets,
 }: TicketCreationScreenProps) {
   const { width, height } = useWindowDimensions();
-  // 1-2-4 / 1-2-5 전용: 기본 티켓의 약 1.25배. 작은 화면에서는 탭과 헤더를 침범하지 않도록 제한.
+  // Figma의 완성 티켓 320×128(2.5:1)을 화면 폭과 세로 공간에 맞춰 표시합니다.
   const decorateWidth = Math.max(
     150,
-    Math.min(255, width - 40, (height - 250) * (204 / 348)),
+    Math.min(390, width - 10, (height - 250) * (320 / 128)),
   );
+  const dispenserTicketWidth = Math.min(320, width - 48);
+  const dispenserTicketHeight = dispenserTicketWidth * (128 / 320);
+  const ticketExitProgress = useRef(new Animated.Value(0)).current;
+  const ticketIssueLock = useRef(false);
   // 스티커 선택 패널이 열리면 티켓이 패널과 겹치지 않도록 축소합니다.
   const stickerEditWidth = Math.max(
-    110,
-    Math.min(decorateWidth, (height - 460) * (204 / 348)),
+    120,
+    Math.min(decorateWidth, (height - 460) * (320 / 128)),
   );
   const cell = width / 3;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -668,17 +799,29 @@ export default function TicketCreationScreen({
     };
   }, []);
   const [step, setStep] = useState<Step>("photos");
+  const workflowStage =
+    step === "photos"
+      ? 0
+      : step === "frames" || step === "frameConfirm"
+        ? 1
+        : step === "decorate" || step === "stickers" || step === "stickerPlace"
+          ? 2
+          : 3;
   const [front, setFront] = useState<string | null>(null);
-  const [selectedGalleryId, setSelectedGalleryId] = useState<string | null>(
-    null,
-  );
+  const [memoryPhotos, setMemoryPhotos] = useState<string[]>([]);
+  const [selectedMemoryIds, setSelectedMemoryIds] = useState<string[]>([]);
+  const [photoPickerVisible, setPhotoPickerVisible] = useState(false);
+  const [photoChangeVisible, setPhotoChangeVisible] = useState(false);
+  const [returnToPhotoChange, setReturnToPhotoChange] = useState(false);
+  const [photoOrientation, setPhotoOrientation] = useState<
+    "landscape" | "portrait"
+  >("landscape");
   const [backs, setBacks] = useState<string[]>([]);
   const [frame, setFrame] = useState(0);
   const [frameChosen, setFrameChosen] = useState(false);
   const [sticker, setSticker] = useState("");
   const [placedStickers, setPlacedStickers] = useState<PlacedSticker[]>([]);
   const [stickerCategory, setStickerCategory] = useState("최근");
-  const [stickerSearch, setStickerSearch] = useState("");
   const [recentStickers, setRecentStickers] = useState<string[]>([]);
   const stickerId = useRef(0);
   const addSticker = (symbol: string) => {
@@ -702,17 +845,14 @@ export default function TicketCreationScreen({
   const [textEditorTab, setTextEditorTab] = useState<"keyboard" | "font">(
     "keyboard",
   );
-  const [ticketTitle, setTicketTitle] = useState("");
+  const [ticketTitle, setTicketTitle] = useState(
+    originJointTitle?.trim() ?? "",
+  );
   const [ticketDate, setTicketDate] = useState(
     selectedVisitDate ? selectedVisitDate.replace(/-/g, ".") : "",
   );
-  const [ticketPlace, setTicketPlace] = useState("");
-  const [backStyle, setBackStyle] = useState(0);
+  const [ticketPlace, setTicketPlace] = useState(originGroupName?.trim() ?? "");
   const [backText, setBackText] = useState("");
-  const [backColor, setBackColor] = useState("#F2E8DC");
-  const [expandedText, setExpandedText] = useState<string | null>(null);
-  const [tab, setTab] = useState(1);
-  const [, setSide] = useState<"front" | "back">("front");
   const [savedDraft, setSavedDraft] = useState<FrontDraft | null>(null);
   const [draftLoading, setDraftLoading] = useState(true);
   const [draftSaving, setDraftSaving] = useState(false);
@@ -739,6 +879,8 @@ export default function TicketCreationScreen({
       return;
     }
     const draft: FrontDraft = {
+      backs,
+      photoOrientation,
       front,
       frame,
       frameChosen,
@@ -765,7 +907,13 @@ export default function TicketCreationScreen({
   const restoreDraft = () => {
     if (!savedDraft) return;
     setFront(savedDraft.front);
-    setSelectedGalleryId(null);
+    const photos = savedDraft.front
+      ? [savedDraft.front, ...(savedDraft.backs ?? [])]
+      : [];
+    setMemoryPhotos(photos);
+    setBacks(savedDraft.backs ?? []);
+    setPhotoOrientation(savedDraft.photoOrientation ?? "landscape");
+    setSelectedMemoryIds(photos.map((_, index) => `draft-${index}`));
     setFrame(savedDraft.frame);
     setFrameChosen(savedDraft.frameChosen);
     setSticker(savedDraft.sticker);
@@ -839,6 +987,10 @@ export default function TicketCreationScreen({
       return;
     }
     if (step === "frontPreview") {
+      go("backEdit");
+      return;
+    }
+    if (step === "backEdit") {
       go("decorate");
       return;
     }
@@ -863,41 +1015,29 @@ export default function TicketCreationScreen({
     if (idx > 0) go(STEPS[idx - 1]);
   };
 
-  const pick = async (forBack = false) => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsMultipleSelection: forBack,
-        selectionLimit: forBack ? FREE_BACK_PHOTO_LIMIT : 1,
-        quality: 0.9,
-        preferredAssetRepresentationMode:
-          ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
-      });
-      if (result.canceled) return;
-
-      const uris: string[] = [];
-      for (const asset of result.assets.slice(
-        0,
-        forBack ? FREE_BACK_PHOTO_LIMIT : 1,
-      )) {
-        uris.push(await prepareSelectedPhoto(asset));
-      }
-      if (forBack) {
-        setBacks(uris);
-      } else {
-        setFront(uris[0] ?? null);
-        setSelectedGalleryId(null);
-      }
-    } catch (error) {
-      showPhotoSelectionError(error);
-    }
-  };
-
   // Android의 getAssetInfoAsync는 사진 위치(EXIF) 권한까지 요구할 수 있어,
   // 사진 선택에 필요한 URI·파일명은 getAssetsAsync가 준 값을 그대로 사용합니다.
   // iOS는 ph:// URI를 이미지 변환기에 전달할 수 없어서 로컬 파일 URI를 별도로 구합니다.
   const selectGalleryPhoto = async (asset: MediaLibrary.Asset) => {
     try {
+      const existingIndex = selectedMemoryIds.indexOf(asset.id);
+      if (existingIndex >= 0) {
+        const nextIds = selectedMemoryIds.filter((id) => id !== asset.id);
+        const nextPhotos = memoryPhotos.filter(
+          (_, index) => index !== existingIndex,
+        );
+        setSelectedMemoryIds(nextIds);
+        setMemoryPhotos(nextPhotos);
+        setFront(nextPhotos[0] ?? null);
+        setBacks(nextPhotos.slice(1));
+        return;
+      }
+      if (memoryPhotos.length >= PHOTO_UPLOAD_MAX_COUNT) {
+        Alert.alert(
+          `사진은 최대 ${PHOTO_UPLOAD_MAX_COUNT}장까지 선택할 수 있어요.`,
+        );
+        return;
+      }
       let uri = asset.uri;
       if (Platform.OS === "ios") {
         const info = await MediaLibrary.getAssetInfoAsync(asset);
@@ -912,8 +1052,11 @@ export default function TicketCreationScreen({
         uri,
         fileName: asset.filename,
       });
-      setFront(normalizedUri);
-      setSelectedGalleryId(asset.id);
+      const nextPhotos = [...memoryPhotos, normalizedUri];
+      setMemoryPhotos(nextPhotos);
+      setSelectedMemoryIds([...selectedMemoryIds, asset.id]);
+      setFront(nextPhotos[0] ?? null);
+      setBacks(nextPhotos.slice(1));
     } catch (error) {
       showPhotoSelectionError(error);
     }
@@ -932,80 +1075,53 @@ export default function TicketCreationScreen({
       });
       if (result.canceled || !result.assets[0]) return;
       const uri = await prepareSelectedPhoto(result.assets[0]);
-      setFront(uri);
-      setSelectedGalleryId(null);
+      if (memoryPhotos.length >= PHOTO_UPLOAD_MAX_COUNT) {
+        Alert.alert(
+          `사진은 최대 ${PHOTO_UPLOAD_MAX_COUNT}장까지 선택할 수 있어요.`,
+        );
+        return;
+      }
+      const nextPhotos = [...memoryPhotos, uri];
+      setMemoryPhotos(nextPhotos);
+      setSelectedMemoryIds([...selectedMemoryIds, `camera-${Date.now()}`]);
+      setFront(nextPhotos[0] ?? null);
+      setBacks(nextPhotos.slice(1));
     } catch (error) {
       showPhotoSelectionError(error);
     }
   };
 
+  const closePhotoPicker = () => {
+    setPhotoPickerVisible(false);
+    if (returnToPhotoChange) {
+      setPhotoChangeVisible(true);
+      setReturnToPhotoChange(false);
+    }
+  };
+
   const nextFromPhotos = () => {
-    if (!front) {
-      Alert.alert("사진 선택", "갤러리에서 앞면 사진 1장을 선택해 주세요.");
+    if (memoryPhotos.length === 0 || !front) {
+      Alert.alert("사진 선택", "추억 사진을 한 장 이상 선택해 주세요.");
       return;
     }
+    setFrameChosen(true);
     go("frames");
   };
-  const Ticket = ({ backSide = false }: { backSide?: boolean }) => (
-    <View
-      style={[
-        styles.ticket,
-        frame === 1 && styles.ticketFilm,
-        frame === 2 && styles.ticketPolaroid,
-        backSide && styles.backTicketShell,
-        backSide && { backgroundColor: backColor },
-      ]}
-    >
-      {backSide ? (
-        <BackTicketContent
-          photos={backs}
-          text={backText}
-          date={ticketDate}
-          color={backColor}
-          onMore={() => setExpandedText(backText)}
-        />
-      ) : (
-        <>
-          {front ? (
-            <Image
-              source={{ uri: front }}
-              style={styles.ticketImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={[styles.ticketImage, styles.photoEmpty]}>
-              <Text style={styles.muted}>사진 없음</Text>
-            </View>
-          )}
-          <Text style={styles.ticketCaption}>
-            {sticker} {caption || "MEMO:RE"}
-          </Text>
-          <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"TITLE  " + ticketTitle}
-          </Text>
-          <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"DATE  " + ticketDate}
-          </Text>
-          <Text style={[styles.ticketDetail, { fontFamily: ticketFont }]}>
-            {"PLACE  " + ticketPlace}
-          </Text>
-        </>
-      )}
-    </View>
-  );
   // 1-2-3 프레임 선택 화면 전용 미리보기. 이후 꾸미기 화면의 Ticket은 유지합니다.
 
   const FrameSelection = ({ confirmed = false }: { confirmed?: boolean }) => (
     <View style={styles.frameScreen}>
       <Text style={styles.frameHelper}>
-        선택한 사진에 어울리는 티켓 디자인을 골라주세요.
+        사진 조합을 확인하고 마음에 드는 디자인을 선택해 주세요.
       </Text>
       <View style={styles.framePreviewArea}>
         <FramePreview
           ticketFont={ticketFont}
-          large
+          decorateWidth={Math.max(150, Math.min(390, width - 16))}
           frame={frame}
           front={front}
+          selectedPhotos={memoryPhotos}
+          photoOrientation={photoOrientation}
           ticketTitle={ticketTitle}
           ticketDate={ticketDate}
           ticketPlace={ticketPlace}
@@ -1014,19 +1130,30 @@ export default function TicketCreationScreen({
         />
       </View>
       <View style={styles.framePickerArea}>
-        <Text style={styles.frameSectionTitle}>프레임 스타일</Text>
-        <View style={styles.frameSectionRule} />
+        <View style={styles.designPickerHeading}>
+          <Text style={styles.frameSectionTitle}>티켓 디자인</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              const next = (frame + 1 + Math.floor(Math.random() * 2)) % 3;
+              setFrame(next);
+              setFrameChosen(true);
+              go("frameConfirm");
+            }}
+          >
+            <Text style={styles.redoDesignText}>다시 만들기</Text>
+          </Pressable>
+        </View>
         <ScrollView
-          showsVerticalScrollIndicator={true}
-          nestedScrollEnabled
-          style={styles.frameVerticalList}
-          contentContainerStyle={styles.frameVerticalScroll}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.designOptions}
         >
-          {FRAMES.map((item, index) => (
+          {FRAMES.slice(0, 3).map((item, index) => (
             <Pressable
               key={`${item.name}-${index}`}
               accessibilityRole="button"
-              accessibilityLabel={`${item.name} 프레임 선택`}
+              accessibilityLabel={`디자인 ${index + 1} 선택`}
               accessibilityState={{ selected: frameChosen && frame === index }}
               onPress={() => {
                 setFrame(index);
@@ -1034,29 +1161,41 @@ export default function TicketCreationScreen({
                 if (!confirmed) go("frameConfirm");
               }}
               style={[
-                styles.frameOption,
-                frameChosen && frame === index && styles.frameOptionSelected,
+                styles.designOption,
+                frameChosen && frame === index && styles.designOptionSelected,
               ]}
             >
-              <View
-                style={[styles.frameSwatch, { backgroundColor: item.color }]}
-              />
+              <View style={styles.designThumbnail}>
+                <FramePreview
+                  previewOnly
+                  decorateWidth={108}
+                  frame={index}
+                  front={front}
+                  selectedPhotos={memoryPhotos}
+                  photoOrientation={photoOrientation}
+                  ticketTitle={ticketTitle}
+                  ticketDate={ticketDate}
+                  ticketPlace={ticketPlace}
+                  setTicketTitle={setTicketTitle}
+                  setTicketPlace={setTicketPlace}
+                />
+              </View>
               <Text
                 style={[
-                  styles.frameOptionText,
+                  styles.designOptionText,
                   frameChosen &&
                     frame === index &&
-                    styles.frameOptionTextSelected,
+                    styles.designOptionTextSelected,
                 ]}
               >
-                {item.name}
+                {String(index + 1).padStart(2, "0")}
               </Text>
             </Pressable>
           ))}
         </ScrollView>
       </View>
       {(confirmed || frameChosen) && (
-        <Action label="프레임 선택 완료 →" onPress={() => go("decorate")} />
+        <Action label="이 디자인 선택" onPress={() => go("decorate")} />
       )}
     </View>
   );
@@ -1075,12 +1214,14 @@ export default function TicketCreationScreen({
     </View>
   );
   const [issuingTicket, setIssuingTicket] = useState(false);
+  const [issueFailed, setIssueFailed] = useState(false);
   const [, setIssuedSnapshot] = useState<IssuedTicket | null>(null);
-  const [readOnlyBack, setReadOnlyBack] = useState(false);
 
   const resetTicket = () => {
     setFront(null);
-    setSelectedGalleryId(null);
+    setMemoryPhotos([]);
+    setSelectedMemoryIds([]);
+    setPhotoOrientation("landscape");
     setBacks([]);
     setFrame(0);
     setFrameChosen(false);
@@ -1091,43 +1232,53 @@ export default function TicketCreationScreen({
     setTicketFont("sans-serif");
     setTicketTitle("");
     setTicketPlace("");
-    setBackStyle(0);
     setBackText("");
-    setBackColor("#F2E8DC");
-    setSide("front");
-    setTicketDate("");
-    setTab(1);
+    setTicketDate(
+      selectedVisitDate ? selectedVisitDate.replace(/-/g, ".") : "",
+    );
     setIssuedSnapshot(null);
+    setStep("photos");
     if (onCreateNew) onCreateNew();
     else {
       onBackHome();
     }
   };
 
-  const finishIssuing = async () => {
-    if (issuingTicket) return;
+  const validateIssueInput = () => {
     const date = ticketDate.trim();
     if (!/^\d{4}\.\d{2}\.\d{2}$/.test(date)) {
       Alert.alert("날짜 확인", "먼저 달력에서 티켓 날짜를 선택해 주세요.");
-      return;
+      return false;
     }
-    const input = createTicketSchema.safeParse({
-      title: ticketTitle,
-      location: ticketPlace,
-      visitDate: date.replaceAll(".", "-"),
-      memo: backText,
-    });
+    // 그룹 개인 티켓에는 장소 입력란이 없으므로 기존 일반 티켓의 필수 장소 검증을 적용하지 않습니다.
+    const input = createTicketSchema
+      .pick({ title: true, visitDate: true })
+      .safeParse({
+        title: ticketTitle,
+        visitDate: date.replaceAll(".", "-"),
+      });
     if (!input.success) {
-      Alert.alert(
-        "입력 확인",
-        "제목, 장소와 달력에서 선택한 날짜를 확인해 주세요.",
-      );
-      return;
+      Alert.alert("입력 확인", "제목과 달력에서 선택한 날짜를 확인해 주세요.");
+      return false;
     }
+    if (Array.from(backText.trim()).length > PERSONAL_TICKET_MEMO_MAX) {
+      Alert.alert(
+        "뒷면 문구 확인",
+        `뒷면 문구는 최대 ${PERSONAL_TICKET_MEMO_MAX}자까지 입력할 수 있어요.`,
+      );
+      return false;
+    }
+    return true;
+  };
+
+  const finishIssuing = async () => {
+    if (issuingTicket) return;
+    const date = ticketDate.trim();
     setIssuingTicket(true);
     try {
       const snapshot: IssuedTicket = {
         visitDate: date.replaceAll(".", "-"),
+        photoOrientation,
         front,
         backs,
         frame,
@@ -1136,10 +1287,10 @@ export default function TicketCreationScreen({
         sticker,
         ticketFont,
         title: ticketTitle,
-        location: ticketPlace,
-        backStyle,
-        memo: backText,
-        backColor,
+        location: ticketPlace.trim() || originGroupName?.trim() || "",
+        backStyle: 0,
+        memo: backText.trim(),
+        backColor: "#F2E8DC",
         issuedAt: new Date().toISOString(),
       };
       const created = await issueTicketOnce(snapshot);
@@ -1152,134 +1303,233 @@ export default function TicketCreationScreen({
         return;
       }
       setIssuedSnapshot(snapshot);
+      if (originGroupId) onTicketIssued?.(snapshot);
       go("issued");
     } catch {
+      setIssueFailed(true);
       Alert.alert("발권 실패", "티켓을 저장하지 못했어요. 다시 시도해 주세요.");
     } finally {
       setIssuingTicket(false);
+      ticketIssueLock.current = false;
     }
+  };
+
+  const startTicketIssuing = () => {
+    if (ticketIssueLock.current || issuingTicket) return;
+    if (!validateIssueInput()) return;
+    ticketIssueLock.current = true;
+    setIssueFailed(false);
+    ticketExitProgress.setValue(0);
+    go("issuing");
+    Animated.timing(ticketExitProgress, {
+      toValue: 1,
+      duration: 1900,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) void finishIssuing();
+      else ticketIssueLock.current = false;
+    });
   };
 
   const content = () => {
     switch (step) {
       case "photos":
         return (
-          <>
-            <Text style={styles.helper}>
-              앞면 사진 1장, 뒷면 사진 최대 3장을 선택할 수 있습니다.
-            </Text>
-            <View style={styles.rule} />
-            <View style={styles.filterContainer}>
-              {["임시 저장", "최근 항목"].map((name, i) => (
-                <F key={name} selected={tab === i} onPress={() => setTab(i)}>
-                  {name}
-                </F>
-              ))}
-            </View>
-            {tab === 0 ? (
-              <View style={styles.draftArea}>
-                {draftLoading ? (
-                  <Text style={styles.info}>
-                    임시저장을 확인하는 중이에요...
-                  </Text>
-                ) : savedDraft ? (
-                  <Pressable
-                    style={styles.draftCard}
-                    onPress={restoreDraft}
-                    accessibilityRole="button"
-                    accessibilityLabel="임시저장한 티켓 이어서 편집"
-                  >
-                    {savedDraft.front ? (
-                      <Image
-                        source={{ uri: savedDraft.front }}
-                        style={styles.draftThumbnail}
-                        resizeMode="cover"
-                      />
-                    ) : null}
-                    <View style={styles.draftInfo}>
-                      <Text style={styles.draftTitle}>
-                        {savedDraft.title || "제목 없는 티켓"}
-                      </Text>
-                      <Text style={styles.draftDescription}>
-                        마지막 임시저장 · 이어서 편집하기 →
-                      </Text>
-                    </View>
-                  </Pressable>
-                ) : (
-                  <Text style={styles.info}>임시저장된 티켓이 없어요.</Text>
-                )}
+          <View style={styles.creationStart}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.creationStartContent}
+            >
+              <Text style={styles.creationTitle}>내 티켓 만들기</Text>
+              <View style={styles.creationProgress}>
+                {[0, 1, 2, 3].map((index) => (
+                  <View
+                    key={index}
+                    style={[
+                      styles.creationProgressSegment,
+                      index <= workflowStage && styles.creationProgressActive,
+                    ]}
+                  />
+                ))}
               </View>
-            ) : (
-              <FlatList
-                style={styles.gallery}
-                data={[{ id: "__camera__", uri: "" }, ...galleryPhotos]}
-                numColumns={3}
-                keyExtractor={(item) => item.id}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.galleryGrid}
-                onEndReached={() => {
-                  if (hasNextPage && !galleryLoading && !galleryError) {
-                    void loadGallery(galleryCursor, true);
-                  }
-                }}
-                onEndReachedThreshold={0.5}
-                renderItem={({ item }) =>
-                  item.id === "__camera__" ? (
-                    <Pressable
-                      style={[styles.cameraTile, { width: cell, height: cell }]}
-                      onPress={shoot}
-                    >
-                      <Text style={styles.cameraIcon}>◎</Text>
-                      <Text style={styles.cameraText}>촬영하기</Text>
-                    </Pressable>
-                  ) : (
-                    <Pressable
-                      style={[
-                        styles.galleryItem,
-                        { width: cell, height: cell },
-                      ]}
-                      onPress={() => {
-                        if ("filename" in item) {
-                          void selectGalleryPhoto(item);
-                        }
-                      }}
-                    >
-                      <Image
-                        source={{ uri: item.uri }}
-                        style={styles.fillImage}
-                        resizeMode="cover"
-                      />
-                      {selectedGalleryId === item.id && (
-                        <View style={styles.selected}>
-                          <Text style={styles.selectedText}>✓</Text>
+
+              <View
+                style={[styles.creationSection, styles.creationPhotoSection]}
+              >
+                <View
+                  style={[
+                    styles.creationSectionHeading,
+                    styles.creationPhotoHeading,
+                  ]}
+                >
+                  <Text style={styles.creationLabel}>
+                    추억 사진 (최대 {PHOTO_UPLOAD_MAX_COUNT}장)
+                  </Text>
+                </View>
+                <View style={styles.memoryPhotoRow}>
+                  {[0, 1, 2, 3].map((slot) => {
+                    const uri = memoryPhotos[slot];
+                    if (uri) {
+                      return (
+                        <View
+                          key={`${slot}-${uri}`}
+                          style={styles.memoryPhotoWrap}
+                        >
+                          <Image
+                            source={{ uri }}
+                            style={styles.memoryPhoto}
+                            resizeMode="cover"
+                          />
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`사진 ${slot + 1} 삭제`}
+                            onPress={() => {
+                              const nextPhotos = memoryPhotos.filter(
+                                (_, i) => i !== slot,
+                              );
+                              const nextIds = selectedMemoryIds.filter(
+                                (_, i) => i !== slot,
+                              );
+                              setMemoryPhotos(nextPhotos);
+                              setSelectedMemoryIds(nextIds);
+                              setFront(nextPhotos[0] ?? null);
+                              setBacks(nextPhotos.slice(1));
+                            }}
+                            style={styles.removeMemoryPhoto}
+                          >
+                            <Text style={styles.removeMemoryPhotoText}>×</Text>
+                          </Pressable>
                         </View>
-                      )}
-                    </Pressable>
-                  )
-                }
-                ListFooterComponent={
-                  galleryError ? (
-                    <View style={styles.galleryMessage}>
-                      <Text style={styles.info}>{galleryError}</Text>
-                      <Pressable onPress={() => void loadGallery()}>
-                        <Text style={styles.retryText}>다시 시도</Text>
+                      );
+                    }
+                    return (
+                      <Pressable
+                        key={`empty-photo-${slot}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`추억 사진 ${slot + 1} 추가`}
+                        onPress={() => setPhotoPickerVisible(true)}
+                        style={[
+                          styles.addMemoryPhoto,
+                          memoryPhotos.length === 0 &&
+                            slot === 0 &&
+                            styles.addMemoryPhotoActive,
+                        ]}
+                      >
+                        <Text style={styles.addMemoryPhotoPlus}>＋</Text>
                       </Pressable>
-                    </View>
-                  ) : galleryLoading ? (
-                    <Text style={styles.info}>사진을 불러오는 중이에요...</Text>
-                  ) : galleryPhotos.length === 0 ? (
-                    <Text style={styles.info}>
-                      기기에 저장된 사진이 없어요.
-                    </Text>
-                  ) : null
-                }
-              />
-            )}
-            <Action
-              label="사진 선택 완료   ·   프레임 고르기  →"
-              onPress={nextFromPhotos}
-            />
-          </>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.creationSection,
+                  styles.creationOrientationSection,
+                ]}
+              >
+                <View style={styles.orientationChoices}>
+                  {(
+                    [
+                      { key: "landscape", label: "가로형" },
+                      { key: "portrait", label: "세로형" },
+                    ] as const
+                  ).map((option) => (
+                    <Pressable
+                      key={option.key}
+                      accessibilityRole="button"
+                      accessibilityState={{
+                        selected: photoOrientation === option.key,
+                      }}
+                      onPress={() => setPhotoOrientation(option.key)}
+                      style={[
+                        styles.orientationCard,
+                        photoOrientation === option.key &&
+                          styles.orientationCardSelected,
+                      ]}
+                    >
+                      <FramePreview
+                        previewOnly
+                        decorateWidth={130}
+                        frame={0}
+                        front={null}
+                        selectedPhotos={[]}
+                        photoOrientation={option.key}
+                        showOrientationSymbol
+                        ticketTitle={ticketTitle}
+                        ticketDate={ticketDate}
+                        ticketPlace={ticketPlace}
+                        setTicketTitle={setTicketTitle}
+                        setTicketPlace={setTicketPlace}
+                      />
+                      <View style={styles.orientationChoiceLabel}>
+                        <Text style={styles.orientationRadio}>
+                          {photoOrientation === option.key ? "●" : "○"}
+                        </Text>
+                        <Text style={styles.orientationLabel}>
+                          {option.label}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.creationSection}>
+                <View style={styles.creationSectionHeading}>
+                  <Text style={styles.creationLabel}>티켓 분위기 (선택)</Text>
+                  <Text style={styles.creationCount}>
+                    {Array.from(caption).length}/{MOOD_PROMPT_MAX}
+                  </Text>
+                </View>
+                <Text style={styles.captionUsageHint}>
+                  티켓 제목과 별도로 저장해 두었다가 템플릿 생성에 사용해요.
+                </Text>
+                <TextInput
+                  accessibilityLabel={`AI 템플릿용 티켓 분위기 입력, 최대 ${MOOD_PROMPT_MAX}자`}
+                  style={styles.creationMessageInput}
+                  multiline
+                  value={caption}
+                  onChangeText={setCaption}
+                  maxLength={MOOD_PROMPT_MAX}
+                  placeholder="예: 따뜻한 노을빛 여행 / 세련된 전시회 기록"
+                  placeholderTextColor="#A99A90"
+                  textAlignVertical="top"
+                  returnKeyType="done"
+                />
+              </View>
+
+              {!draftLoading && savedDraft && (
+                <Pressable
+                  style={styles.resumeDraftLink}
+                  onPress={restoreDraft}
+                >
+                  <Text style={styles.resumeDraftText}>
+                    임시 저장한 티켓 이어서 편집하기 →
+                  </Text>
+                </Pressable>
+              )}
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="초안 만들기"
+                accessibilityState={{
+                  disabled: memoryPhotos.length === 0,
+                }}
+                disabled={memoryPhotos.length === 0}
+                onPress={nextFromPhotos}
+                style={[
+                  styles.action,
+                  styles.creationActionButton,
+                  styles.creationInlineAction,
+                  memoryPhotos.length === 0 && styles.creationActionDisabled,
+                ]}
+              >
+                <Text style={styles.creationActionText}>초안 만들기</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
         );
       case "frames":
         return <FrameSelection />;
@@ -1302,6 +1552,8 @@ export default function TicketCreationScreen({
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
+                selectedPhotos={memoryPhotos}
+                photoOrientation={photoOrientation}
                 ticketTitle={ticketTitle}
                 ticketDate={ticketDate}
                 ticketPlace={ticketPlace}
@@ -1313,9 +1565,8 @@ export default function TicketCreationScreen({
               <View style={styles.decorateTabs}>
                 {(
                   [
-                    { label: "프레임", target: "frames" },
+                    { label: "사진 변경", target: "changePhoto" },
                     { label: "스티커", target: "stickers" },
-                    { label: "텍스트", target: "textInput" },
                   ] as const
                 ).map((item) => (
                   <Pressable
@@ -1324,17 +1575,22 @@ export default function TicketCreationScreen({
                     accessibilityState={{
                       selected:
                         item.target ===
-                        (step === "stickerPlace" ? "stickers" : "frames"),
+                        (step === "stickerPlace" ? "stickers" : "changePhoto"),
                     }}
                     style={styles.decorateTab}
-                    onPress={() => go(item.target)}
+                    onPress={() =>
+                      item.target === "changePhoto"
+                        ? setPhotoChangeVisible(true)
+                        : go(item.target)
+                    }
                   >
                     <Text
                       style={[
                         styles.decorateTabText,
                         item.target ===
-                          (step === "stickerPlace" ? "stickers" : "frames") &&
-                          styles.decorateTabTextActive,
+                          (step === "stickerPlace"
+                            ? "stickers"
+                            : "changePhoto") && styles.decorateTabTextActive,
                       ]}
                     >
                       {item.label}
@@ -1356,6 +1612,8 @@ export default function TicketCreationScreen({
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
+                selectedPhotos={memoryPhotos}
+                photoOrientation={photoOrientation}
                 ticketTitle={ticketTitle}
                 ticketDate={ticketDate}
                 ticketPlace={ticketPlace}
@@ -1371,7 +1629,7 @@ export default function TicketCreationScreen({
                 >
                   <Text style={styles.stickerSheetCancel}>×</Text>
                 </Pressable>
-                <Text style={styles.stickerSheetTitle}>스티커 선택</Text>
+                <View style={styles.stickerToolbarSpacer} />
                 <Pressable
                   accessibilityLabel="스티커 배치 확정"
                   onPress={() => go("stickerPlace")}
@@ -1401,14 +1659,6 @@ export default function TicketCreationScreen({
                   </Pressable>
                 ))}
               </ScrollView>
-              <TextInput
-                style={styles.stickerSearchInput}
-                placeholder="⌕  스티커 검색"
-                placeholderTextColor="#B9AAA0"
-                value={stickerSearch}
-                onChangeText={setStickerSearch}
-                returnKeyType="search"
-              />
               <ScrollView
                 style={styles.stickerGridScroll}
                 showsVerticalScrollIndicator
@@ -1429,37 +1679,50 @@ export default function TicketCreationScreen({
                         stickerCategory === "최근" ||
                         item.category === stickerCategory,
                     )
-                )
-                  .filter(
-                    (item) =>
-                      stickerSearch.trim() === "" ||
-                      item.symbol.includes(stickerSearch.trim()) ||
-                      item.category.includes(stickerSearch.trim()),
-                  )
-                  .map((item, index) => (
-                    <Pressable
-                      key={`${item.symbol}-${index}`}
-                      style={styles.stickerGridItem}
-                      accessibilityLabel={`${item.symbol} 스티커 추가`}
-                      onPress={() => {
-                        Keyboard.dismiss();
-                        addSticker(item.symbol);
-                      }}
-                    >
-                      <Text style={styles.stickerGridEmoji}>{item.symbol}</Text>
-                    </Pressable>
-                  ))}
+                ).map((item, index) => (
+                  <Pressable
+                    key={`${item.symbol}-${index}`}
+                    style={styles.stickerGridItem}
+                    accessibilityLabel={`${item.symbol} 스티커 추가`}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      addSticker(item.symbol);
+                    }}
+                  >
+                    <Text style={styles.stickerGridEmoji}>{item.symbol}</Text>
+                  </Pressable>
+                ))}
               </ScrollView>
-              <View style={styles.stickerSheetFooter}>
+            </View>
+            <View style={styles.decorateTabs}>
+              {(
+                [
+                  { label: "사진 변경", target: "changePhoto" },
+                  { label: "스티커", target: "stickers" },
+                ] as const
+              ).map((item) => (
                 <Pressable
-                  onPress={() => setPlacedStickers((prev) => prev.slice(0, -1))}
+                  key={item.label}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: item.target === "stickers" }}
+                  style={styles.decorateTab}
+                  onPress={() =>
+                    item.target === "changePhoto"
+                      ? setPhotoChangeVisible(true)
+                      : go(item.target)
+                  }
                 >
-                  <Text style={styles.stickerUndo}>마지막 스티커 삭제</Text>
+                  <Text
+                    style={[
+                      styles.decorateTabText,
+                      item.target === "stickers" &&
+                        styles.decorateTabTextActive,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
                 </Pressable>
-                {/* <Pressable onPress={() => go('stickerPlace')} style={styles.stickerApplyButton}>
-                  <Text style={styles.stickerApplyText}>배치 완료 ✓</Text>
-                </Pressable> */}
-              </View>
+              ))}
             </View>
           </View>
         );
@@ -1474,6 +1737,8 @@ export default function TicketCreationScreen({
                 onStickerMove={moveSticker}
                 frame={frame}
                 front={front}
+                selectedPhotos={memoryPhotos}
+                photoOrientation={photoOrientation}
                 ticketTitle={ticketTitle}
                 ticketDate={ticketDate}
                 ticketPlace={ticketPlace}
@@ -1484,20 +1749,23 @@ export default function TicketCreationScreen({
             <View style={styles.decorateTabs}>
               {(
                 [
-                  { label: "프레임", target: "frames" },
+                  { label: "사진 변경", target: "changePhoto" },
                   { label: "스티커", target: "stickers" },
-                  { label: "텍스트", target: "textInput" },
                 ] as const
               ).map((item) => (
                 <Pressable
                   key={item.label}
                   style={styles.decorateTab}
-                  onPress={() => go(item.target)}
+                  onPress={() =>
+                    item.target === "changePhoto"
+                      ? setPhotoChangeVisible(true)
+                      : go(item.target)
+                  }
                 >
                   <Text
                     style={[
                       styles.decorateTabText,
-                      item.target === "textInput" &&
+                      item.target === "stickers" &&
                         styles.decorateTabTextActive,
                     ]}
                   >
@@ -1524,6 +1792,8 @@ export default function TicketCreationScreen({
                   onStickerMove={moveSticker}
                   frame={frame}
                   front={front}
+                  selectedPhotos={memoryPhotos}
+                  photoOrientation={photoOrientation}
                   ticketTitle={ticketTitle}
                   ticketDate={ticketDate}
                   ticketPlace={ticketPlace}
@@ -1681,137 +1951,65 @@ export default function TicketCreationScreen({
             </View>
           </View>
         );
+      case "backEdit":
+        return (
+          <View style={styles.backMemoScreen}>
+            <View style={styles.backMemoPreviewArea}>
+              <View
+                style={[
+                  styles.backMemoTicket,
+                  {
+                    width: decorateWidth,
+                    height: decorateWidth * (128 / 320),
+                  },
+                ]}
+              >
+                <Text style={styles.backMemoPreviewText}>
+                  {backText || "뒷면 문구가 여기에 표시돼요"}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.backMemoEditor}>
+              <View style={styles.backMemoHeading}>
+                <Text style={styles.backMemoLabel}>뒷면 문구</Text>
+                <Text style={styles.backMemoCount}>
+                  {Array.from(backText.trim()).length}/
+                  {PERSONAL_TICKET_MEMO_MAX}자
+                </Text>
+              </View>
+              <TextInput
+                accessibilityLabel="티켓 뒷면 문구 입력"
+                style={styles.backMemoInput}
+                multiline
+                maxLength={PERSONAL_TICKET_MEMO_MAX}
+                value={backText}
+                onChangeText={setBackText}
+                placeholder="티켓 뒷면에 남길 문구를 적어 주세요"
+                placeholderTextColor="#987966"
+                textAlignVertical="top"
+              />
+            </View>
+          </View>
+        );
       case "frontPreview":
         return (
           <>
-            <View style={styles.frontPreviewCenter}>
-              <View style={{ marginTop: -90 }}>
-                <FramePreview
-                  previewOnly
-                  ticketFont={ticketFont}
-                  decorateWidth={decorateWidth}
-                  stickers={placedStickers}
-                  frame={frame}
-                  front={front}
-                  ticketTitle={ticketTitle}
-                  ticketDate={ticketDate}
-                  ticketPlace={ticketPlace}
-                  setTicketTitle={setTicketTitle}
-                  setTicketPlace={setTicketPlace}
-                />
-              </View>
-            </View>
-            <Action label="뒷면 꾸미기  →" onPress={() => go("backEdit")} />
-          </>
-        );
-      case "backEdit":
-        return (
-          <View style={styles.backEditScreen}>
             <ScrollView
-              contentContainerStyle={[
-                styles.backEditScroll,
-                keyboardVisible && styles.backEditScrollKeyboard,
-              ]}
-              keyboardShouldPersistTaps="always"
-              keyboardDismissMode="none"
+              style={styles.ticketReviewScroll}
+              contentContainerStyle={styles.ticketReviewContent}
+              showsVerticalScrollIndicator={false}
             >
-              {!keyboardVisible && (
-                <View style={styles.backEditIntro}>
-                  <Text style={styles.backEditTitle}>기억 보관함</Text>
-                  <Text style={styles.backEditSubtitle}>
-                    소중한 순간을 차곡차곡 저장
-                  </Text>
-                </View>
-              )}
-              {!keyboardVisible && <Ticket backSide />}
-              {!keyboardVisible && (
-                <View style={styles.backPalette}>
-                  {BACK_COLORS.map((color) => (
-                    <Pressable
-                      key={color}
-                      accessibilityLabel={`뒷면 색상 ${color}`}
-                      accessibilityState={{ selected: backColor === color }}
-                      onPress={() => setBackColor(color)}
-                      style={[
-                        styles.backColorChip,
-                        { backgroundColor: color },
-                        backColor === color && styles.backColorSelected,
-                      ]}
-                    />
-                  ))}
-                </View>
-              )}
-              {!keyboardVisible && (
-                <Pressable
-                  style={styles.backPhotoButton}
-                  onPress={() => void pick(true)}
-                >
-                  <Text style={styles.backPhotoButtonText}>
-                    사진 추가 및 변경 ({backs.length}/{FREE_BACK_PHOTO_LIMIT})
-                  </Text>
-                </Pressable>
-              )}
-              <Text style={styles.backInputLabel}>
-                뒷면에 남길 글 · 최대 80자
-              </Text>
-              <TextInput
-                style={styles.backTextInput}
-                multiline
-                maxLength={TICKET_MEMO_MAX}
-                value={backText}
-                onChangeText={setBackText}
-                placeholder="이날의 기억을 적어 주세요"
-                placeholderTextColor="#987966"
-              />
-              <Text style={styles.backCount}>
-                {Array.from(backText).length}/80
-              </Text>
-            </ScrollView>
-            {keyboardVisible ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="텍스트 입력 완료"
-                style={styles.backInputDoneButton}
-                onPress={() => Keyboard.dismiss()}
-              >
-                <Text style={styles.backInputDoneText}>텍스트 입력 완료</Text>
-              </Pressable>
-            ) : (
-              <Action
-                label="티켓 저장 단계로  →"
-                onPress={() => go("reviewFront")}
-              />
-            )}
-          </View>
-        );
-      case "changePhoto":
-        return (
-          <>
-            <View style={styles.center}>
-              <Ticket backSide />
-            </View>
-            <View style={styles.options}>
-              <F onPress={() => void pick(false)}>앞면 사진 변경</F>
-              <F onPress={() => void pick(true)}>뒷면 사진 변경 (최대 3장)</F>
-            </View>
-            <Action
-              label="저장 전 확인하기  →"
-              onPress={() => go("reviewFront")}
-            />
-          </>
-        );
-      case "reviewFront":
-        return (
-          <>
-            <View style={styles.reviewCenter}>
-              <View style={styles.reviewTicketOffset}>
+              <View style={styles.ticketReviewItem}>
+                <Text style={styles.ticketReviewLabel}>앞면</Text>
                 <FramePreview
                   previewOnly
                   ticketFont={ticketFont}
-                  decorateWidth={decorateWidth}
+                  decorateWidth={Math.min(decorateWidth, width - 32)}
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
+                  selectedPhotos={memoryPhotos}
+                  photoOrientation={photoOrientation}
                   ticketTitle={ticketTitle}
                   ticketDate={ticketDate}
                   ticketPlace={ticketPlace}
@@ -1819,66 +2017,112 @@ export default function TicketCreationScreen({
                   setTicketPlace={setTicketPlace}
                 />
               </View>
-            </View>
-            <Action label="뒷면 확인하기  →" onPress={() => go("reviewBack")} />
-          </>
-        );
-      case "reviewBack":
-        return (
-          <>
-            <View style={styles.reviewCenter}>
-              <View style={styles.reviewTicketOffset}>
+              <View style={styles.ticketReviewItem}>
+                <Text style={styles.ticketReviewLabel}>뒷면</Text>
                 <View
                   style={[
-                    styles.reviewBackShell,
+                    styles.backMemoTicket,
+                    styles.ticketReviewBack,
                     {
-                      width: decorateWidth,
-                      height: decorateWidth * (348 / 204),
-                      backgroundColor: backColor,
+                      width: Math.min(decorateWidth, width - 32),
+                      height: Math.min(decorateWidth, width - 32) * (128 / 320),
                     },
                   ]}
                 >
-                  <BackTicketContent
-                    photos={backs}
-                    text={backText}
-                    date={ticketDate}
-                    color={backColor}
-                    onMore={() => setExpandedText(backText)}
-                  />
+                  <Text style={styles.backMemoPreviewText}>
+                    {backText || "뒷면 문구가 없어요"}
+                  </Text>
                 </View>
               </View>
-            </View>
-            <Action label="티켓 발권하기  →" onPress={() => go("issuing")} />
+            </ScrollView>
+            <Action label="티켓 발권하기  →" onPress={startTicketIssuing} />
           </>
         );
       case "issuing":
         return (
-          <>
-            <View style={styles.center}>
-              <Text style={styles.big}>티켓을 발권하고 있어요</Text>
-              <Text style={styles.info}>
-                발권 버튼을 눌러 완료 화면으로 이동해요.
-              </Text>
+          <View style={styles.dispenserScreen}>
+            <View style={styles.dispenserBrand}>
+              <Text style={styles.dispenserLogo}>MEMO:RE</Text>
+              <Text style={styles.dispenserTagline}>MEMORY · TICKET</Text>
             </View>
-            <Action
-              label={issuingTicket ? "발권 중..." : "발권 완료  →"}
-              onPress={() => void finishIssuing()}
-            />
-          </>
+            <View style={styles.dispenserAssembly}>
+              <View style={styles.dispenserSlot} />
+              <View
+                style={[
+                  styles.dispenserOutput,
+                  {
+                    width: dispenserTicketWidth,
+                    height: dispenserTicketHeight + 8,
+                  },
+                ]}
+              >
+                <Animated.View
+                  style={{
+                    transform: [
+                      {
+                        translateY: ticketExitProgress.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [-dispenserTicketHeight - 8, 0],
+                        }),
+                      },
+                    ],
+                  }}
+                >
+                  <FramePreview
+                    previewOnly
+                    ticketFont={ticketFont}
+                    decorateWidth={dispenserTicketWidth}
+                    stickers={placedStickers}
+                    frame={frame}
+                    front={front}
+                    selectedPhotos={memoryPhotos}
+                    photoOrientation={photoOrientation}
+                    ticketTitle={ticketTitle}
+                    ticketDate={ticketDate}
+                    ticketPlace={ticketPlace}
+                    setTicketTitle={setTicketTitle}
+                    setTicketPlace={setTicketPlace}
+                  />
+                </Animated.View>
+              </View>
+            </View>
+            <Text style={styles.dispenserStatus}>
+              {issueFailed ? "발권에 실패했어요" : "티켓을 인쇄하고 있어요..."}
+            </Text>
+            {issueFailed && (
+              <Pressable
+                style={styles.dispenserRetry}
+                onPress={startTicketIssuing}
+              >
+                <Text style={styles.dispenserRetryText}>다시 발권하기</Text>
+              </Pressable>
+            )}
+          </View>
         );
       case "issued":
         return (
-          <>
-            <View style={styles.frontPreviewCenter}>
-              <View style={styles.issuedTicketPosition}>
-                <Text style={styles.issuedTitle}>티켓 발권 완료!</Text>
+          <View style={styles.dispenserScreen}>
+            <View style={styles.dispenserBrand}>
+              <Text style={styles.dispenserLogo}>MEMO:RE</Text>
+              <Text style={styles.dispenserTagline}>MEMORY · TICKET</Text>
+            </View>
+            <View style={styles.dispenserAssembly}>
+              <View style={styles.dispenserSlot} />
+              <View
+                style={[
+                  styles.dispenserOutput,
+                  { width: dispenserTicketWidth },
+                ]}
+              >
                 <FramePreview
                   previewOnly
                   ticketFont={ticketFont}
-                  decorateWidth={decorateWidth}
+                  decorateWidth={dispenserTicketWidth}
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
+                  selectedPhotos={memoryPhotos}
+                  photoOrientation={photoOrientation}
                   ticketTitle={ticketTitle}
                   ticketDate={ticketDate}
                   ticketPlace={ticketPlace}
@@ -1887,11 +2131,16 @@ export default function TicketCreationScreen({
                 />
               </View>
             </View>
+            <Text style={styles.dispenserComplete}>티켓 발권 완료!</Text>
             <Action
-              label="내 보관함에서 보기  →"
-              onPress={() => go("archive")}
+              label="오늘의 티켓 보러가기  →"
+              onPress={() =>
+                originGroupId && onOpenGroupTickets
+                  ? onOpenGroupTickets()
+                  : go("archive")
+              }
             />
-          </>
+          </View>
         );
       case "archive":
         return (
@@ -1905,6 +2154,8 @@ export default function TicketCreationScreen({
                   stickers={placedStickers}
                   frame={frame}
                   front={front}
+                  selectedPhotos={memoryPhotos}
+                  photoOrientation={photoOrientation}
                   ticketTitle={ticketTitle}
                   ticketDate={ticketDate}
                   ticketPlace={ticketPlace}
@@ -1922,7 +2173,7 @@ export default function TicketCreationScreen({
             <View style={styles.center}>
               <Text style={styles.big}>티켓 생성에 실패했어요.</Text>
             </View>
-            <Action label="다시 시도하기" onPress={() => go("reviewBack")} />
+            <Action label="다시 시도하기" onPress={() => go("frontPreview")} />
           </>
         );
     }
@@ -1935,64 +2186,37 @@ export default function TicketCreationScreen({
     return (
       <SafeAreaView style={styles.root}>
         <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
-        <BackTextModal
-          text={expandedText}
-          onClose={() => setExpandedText(null)}
-        />
         <View style={styles.header}>
           <Pressable onPress={onBackHome} style={styles.back}>
             <Text style={styles.backText}>‹</Text>
           </Pressable>
-          <Text style={styles.headerTitle}>
-            발권한 티켓 · {readOnlyBack ? "뒷면" : "앞면"}
-          </Text>
+          <Text style={styles.headerTitle}>발권한 티켓</Text>
         </View>
         <View style={styles.center}>
-          {readOnlyBack ? (
-            <View
-              style={[
-                styles.reviewBackShell,
-                {
-                  width: decorateWidth,
-                  height: decorateWidth * (348 / 204),
-                  backgroundColor: issuedTicket.backColor ?? "#F2E8DC",
-                },
-              ]}
-            >
-              <BackTicketContent
-                photos={issuedTicket.backs ?? []}
-                text={issuedTicket.memo ?? ""}
-                date={issuedTicket.visitDate}
-                color={issuedTicket.backColor ?? "#F2E8DC"}
-                onMore={() => setExpandedText(issuedTicket.memo ?? "")}
-              />
-            </View>
-          ) : (
-            <FramePreview
-              previewOnly
-              ticketFont={issuedTicket.ticketFont}
-              decorateWidth={decorateWidth}
-              stickers={issuedTicket.placedStickers}
-              frame={readOnlyFrame}
-              front={issuedTicket.front}
-              ticketTitle={issuedTicket.title}
-              ticketDate={issuedTicket.visitDate}
-              ticketPlace={issuedTicket.location}
-              setTicketTitle={setTicketTitle}
-              setTicketPlace={setTicketPlace}
-            />
-          )}
+          <FramePreview
+            previewOnly
+            ticketFont={issuedTicket.ticketFont}
+            decorateWidth={decorateWidth}
+            stickers={issuedTicket.placedStickers}
+            frame={readOnlyFrame}
+            front={issuedTicket.front}
+            selectedPhotos={
+              issuedTicket.front
+                ? [issuedTicket.front, ...(issuedTicket.backs ?? [])].slice(
+                    0,
+                    4,
+                  )
+                : []
+            }
+            ticketTitle={issuedTicket.title}
+            ticketDate={issuedTicket.visitDate}
+            ticketPlace={issuedTicket.location}
+            setTicketTitle={setTicketTitle}
+            setTicketPlace={setTicketPlace}
+          />
           <Text style={styles.info}>
             발권 완료 · 수정할 수 없는 티켓입니다.
           </Text>
-          <Pressable
-            style={styles.action}
-            onPress={() => setReadOnlyBack((value) => !value)}
-          >
-            <Text style={[styles.actionText, { paddingHorizontal: 30 }]}>
-              {readOnlyBack ? "앞면 보기" : "뒷면 보기"}
-            </Text>
-          </Pressable>
         </View>
       </SafeAreaView>
     );
@@ -2001,10 +2225,201 @@ export default function TicketCreationScreen({
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
-      <BackTextModal
-        text={expandedText}
-        onClose={() => setExpandedText(null)}
-      />
+      <Modal
+        visible={photoChangeVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoChangeVisible(false)}
+      >
+        <View style={styles.photoChangeShade}>
+          <View style={styles.photoChangeCard}>
+            <Text style={styles.photoChangeTitle}>사진 변경</Text>
+            <View style={styles.photoChangeRow}>
+              {memoryPhotos.map((uri, index) => (
+                <View
+                  key={`${uri}-${index}`}
+                  style={styles.photoChangeThumbWrap}
+                >
+                  <Image
+                    source={{ uri }}
+                    style={styles.photoChangeThumb}
+                    resizeMode="cover"
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`사진 ${index + 1} 삭제`}
+                    style={styles.photoChangeRemove}
+                    onPress={() => {
+                      const nextPhotos = memoryPhotos.filter(
+                        (_, i) => i !== index,
+                      );
+                      const nextIds = selectedMemoryIds.filter(
+                        (_, i) => i !== index,
+                      );
+                      setMemoryPhotos(nextPhotos);
+                      setSelectedMemoryIds(nextIds);
+                      setFront(nextPhotos[0] ?? null);
+                      setBacks(nextPhotos.slice(1));
+                    }}
+                  >
+                    <Text style={styles.photoChangeRemoveText}>×</Text>
+                  </Pressable>
+                </View>
+              ))}
+              {memoryPhotos.length < PHOTO_UPLOAD_MAX_COUNT && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="사진 추가"
+                  style={styles.photoChangeAdd}
+                  onPress={() => {
+                    setPhotoChangeVisible(false);
+                    setReturnToPhotoChange(true);
+                    setPhotoPickerVisible(true);
+                    if (galleryPhotos.length === 0) void loadGallery();
+                  }}
+                >
+                  <Text style={styles.photoChangeAddText}>＋</Text>
+                </Pressable>
+              )}
+            </View>
+            <Pressable
+              style={styles.photoChangeConfirm}
+              onPress={() => setPhotoChangeVisible(false)}
+            >
+              <Text style={styles.photoChangeConfirmText}>선택 완료</Text>
+            </Pressable>
+            <Pressable
+              style={styles.photoChangeCancel}
+              onPress={() => setPhotoChangeVisible(false)}
+            >
+              <Text style={styles.photoChangeCancelText}>취소</Text>
+            </Pressable>
+          </View>
+          {/* 사진 팝업이 열린 동안에도 하단 탭에서 바로 다른 꾸미기 도구로 이동할 수 있습니다. */}
+          <View style={styles.photoChangeTabOverlay}>
+            {(
+              [
+                { label: "사진 변경", target: "changePhoto" },
+                { label: "스티커", target: "stickers" },
+              ] as const
+            ).map((item) => {
+              const selected =
+                step === "stickers" || step === "stickerPlace"
+                  ? item.target === "stickers"
+                  : item.target === "changePhoto";
+              return (
+                <Pressable
+                  key={item.label}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
+                  style={styles.decorateTab}
+                  onPress={() => {
+                    setPhotoChangeVisible(false);
+                    if (item.target === "changePhoto") return;
+                    Keyboard.dismiss();
+                    go(item.target);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.decorateTabText,
+                      selected && styles.decorateTabTextActive,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={photoPickerVisible}
+        animationType="slide"
+        onRequestClose={closePhotoPicker}
+      >
+        <SafeAreaView style={styles.photoPickerRoot}>
+          <View style={styles.photoPickerHeader}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="사진 선택 닫기"
+              onPress={closePhotoPicker}
+              style={styles.photoPickerClose}
+            >
+              <Text style={styles.backText}>‹</Text>
+            </Pressable>
+            <Text style={styles.photoPickerTitle}>추억 사진 선택</Text>
+            <Text style={styles.photoPickerCount}>
+              {memoryPhotos.length}/{PHOTO_UPLOAD_MAX_COUNT}
+            </Text>
+          </View>
+          <FlatList
+            style={styles.photoPickerList}
+            data={[{ id: "__camera__", uri: "" }, ...galleryPhotos]}
+            numColumns={3}
+            keyExtractor={(item) => item.id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.galleryGrid}
+            onEndReached={() => {
+              if (hasNextPage && !galleryLoading && !galleryError) {
+                void loadGallery(galleryCursor, true);
+              }
+            }}
+            onEndReachedThreshold={0.5}
+            renderItem={({ item }) =>
+              item.id === "__camera__" ? (
+                <Pressable
+                  style={[styles.cameraTile, { width: cell, height: cell }]}
+                  onPress={() => void shoot()}
+                >
+                  <Text style={styles.cameraIcon}>◎</Text>
+                  <Text style={styles.cameraText}>촬영하기</Text>
+                </Pressable>
+              ) : (
+                <Pressable
+                  style={[styles.galleryItem, { width: cell, height: cell }]}
+                  onPress={() => {
+                    if ("filename" in item) void selectGalleryPhoto(item);
+                  }}
+                >
+                  <Image
+                    source={{ uri: item.uri }}
+                    style={styles.fillImage}
+                    resizeMode="cover"
+                  />
+                  {selectedMemoryIds.includes(item.id) && (
+                    <View style={styles.selected}>
+                      <Text style={styles.selectedText}>
+                        {selectedMemoryIds.indexOf(item.id) + 1}
+                      </Text>
+                    </View>
+                  )}
+                </Pressable>
+              )
+            }
+            ListFooterComponent={
+              galleryError ? (
+                <View style={styles.galleryMessage}>
+                  <Text style={styles.info}>{galleryError}</Text>
+                  <Pressable onPress={() => void loadGallery()}>
+                    <Text style={styles.retryText}>다시 시도</Text>
+                  </Pressable>
+                </View>
+              ) : galleryLoading ? (
+                <Text style={styles.info}>사진을 불러오는 중이에요...</Text>
+              ) : galleryPhotos.length === 0 ? (
+                <Text style={styles.info}>기기에 저장된 사진이 없어요.</Text>
+              ) : null
+            }
+          />
+          <View style={styles.photoPickerFooter}>
+            <Pressable style={styles.action} onPress={closePhotoPicker}>
+              <Text style={styles.actionText}>선택 완료</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </Modal>
       <KeyboardAvoidingView
         style={styles.root}
         behavior={
@@ -2015,18 +2430,39 @@ export default function TicketCreationScreen({
               : undefined
         }
       >
-        <View style={styles.header}>
-          <Pressable onPress={back} style={styles.back}>
-            <Text style={styles.backText}>‹</Text>
+        <View
+          style={[styles.header, step === "photos" && styles.creationHeader]}
+        >
+          <Pressable
+            onPress={back}
+            style={[styles.back, step === "photos" && styles.creationBack]}
+          >
+            <Text
+              style={[
+                styles.backText,
+                step === "photos" && styles.creationBackText,
+              ]}
+            >
+              ‹
+            </Text>
           </Pressable>
-          <Text style={styles.headerTitle}>
-            {step === "decorate" ||
-            step === "stickers" ||
-            step === "stickerPlace" ||
-            step === "text" ||
-            step === "textInput"
-              ? "티켓 꾸미기"
-              : TITLES[step]}
+          <Text
+            style={[
+              styles.headerTitle,
+              step === "photos" && styles.creationHeaderTitle,
+            ]}
+          >
+            {step === "photos"
+              ? ticketDate
+                ? `${Number(ticketDate.slice(5, 7))}월 ${Number(ticketDate.slice(8, 10))}일`
+                : "날짜 선택"
+              : step === "decorate" ||
+                  step === "stickers" ||
+                  step === "stickerPlace" ||
+                  step === "text" ||
+                  step === "textInput"
+                ? "티켓 꾸미기"
+                : TITLES[step]}
           </Text>
           <View style={styles.headerActions}>
             {(step === "decorate" ||
@@ -2051,12 +2487,13 @@ export default function TicketCreationScreen({
               step === "stickers" ||
               step === "stickerPlace" ||
               step === "text" ||
-              step === "textInput") && (
+              step === "textInput" ||
+              step === "backEdit") && (
               <Pressable
                 style={styles.donePill}
                 onPress={() => {
                   Keyboard.dismiss();
-                  go("frontPreview");
+                  go(step === "backEdit" ? "frontPreview" : "backEdit");
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="티켓 꾸미기 완료"
@@ -2066,12 +2503,360 @@ export default function TicketCreationScreen({
             )}
           </View>
         </View>
+        {step !== "photos" &&
+          step !== "issued" &&
+          step !== "archive" &&
+          step !== "error" && (
+            <View
+              accessibilityLabel={`티켓 만들기 ${workflowStage + 1}단계 중 4단계`}
+              style={styles.workflowProgress}
+            >
+              {[0, 1, 2, 3].map((index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.creationProgressSegment,
+                    index <= workflowStage && styles.creationProgressActive,
+                  ]}
+                />
+              ))}
+            </View>
+          )}
         <View style={styles.body}>{content()}</View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 const styles = StyleSheet.create({
+  creationStart: { flex: 1, backgroundColor: C.bg },
+  creationStartContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+  creationTitle: {
+    color: "#352722",
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "500",
+    letterSpacing: 0.15,
+    marginBottom: 14,
+  },
+  creationProgress: { flexDirection: "row", gap: 8, marginBottom: 14 },
+  workflowProgress: {
+    flexDirection: "row",
+    gap: 8,
+    marginHorizontal: 20,
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  ticketReviewScroll: { flex: 1 },
+  ticketReviewContent: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 92,
+  },
+  ticketReviewItem: { alignItems: "center", gap: 6 },
+  ticketReviewLabel: {
+    alignSelf: "flex-start",
+    color: C.brown,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  ticketReviewBack: { backgroundColor: "#F2E8DC" },
+  creationProgressSegment: {
+    flex: 1,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: "#E8DFD6",
+  },
+  creationProgressActive: { backgroundColor: C.outline },
+  creationSection: {},
+  creationPhotoSection: { marginBottom: 14 },
+  creationOrientationSection: { marginBottom: 14 },
+  creationSectionHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  creationPhotoHeading: { marginBottom: 14 },
+  creationLabel: {
+    color: "#352722",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "400",
+    letterSpacing: 0.4,
+  },
+  creationCount: { color: C.outline, fontSize: 12, lineHeight: 16 },
+  captionUsageHint: {
+    color: C.brown,
+    fontSize: 11,
+    lineHeight: 16,
+    marginBottom: 8,
+  },
+  memoryPhotoRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  memoryPhotoWrap: {
+    width: 74,
+    height: 74,
+    position: "relative",
+    flexShrink: 0,
+  },
+  memoryPhoto: { width: "100%", height: "100%", borderRadius: 10 },
+  removeMemoryPhoto: {
+    position: "absolute",
+    right: -4,
+    top: -4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "rgba(53,39,34,0.8)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  removeMemoryPhotoText: { color: "#FFFFFF", fontSize: 14, lineHeight: 16 },
+  addMemoryPhoto: {
+    width: 74,
+    height: 74,
+    flexShrink: 0,
+    borderRadius: 10,
+    backgroundColor: "#FFFDF8",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addMemoryPhotoActive: {
+    borderWidth: 2,
+    borderColor: C.accent,
+    backgroundColor: "#F0C8BE",
+  },
+  addMemoryPhotoPlus: { color: C.brown, fontSize: 22, lineHeight: 28 },
+  orientationChoices: { flexDirection: "row", gap: 12 },
+  orientationCard: {
+    flex: 1,
+    height: 112,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: "#E8D8CA",
+    backgroundColor: "#FFFDF8",
+    alignItems: "center",
+    padding: 12,
+  },
+  orientationCardSelected: {
+    borderWidth: 2,
+    borderColor: C.accent,
+    backgroundColor: "#FFFDF8",
+  },
+  orientationChoiceLabel: {
+    width: 130,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 12,
+  },
+  orientationLabel: {
+    color: C.brown,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "500",
+  },
+  orientationRadio: { color: C.brown, fontSize: 14, lineHeight: 20 },
+  creationMessageInput: {
+    height: 120,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E8D8CA",
+    backgroundColor: "#FFFDF8",
+    color: C.brown,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlignVertical: "top",
+  },
+  resumeDraftLink: { alignSelf: "flex-start", paddingVertical: 5 },
+  resumeDraftText: {
+    color: C.outline,
+    fontSize: 10,
+    textDecorationLine: "underline",
+  },
+  creationInlineAction: {
+    height: 52,
+    borderRadius: 10,
+    marginTop: 14,
+    marginBottom: 0,
+  },
+  creationActionButton: { backgroundColor: C.accent },
+  creationActionText: { color: "#FFFFFF", fontSize: 14, fontWeight: "400" },
+  creationActionDisabled: { backgroundColor: "#E8DFD6" },
+  actionDisabled: { backgroundColor: "#E3DED8" },
+  photoChangeShade: {
+    flex: 1,
+    backgroundColor: "rgba(45, 34, 28, 0.28)",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  photoChangeTabOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 74,
+    flexDirection: "row",
+    alignItems: "stretch",
+    justifyContent: "space-around",
+    backgroundColor: "#E6C9BE",
+    opacity: 0.72,
+  },
+  photoChangeCard: {
+    backgroundColor: "#FFFDFC",
+    borderRadius: 16,
+    padding: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  photoChangeTitle: {
+    color: C.brown,
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 14,
+  },
+  photoChangeRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+  photoChangeThumbWrap: { width: 54, height: 60, position: "relative" },
+  photoChangeThumb: { width: "100%", height: "100%", borderRadius: 7 },
+  photoChangeRemove: {
+    position: "absolute",
+    right: -5,
+    top: -5,
+    width: 19,
+    height: 19,
+    borderRadius: 10,
+    backgroundColor: C.brown,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoChangeRemoveText: { color: C.white, fontSize: 13, lineHeight: 15 },
+  photoChangeAdd: {
+    width: 54,
+    height: 60,
+    borderWidth: 1,
+    borderColor: "#E9D8CD",
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoChangeAddText: { color: C.outline, fontSize: 25, lineHeight: 29 },
+  photoChangeConfirm: {
+    height: 44,
+    marginTop: 13,
+    borderRadius: 8,
+    backgroundColor: "#C58F80",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoChangeConfirmText: { color: C.white, fontSize: 13, fontWeight: "700" },
+  photoChangeCancel: { alignItems: "center", paddingTop: 9, paddingBottom: 1 },
+  photoChangeCancelText: { color: C.brown, fontSize: 12 },
+  photoPickerRoot: { flex: 1, backgroundColor: C.bg },
+  photoPickerHeader: {
+    height: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8D8CA",
+  },
+  photoPickerClose: {
+    width: 42,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoPickerTitle: {
+    flex: 1,
+    color: C.brown,
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  photoPickerCount: {
+    width: 42,
+    color: C.outline,
+    fontSize: 11,
+    textAlign: "right",
+  },
+  photoPickerList: { flex: 1 },
+  photoPickerFooter: {
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 10,
+  },
+  designPickerHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingTop: 2,
+    paddingBottom: 7,
+  },
+  redoDesignText: {
+    color: C.brown,
+    fontSize: 13,
+    fontWeight: "600",
+    textDecorationLine: "underline",
+  },
+  designOptions: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: 2,
+    gap: 4,
+    paddingBottom: 8,
+  },
+  designOption: {
+    width: 116,
+    height: 88,
+    alignItems: "center",
+    paddingTop: 6,
+    borderWidth: 1,
+    borderColor: "transparent",
+    borderRadius: 9,
+  },
+  designOptionSelected: { borderColor: C.accent, backgroundColor: "#F8E9E3" },
+  designThumbnail: {
+    width: 108,
+    height: 44,
+    overflow: "hidden",
+    borderRadius: 4,
+  },
+  designOptionText: {
+    width: 108,
+    color: C.outline,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "center",
+    marginTop: 4,
+  },
+  designOptionTextSelected: { color: C.brown, fontWeight: "700" },
+  photoComposition: {
+    width: "100%",
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 2,
+    overflow: "hidden",
+    borderRadius: 10,
+  },
+  photoCompositionPortrait: { flexDirection: "column" },
+  compositionPhoto: { width: "49%", height: "49%", backgroundColor: "#E8D8CA" },
+  compositionPhotoSingle: { width: "100%", height: "100%" },
+  compositionPhotoHalf: { width: "49%", height: "100%" },
+  compositionPhotoTallHalf: { width: "100%", height: "49%" },
   reviewCenter: {
     flex: 1,
     alignItems: "center",
@@ -2121,29 +2906,18 @@ const styles = StyleSheet.create({
     width: "100%",
     marginBottom: 8,
   },
-  backPhotoGrid: {
+  backMemoOnlyTextWrap: {
+    flex: 1,
     width: "100%",
-    height: 175,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 4,
-    justifyContent: "center",
-    alignContent: "center",
-  },
-  backGridImage: { width: "48%", height: 84, backgroundColor: "#E8D8CA" },
-  backGridImageSingle: { width: "100%", height: 173 },
-  backEmptyPhoto: { color: "#987966", fontSize: 11, textAlign: "center" },
-  backPreviewTextWrap: {
-    width: "100%",
-    height: 48,
-    paddingTop: 4,
     alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
   },
-  backPreviewText: {
+  backMemoOnlyText: {
     color: "#654C40",
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: "600",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "500",
     textAlign: "center",
   },
   backMore: {
@@ -2158,112 +2932,51 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: "auto",
   },
-  backEditScreen: { flex: 1 },
-  backInputDoneButton: {
-    marginHorizontal: 22,
-    marginBottom: 12,
-    minHeight: 52,
-    borderRadius: 12,
-    backgroundColor: "#654C40",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backInputDoneText: { color: "#FFFDF8", fontSize: 15, fontWeight: "700" },
-  backEditScroll: { alignItems: "center", paddingBottom: 130, paddingTop: 12 },
-  backEditScrollKeyboard: { paddingTop: 12, paddingBottom: 24 },
-  backEditIntro: {
-    alignSelf: "stretch",
-    paddingHorizontal: 30,
-    marginBottom: 18,
-  },
-  backEditTitle: { color: "#654C40", fontSize: 15, fontWeight: "700" },
-  backEditSubtitle: {
-    color: "#987966",
-    fontSize: 12,
-    fontWeight: "500",
-    marginTop: 6,
-  },
-  backPalette: {
-    flexDirection: "row",
-    gap: 6,
-    alignItems: "center",
-    marginTop: 18,
-    marginBottom: 12,
-  },
-  backColorChip: {
-    width: 22,
-    height: 22,
-    borderWidth: 1,
-    borderColor: "#E8D8CA",
-  },
-  backColorSelected: { borderWidth: 2, borderColor: "#654C40" },
-  backPhotoButton: {
-    backgroundColor: "#F0C8BE",
-    borderRadius: 12,
-    minHeight: 42,
-    alignItems: "center",
-    justifyContent: "center",
-    width: "84%",
-  },
-  backPhotoButtonText: { color: "#654C40", fontSize: 14, fontWeight: "600" },
-  backInputLabel: {
-    color: "#654C40",
-    fontSize: 14,
-    fontWeight: "700",
-    marginTop: 20,
-    alignSelf: "flex-start",
-    marginLeft: "8%",
-  },
-  backTextInput: {
-    width: "84%",
-    minHeight: 74,
-    maxHeight: 120,
-    borderWidth: 1,
-    borderColor: "#E8D8CA",
-    borderRadius: 12,
-    backgroundColor: "#FFFDF8",
-    color: "#654C40",
-    fontSize: 15,
-    fontWeight: "500",
-    padding: 10,
-    marginTop: 8,
-    textAlignVertical: "top",
-  },
-  backCount: {
-    alignSelf: "flex-end",
-    marginRight: "8%",
-    color: "#987966",
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 4,
-  },
-  backModalShade: {
+  backMemoScreen: { flex: 1, backgroundColor: C.bg },
+  backMemoPreviewArea: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    paddingHorizontal: 28,
-  },
-  backModalCard: { backgroundColor: "#FFFDF8", borderRadius: 16, padding: 22 },
-  backModalTitle: {
-    color: "#654C40",
-    fontWeight: "700",
-    fontSize: 17,
-    marginBottom: 18,
-  },
-  backModalText: {
-    color: "#654C40",
-    fontSize: 16,
-    lineHeight: 25,
-    fontWeight: "500",
-  },
-  backModalClose: {
-    backgroundColor: "#F0C8BE",
-    borderRadius: 12,
     alignItems: "center",
-    padding: 12,
-    marginTop: 20,
+    justifyContent: "center",
+    paddingHorizontal: 16,
   },
-
+  backMemoTicket: {
+    backgroundColor: "#F2E8DC",
+    borderWidth: 1,
+    borderColor: "#E8D8CA",
+    borderRadius: 10,
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  backMemoPreviewText: {
+    color: C.brown,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: "center",
+  },
+  backMemoEditor: { paddingHorizontal: 20, paddingBottom: 18 },
+  backMemoHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  backMemoLabel: { color: C.brown, fontSize: 14, fontWeight: "600" },
+  backMemoCount: { color: C.outline, fontSize: 12 },
+  backMemoInput: {
+    minHeight: 112,
+    maxHeight: 160,
+    borderWidth: 1,
+    borderColor: "#E8D8CA",
+    borderRadius: 10,
+    backgroundColor: "#FFFDF8",
+    color: C.brown,
+    fontSize: 14,
+    lineHeight: 21,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   draftArea: { flex: 1, paddingHorizontal: 20, paddingTop: 24 },
   draftCard: {
     flexDirection: "row",
@@ -2308,12 +3021,22 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 0,
   },
+  stickerOverlayCanvas: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    overflow: "hidden",
+    zIndex: 20,
+  },
   placedSticker: {
     position: "absolute",
     width: 36,
     height: 36,
     alignItems: "center",
     justifyContent: "center",
+    // 사진 레이어가 zIndex를 사용하므로 스티커는 사진 위에 렌더링합니다.
+    zIndex: 20,
+    elevation: 10,
   },
   placedStickerText: {
     fontSize: 30,
@@ -2437,7 +3160,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   stickerSheet: {
-    height: 350,
+    height: 205,
     backgroundColor: "#FFFDFC",
     borderTopWidth: 1,
     borderTopColor: "#E9D6CC",
@@ -2447,11 +3170,12 @@ const styles = StyleSheet.create({
     paddingTop: 6,
   },
   stickerSheetToolbar: {
-    height: 30,
+    height: 24,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
+  stickerToolbarSpacer: { flex: 1 },
   stickerSheetTitle: { color: C.brown, fontSize: 15, fontWeight: "600" },
   stickerSheetCancel: { color: "#D98B7D", fontSize: 22, width: 35 },
   stickerSheetConfirm: {
@@ -2461,20 +3185,9 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   stickerCategoryRow: { alignItems: "center", gap: 18, paddingVertical: 3 },
-  stickerCategoryText: { fontSize: 15, color: "#8C7E74" },
+  stickerCategoryText: { fontSize: 11, color: "#8C7E74" },
   stickerCategoryActive: { color: C.brown, fontWeight: "700" },
-  stickerSearchInput: {
-    height: 32,
-    borderWidth: 1,
-    borderColor: "#E9D8CD",
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 0,
-    fontSize: 13,
-    color: C.brown,
-    marginTop: -25,
-  },
-  stickerGridScroll: { height: 124, flexGrow: 0, marginTop: 5 },
+  stickerGridScroll: { flex: 1, marginTop: 2 },
   stickerGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -2483,25 +3196,11 @@ const styles = StyleSheet.create({
   },
   stickerGridItem: {
     width: "25%",
-    height: 60,
+    height: 48,
     justifyContent: "center",
     alignItems: "center",
   },
-  stickerGridEmoji: { fontSize: 36 },
-  stickerSheetFooter: {
-    height: 37,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  stickerUndo: { color: C.brown, fontSize: 13 },
-  stickerApplyButton: {
-    backgroundColor: "#E9D6CC",
-    borderRadius: 12,
-    paddingHorizontal: 13,
-    paddingVertical: 6,
-  },
-  stickerApplyText: { color: C.brown, fontSize: 13, fontWeight: "700" },
+  stickerGridEmoji: { fontSize: 30 },
   stickerTray: { paddingTop: 8, paddingBottom: 8, backgroundColor: C.bg },
   stickerHint: {
     textAlign: "center",
@@ -2567,14 +3266,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 13,
   },
+  creationHeader: { height: 56, marginBottom: 10, gap: 12 },
   back: {
     width: 40,
     height: 42,
     alignItems: "center",
     justifyContent: "center",
   },
+  creationBack: {
+    height: 40,
+    borderWidth: 1,
+    borderColor: "#E8DFD6",
+    borderRadius: 12,
+    backgroundColor: "#FFFDFA",
+  },
   backText: { color: C.brown, fontSize: 34, lineHeight: 39 },
+  creationBackText: { color: "#352722", fontSize: 24, lineHeight: 30 },
   headerTitle: { color: C.brown, fontSize: 16, fontWeight: "500" },
+  creationHeaderTitle: {
+    color: "#000000",
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "400",
+  },
   body: { flex: 1 },
   helper: {
     textAlign: "center",
@@ -2747,7 +3461,7 @@ const styles = StyleSheet.create({
   },
   backPhoto: { width: 75, height: 75 },
   frameScreen: { flex: 1 },
-  framePickerArea: { marginTop: 10, paddingBottom: 98 },
+  framePickerArea: { marginTop: 6, paddingBottom: 92 },
   frameVerticalList: { maxHeight: 185 },
   frameVerticalScroll: { paddingHorizontal: 22, gap: 9, paddingBottom: 10 },
   frameScroll: { paddingHorizontal: 22, paddingBottom: 110 },
@@ -2763,19 +3477,96 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 10,
+    paddingVertical: 3,
   },
-  framePreviewLarge: { width: 250, height: 425 },
-  framePreviewImageLarge: { height: 320 },
-  framePreview: {
-    width: 204,
-    height: 348,
+  ticketPass: {
+    flexDirection: "row",
+    overflow: "hidden",
+    backgroundColor: "#FFFDF8",
     borderWidth: 1,
-    borderColor: "#655D57",
-    borderRadius: 12,
-    padding: 8,
+    borderColor: "#E8D8CA",
   },
-  framePreviewImage: { width: "100%", height: 256, borderRadius: 10 },
+  ticketPassStub: {
+    flexShrink: 0,
+    justifyContent: "space-between",
+    overflow: "hidden",
+  },
+  ticketPassBrand: { color: C.brown, letterSpacing: 0.35, lineHeight: 11 },
+  ticketPassTitle: {
+    color: C.brown,
+    lineHeight: 14,
+    padding: 0,
+    minHeight: 24,
+    textAlignVertical: "top",
+  },
+  ticketPassDate: { color: C.brown, lineHeight: 10 },
+  ticketPassPlace: {
+    color: C.brown,
+    lineHeight: 12,
+    padding: 0,
+    minHeight: 18,
+    textAlignVertical: "top",
+  },
+  ticketPassArt: {
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    backgroundColor: "#F5EFE5",
+  },
+  ticketPassArtCanvas: {
+    position: "relative",
+    overflow: "hidden",
+    backgroundColor: "#F5EFE5",
+  },
+  ticketPassArtCanvasPortrait: { transform: [{ rotate: "90deg" }] },
+  ticketPassPersonSymbol: {
+    width: 50,
+    height: 50,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ticketPassPersonSymbolPortrait: { transform: [{ rotate: "90deg" }] },
+  ticketPassSymbolHead: { backgroundColor: C.brown },
+  ticketPassSymbolBody: { backgroundColor: C.brown },
+  ticketPassSinglePhoto: { ...StyleSheet.absoluteFill },
+  ticketPassCollagePhoto: {
+    position: "absolute",
+    backgroundColor: "#E8D8CA",
+    borderColor: "#FFFDF8",
+  },
+  ticketPassEmpty: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ticketPassWash: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: C.outline,
+    opacity: 0.08,
+  },
+  ticketPassPhotoDate: {
+    position: "absolute",
+    left: 8,
+    bottom: 4,
+    color: "#FFFDF8",
+    lineHeight: 10,
+    zIndex: 10,
+  },
+  ticketPassPerforation: {
+    position: "absolute",
+    top: 8,
+    borderLeftWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "rgba(255,253,248,0.9)",
+  },
+  ticketPassPunchHole: {
+    position: "absolute",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E8D8CA",
+    backgroundColor: C.bg,
+  },
   frameMeta: {
     flexDirection: "column",
     alignItems: "flex-start",
@@ -2817,13 +3608,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     marginBottom: 7,
-    marginHorizontal: 22,
+    marginHorizontal: 5,
   },
   frameSectionRule: {
     height: 1,
     backgroundColor: C.outline,
     marginBottom: 12,
-    marginHorizontal: 22,
+    marginHorizontal: 5,
   },
   frameGrid: {
     flexDirection: "row",
@@ -2873,5 +3664,75 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     textAlign: "center",
+  },
+  dispenserScreen: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 72,
+  },
+  dispenserBrand: {
+    alignItems: "center",
+    marginBottom: 30,
+  },
+  dispenserLogo: {
+    color: C.outline,
+    fontFamily: "serif",
+    fontSize: 27,
+    fontStyle: "italic",
+    letterSpacing: 1.2,
+  },
+  dispenserTagline: {
+    color: C.brown,
+    fontSize: 6,
+    letterSpacing: 1.5,
+    marginTop: -2,
+  },
+  dispenserAssembly: {
+    alignItems: "center",
+    width: "100%",
+  },
+  dispenserSlot: {
+    width: "100%",
+    maxWidth: 320,
+    height: 8,
+    borderRadius: 5,
+    backgroundColor: "#49382F",
+    marginBottom: 0,
+    zIndex: 2,
+    elevation: 4,
+    shadowColor: "#372921",
+    shadowOpacity: 0.28,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  dispenserOutput: {
+    overflow: "hidden",
+    alignItems: "center",
+    paddingTop: 8,
+  },
+  dispenserStatus: {
+    color: C.brown,
+    fontSize: 13,
+    marginTop: 22,
+  },
+  dispenserRetry: {
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    marginTop: 14,
+    borderRadius: 18,
+    backgroundColor: C.brown,
+  },
+  dispenserRetryText: {
+    color: C.white,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  dispenserComplete: {
+    color: C.brown,
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: 22,
   },
 });
