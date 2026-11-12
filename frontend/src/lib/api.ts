@@ -6,7 +6,13 @@ import {
   loginResponseSchema,
   sharedTicketListResponseSchema,
   sharedTicketDetailResponseSchema,
+  sharedTicketPhotoUploadUrlsResponseSchema,
+  aiDraftsResponseSchema,
+  issuedTicketResponseSchema,
   type LoginRequest,
+  type SharedTicketPhotoUploadRequest,
+  type AiDraftsRequest,
+  type TicketDesign,
 } from "@mind-do/shared";
 import { z } from "zod";
 
@@ -110,4 +116,42 @@ export const getSharedTicketDetail = (sharedTicketId: number) =>
   request(
     `/api/shared-tickets/${sharedTicketId}`,
     sharedTicketDetailResponseSchema,
+  );
+
+// 개인 티켓 만들기 (사진 올리기 → AI 초안 → 저장)
+
+export const getPhotoUploadUrls = (
+  sharedTicketId: number,
+  input: SharedTicketPhotoUploadRequest,
+) =>
+  request(
+    `/api/shared-tickets/${sharedTicketId}/photos/upload-urls`,
+    sharedTicketPhotoUploadUrlsResponseSchema,
+    { method: "POST", body: input },
+  );
+
+export const createAiDrafts = (
+  sharedTicketId: number,
+  input: AiDraftsRequest,
+) =>
+  request(
+    `/api/shared-tickets/${sharedTicketId}/ai-drafts`,
+    aiDraftsResponseSchema,
+    {
+      method: "POST",
+      body: input,
+    },
+  );
+
+export const issueTicket = (
+  sharedTicketId: number,
+  input: { photoKeys: string[]; memo?: string; design: TicketDesign },
+) =>
+  request(
+    `/api/shared-tickets/${sharedTicketId}/tickets`,
+    issuedTicketResponseSchema,
+    {
+      method: "POST",
+      body: input,
+    },
   );
