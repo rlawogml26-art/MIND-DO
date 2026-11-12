@@ -25,6 +25,12 @@ const imageSize = (uri: string) =>
     Image.getSize(uri, (width, height) => resolve({ width, height }), reject),
   );
 
+// base64 글자 수로 원래 파일 크기(바이트)를 구한다. 4글자가 3바이트, 끝의 = 는 채움 글자
+function base64ByteSize(base64: string): number {
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return (base64.length * 3) / 4 - padding;
+}
+
 async function toJpeg(
   uri: string,
   quality: number,
@@ -43,9 +49,9 @@ async function toJpeg(
   const jpeg = await image.saveAsync({
     format: SaveFormat.JPEG,
     compress: quality,
+    base64: true,
   });
-  const blob = await (await fetch(jpeg.uri)).blob();
-  return { uri: jpeg.uri, size: blob.size };
+  return { uri: jpeg.uri, size: base64ByteSize(jpeg.base64 ?? "") };
 }
 
 // 기기 사진(JPEG·PNG·HEIC 등)을 JPEG로 바꾼다. 서버는 JPEG·PNG, 10MB 이하만 받는다.
@@ -59,7 +65,10 @@ async function preparePhoto(uri: string): Promise<PreparedPhoto> {
   return reduced;
 }
 
-async function postToS3(
+// S3 업로드는 fetch가 아니라 XMLHttpRequest로 보낸다.
+// Expo 57은 전역 fetch를 자기 구현으로 바꾸는데, 그 구현은 React Native 방식의 파일 첨부({ uri, name, type })를
+// 지원하지 않는다("uri is not supported for React Native's FormData"). XMLHttpRequest는 React Native 기본 구현 그대로다
+function postToS3(
   upload: SharedTicketPhotoUploadUrlsResponse["uploads"][number],
   photo: PreparedPhoto,
 ): Promise<void> {
@@ -75,15 +84,16 @@ async function postToS3(
     type: "image/jpeg",
   });
 
-  let response: Response;
-  try {
-    response = await fetch(upload.url, { method: "POST", body: form });
-  } catch {
-    throw new ApiError(0, NETWORK_ERROR);
-  }
-  if (response.status !== S3_POST_SUCCESS_STATUS) {
-    throw new ApiError(response.status, PHOTO_UPLOAD_FAILED);
-  }
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", upload.url);
+    xhr.onload = () => {
+      if (xhr.status === S3_POST_SUCCESS_STATUS) resolve();
+      else reject(new ApiError(xhr.status, PHOTO_UPLOAD_FAILED));
+    };
+    xhr.onerror = () => reject(new ApiError(0, NETWORK_ERROR));
+    xhr.send(form);
+  });
 }
 
 // 사진 1~4장을 준비해 S3에 직접 올리고, 순서대로 photoKey를 돌려준다.
