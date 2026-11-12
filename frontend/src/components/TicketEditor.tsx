@@ -30,6 +30,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as MediaLibrary from "expo-media-library/legacy";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -73,6 +74,11 @@ function photoFormat(source: PhotoSource): PhotoFormat {
   if (ext === "heic" || ext === "heif") return "heic";
   return "unsupported";
 }
+
+// Expo Go에서 실행 중인지. Expo Go(안드로이드)는 사진첩 전체 읽기(expo-media-library)를 막아서
+// 앱 안 사진 격자 화면이 열리지 않는다
+const IS_EXPO_GO =
+  Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 async function prepareSelectedPhoto(source: PhotoSource): Promise<string> {
   const format = photoFormat(source);
@@ -1154,6 +1160,64 @@ export default function TicketCreationScreen({
     }
   };
 
+  // Expo Go(안드로이드)는 사진첩 전체 읽기(expo-media-library)를 막아서 위 격자가 열리지 않는다.
+  // 그때 안드로이드 기본 사진 선택 창으로 고른다 (권한 없이 동작, 고른 순서 유지)
+  const pickFromSystemLibrary = async () => {
+    const remaining = PHOTO_UPLOAD_MAX_COUNT - memoryPhotos.length;
+    if (remaining <= 0) {
+      Alert.alert(
+        `사진은 최대 ${PHOTO_UPLOAD_MAX_COUNT}장까지 선택할 수 있어요.`,
+      );
+      return;
+    }
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        orderedSelection: true,
+        selectionLimit: remaining,
+        quality: 0.9,
+      });
+      if (result.canceled) return;
+      const picked = await Promise.all(
+        result.assets.slice(0, remaining).map(prepareSelectedPhoto),
+      );
+      const nextPhotos = [...memoryPhotos, ...picked];
+      setMemoryPhotos(nextPhotos);
+      setSelectedMemoryIds([
+        ...selectedMemoryIds,
+        ...picked.map((_, index) => `library-${Date.now()}-${index}`),
+      ]);
+      setFront(nextPhotos[0] ?? null);
+      setBacks(nextPhotos.slice(1));
+      closePhotoPicker();
+    } catch (error) {
+      showPhotoSelectionError(error);
+    }
+  };
+
+  // 빈 사진 칸: 실제 앱은 원래대로 앱 안 사진 격자 화면을 연다.
+  // Expo Go에서만 사진 앱(기본 선택 창)·카메라 중에서 고르게 한다 (중간 발표 시연용)
+  // 후속 Issue #93: 실제 앱 빌드에서 격자 화면이 사진첩을 불러오는지 확인되면 Expo Go 분기를 지운다
+  const openPhotoPicker = () => {
+    if (!IS_EXPO_GO) {
+      setPhotoPickerVisible(true);
+      return;
+    }
+    choosePhotoSource();
+  };
+
+  const choosePhotoSource = () => {
+    Alert.alert("사진 추가", undefined, [
+      { text: "취소", style: "cancel" },
+      { text: "촬영하기", onPress: () => void shoot() },
+      {
+        text: "사진 앱에서 고르기",
+        onPress: () => void pickFromSystemLibrary(),
+      },
+    ]);
+  };
+
   const closePhotoPicker = () => {
     setPhotoPickerVisible(false);
     if (returnToPhotoChange) {
@@ -1548,7 +1612,7 @@ export default function TicketCreationScreen({
                         key={`empty-photo-${slot}`}
                         accessibilityRole="button"
                         accessibilityLabel={`추억 사진 ${slot + 1} 추가`}
-                        onPress={() => setPhotoPickerVisible(true)}
+                        onPress={openPhotoPicker}
                         style={[
                           styles.addMemoryPhoto,
                           memoryPhotos.length === 0 &&
@@ -2554,6 +2618,9 @@ export default function TicketCreationScreen({
               galleryError ? (
                 <View style={styles.galleryMessage}>
                   <Text style={styles.info}>{galleryError}</Text>
+                  <Pressable onPress={() => void pickFromSystemLibrary()}>
+                    <Text style={styles.retryText}>사진 앱에서 고르기</Text>
+                  </Pressable>
                   <Pressable onPress={() => void loadGallery()}>
                     <Text style={styles.retryText}>다시 시도</Text>
                   </Pressable>
