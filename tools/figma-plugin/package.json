@@ -1,0 +1,20 @@
+{
+  "name": "@mind-do/figma-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@mind-do/shared": "*",
+    "jszip": "3.10.2",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "1.142.0",
+    "esbuild": "0.28.2"
+  }
+}
