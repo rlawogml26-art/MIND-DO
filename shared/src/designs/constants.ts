@@ -20,11 +20,6 @@ export const DESIGN_CATEGORY_PAGE_NAMES: Record<
   film: "필름",
 };
 
-// 가로형 캔버스 크기 (px). 피그마 플러그인이 아직 쓰고 있어 남겨 둔다 (플러그인 세로형 PR에서 DESIGN_LAYOUTS로 바꾸고 지움)
-export const DESIGN_STUB_SIZE = { w: 400, h: 800 } as const;
-export const DESIGN_BODY_SIZE = { w: 1600, h: 800 } as const;
-export const DESIGN_TICKET_SIZE = { w: 2000, h: 800 } as const;
-
 // 방향 (11/18). 티켓 한 장 = 공동 쪽 + 개인 쪽 (2.5:1).
 // 세로형은 위 1600이 개인 쪽, 아래 400이 공동 쪽이다
 export const DESIGN_ORIENTATIONS = ["horizontal", "vertical"] as const;

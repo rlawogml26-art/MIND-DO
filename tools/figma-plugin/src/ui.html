@@ -120,10 +120,14 @@
     <main>
       <section>
         <h2>새 디자인</h2>
-        <button id="blank" class="primary">빈 틀 만들기</button>
+        <div class="row">
+          <button id="blank" class="primary">가로 빈 틀 만들기</button>
+          <button id="blank-vertical" class="primary">세로 빈 틀 만들기</button>
+        </div>
         <p class="muted" style="margin: 0">
           티켓·폴라로이드·인생네컷·필름 중 하나인 페이지에서 눌러 주세요. 사진
-          1~4장 판이 함께 만들어져요.
+          1~4장 판이 함께 만들어져요. 세로형은 위가 개인 쪽, 아래가 공동
+          쪽이에요.
         </p>
         <button id="background">배경으로 깔기</button>
         <p class="muted" style="margin: 0">
@@ -142,8 +146,12 @@
           <h2>디자인 정보</h2>
           <label>이름 <input id="name" type="text" maxlength="20" /></label>
           <label
-            >id (영어 소문자·숫자·_)
-            <input id="id" type="text" maxlength="40" placeholder="pink_admit"
+            >id (카테고리_디자인이름_번호, 영어 소문자·숫자·_)
+            <input
+              id="id"
+              type="text"
+              maxlength="40"
+              placeholder="ticket_busan_01"
           /></label>
           <div class="row">
             <span>카테고리</span>

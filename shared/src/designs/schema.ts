@@ -12,11 +12,11 @@ import {
 } from "./constants.js";
 
 // 티켓 디자인 파일 형식 (굽기 방식, 11/16).
-// 배경·장식은 그림(PNG)으로 굽고, 사람마다 바뀌는 사진 칸과 글자 칸만 값으로 둔다.
+// 배경·장식은 그림(WebP, 예전에 내보낸 PNG도 읽음)으로 굽고, 사람마다 바뀌는 사진 칸과 글자 칸만 값으로 둔다.
 // 그리는 순서: 아래 그림 → 사진 → 위 그림 → 글자.
 
 const hex = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
-const pngFile = z.string().regex(/^[a-z0-9_-]+\.png$/);
+const imageFile = z.string().regex(/^[a-z0-9_-]+\.(webp|png)$/);
 const box = {
   x: z.number().min(0),
   y: z.number().min(0),
@@ -96,8 +96,8 @@ export const designTextSchema = z
   });
 
 export const designBodyVariantSchema = z.object({
-  under: pngFile,
-  over: pngFile.optional(),
+  under: imageFile,
+  over: imageFile.optional(),
   photos: z.array(designPhotoSlotSchema),
   texts: z.array(designTextSchema).max(12).default([]),
 });
@@ -118,7 +118,7 @@ export const designFileSchema = z
       notchRadius: z.number().min(0).max(60).default(0),
     }),
     stub: z.object({
-      image: pngFile,
+      image: imageFile,
       texts: z.array(designTextSchema).max(12).default([]),
     }),
     body: z.object({
@@ -130,6 +130,14 @@ export const designFileSchema = z
   })
   .superRefine((d, ctx) => {
     const layout = DESIGN_LAYOUTS[d.orientation];
+    // id 규칙을 형식에 두어 플러그인 [검사]와 CI가 같은 기준으로 막는다 (11/18)
+    if (!new RegExp(`^${d.category}_[a-z0-9_]+_[0-9]+$`).test(d.id)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `id는 <카테고리>_<디자인 이름>_<번호> 형식이어야 합니다 (예: ${d.category}_sunset_01)`,
+        path: ["id"],
+      });
+    }
     // path를 함께 넣어야 검사 도구(피그마 플러그인, CI)가 어느 칸인지 짚을 수 있다
     const inside = (
       b: Box,

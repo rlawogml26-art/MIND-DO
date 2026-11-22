@@ -64,7 +64,7 @@ if (isDir(assetsDir)) {
   for (const id of readdirSync(assetsDir).sort()) {
     if (!isDir(join(assetsDir, id))) continue;
     const files = readdirSync(join(assetsDir, id))
-      .filter((f) => f.endsWith(".png"))
+      .filter((f) => /\.(webp|png)$/.test(f))
       .sort();
     const pairs = files.map((f) => {
       const name = `img${n++}`;

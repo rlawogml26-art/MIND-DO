@@ -2,12 +2,13 @@ import {
   DESIGN_CATEGORIES,
   DESIGN_CATEGORY_PAGE_NAMES,
   DESIGN_FONTS,
+  DESIGN_LAYOUTS,
+  DESIGN_ORIENTATIONS,
   DESIGN_PHOTO_COUNTS,
-  DESIGN_STUB_SIZE,
-  DESIGN_TICKET_SIZE,
   designFileSchema,
   type DesignCategory,
   type DesignFile,
+  type DesignOrientation,
   type DesignPhotoSlot,
   type DesignText,
 } from "@mind-do/shared";
@@ -41,8 +42,8 @@ import {
 
 const MARK = "memore-design";
 const META = "memore-meta";
-const STUB_W = DESIGN_STUB_SIZE.w;
-const TICKET = DESIGN_TICKET_SIZE;
+type Layout = (typeof DESIGN_LAYOUTS)[DesignOrientation];
+type Rect = { x: number; y: number; w: number; h: number };
 const FONT_FAMILY_TO_ID = new Map<string, keyof typeof DESIGN_FONTS>(
   Object.entries(DESIGN_FONTS).map(([id, family]) => [
     family,
@@ -106,26 +107,222 @@ function sendSelection() {
   post({ type: "selection", state });
 }
 
+// ─── 방향 ────────────────────────────────────────────────
+
+// 판(ticket-n) 크기로 방향을 정한다. 가로(2000×800)도 세로(800×2000)도 아니면 null
+function orientationOf(ticket: FrameNode): DesignOrientation | null {
+  return (
+    DESIGN_ORIENTATIONS.find(
+      (o) =>
+        Math.abs(ticket.width - DESIGN_LAYOUTS[o].ticket.w) <= 1 &&
+        Math.abs(ticket.height - DESIGN_LAYOUTS[o].ticket.h) <= 1,
+    ) ?? null
+  );
+}
+
+const SIZE_TEXT = DESIGN_ORIENTATIONS.map((o) => {
+  const t = DESIGN_LAYOUTS[o].ticket;
+  return `${o === "vertical" ? "세로" : "가로"} ${t.w}×${t.h}`;
+}).join(" 또는 ");
+
+const ratioText = (layout: Layout) =>
+  layout.ticket.w > layout.ticket.h ? "2.5:1" : "1:2.5";
+
+const inRect = (r: Rect, x: number, y: number) =>
+  x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+
 // ─── 빈 틀 만들기 ────────────────────────────────────────
 
-// 사진 수별 기본 사진 자리 (티켓 좌표, 개인 쪽은 x 400부터). 오른쪽 열(1600~)은 글자 자리
-const BLANK_PHOTOS: Record<string, [number, number, number, number][]> = {
-  "1": [[460, 60, 1100, 680]],
-  "2": [
-    [460, 60, 540, 680],
-    [1020, 60, 540, 680],
-  ],
-  "3": [
-    [460, 60, 720, 680],
-    [1200, 60, 360, 330],
-    [1200, 410, 360, 330],
-  ],
-  "4": [
-    [460, 60, 540, 330],
-    [1020, 60, 540, 330],
-    [460, 410, 540, 330],
-    [1020, 410, 540, 330],
-  ],
+type BlankText = {
+  bind: TextBind;
+  fallback?: string;
+  chars: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  size: number;
+  bold?: boolean;
+  maxLines?: number;
+};
+
+// 방향별 기본 사진 자리와 글자 자리. 좌표는 공동 쪽·개인 쪽 각자의 왼쪽 위 기준
+const BLANK: Record<
+  DesignOrientation,
+  {
+    photos: Record<string, [number, number, number, number][]>;
+    stubTexts: BlankText[];
+    bodyTexts: BlankText[];
+  }
+> = {
+  horizontal: {
+    // 개인 쪽 오른쪽 열(1200~)은 글자 자리
+    photos: {
+      "1": [[60, 60, 1100, 680]],
+      "2": [
+        [60, 60, 540, 680],
+        [620, 60, 540, 680],
+      ],
+      "3": [
+        [60, 60, 720, 680],
+        [800, 60, 360, 330],
+        [800, 410, 360, 330],
+      ],
+      "4": [
+        [60, 60, 540, 330],
+        [620, 60, 540, 330],
+        [60, 410, 540, 330],
+        [620, 410, 540, 330],
+      ],
+    },
+    stubTexts: [
+      {
+        bind: "static",
+        chars: "memo:re",
+        x: 40,
+        y: 48,
+        w: 320,
+        h: 40,
+        size: 28,
+        bold: true,
+      },
+      {
+        bind: "title",
+        fallback: "우리의 하루",
+        chars: "부산 바다 여행",
+        x: 40,
+        y: 300,
+        w: 320,
+        h: 130,
+        size: 48,
+        bold: true,
+        maxLines: 2,
+      },
+      {
+        bind: "date",
+        chars: "2026.11.16",
+        x: 40,
+        y: 600,
+        w: 320,
+        h: 50,
+        size: 30,
+      },
+      {
+        bind: "groupName",
+        chars: "마인두",
+        x: 40,
+        y: 660,
+        w: 320,
+        h: 50,
+        size: 28,
+        bold: true,
+      },
+      {
+        bind: "participants",
+        chars: "이름 · 이름 · 이름 · 이름",
+        x: 40,
+        y: 716,
+        w: 320,
+        h: 40,
+        size: 22,
+      },
+    ],
+    bodyTexts: [
+      {
+        bind: "date",
+        chars: "2026.11.16",
+        x: 1220,
+        y: 80,
+        w: 320,
+        h: 50,
+        size: 30,
+      },
+    ],
+  },
+  vertical: {
+    // 개인 쪽 아래(1260~)는 글자 자리
+    photos: {
+      "1": [[60, 60, 680, 1180]],
+      "2": [
+        [60, 60, 680, 580],
+        [60, 660, 680, 580],
+      ],
+      "3": [
+        [60, 60, 680, 700],
+        [60, 780, 330, 460],
+        [410, 780, 330, 460],
+      ],
+      "4": [
+        [60, 60, 330, 580],
+        [410, 60, 330, 580],
+        [60, 660, 330, 580],
+        [410, 660, 330, 580],
+      ],
+    },
+    stubTexts: [
+      {
+        bind: "static",
+        chars: "memo:re",
+        x: 40,
+        y: 40,
+        w: 320,
+        h: 40,
+        size: 28,
+        bold: true,
+      },
+      {
+        bind: "title",
+        fallback: "우리의 하루",
+        chars: "부산 바다 여행",
+        x: 40,
+        y: 100,
+        w: 720,
+        h: 130,
+        size: 48,
+        bold: true,
+        maxLines: 2,
+      },
+      {
+        bind: "date",
+        chars: "2026.11.16",
+        x: 40,
+        y: 250,
+        w: 320,
+        h: 50,
+        size: 30,
+      },
+      {
+        bind: "groupName",
+        chars: "마인두",
+        x: 420,
+        y: 250,
+        w: 340,
+        h: 50,
+        size: 28,
+        bold: true,
+      },
+      {
+        bind: "participants",
+        chars: "이름 · 이름 · 이름 · 이름",
+        x: 40,
+        y: 320,
+        w: 720,
+        h: 40,
+        size: 22,
+      },
+    ],
+    bodyTexts: [
+      {
+        bind: "date",
+        chars: "2026.11.16",
+        x: 60,
+        y: 1300,
+        w: 320,
+        h: 50,
+        size: 30,
+      },
+    ],
+  },
 };
 
 const solid = (hex: string, opacity = 1): SolidPaint => ({
@@ -150,17 +347,8 @@ async function loadFonts() {
 function addText(
   parent: FrameNode,
   family: string,
-  o: {
-    name: string;
-    chars: string;
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    size: number;
-    bold?: boolean;
-    maxLines?: number;
-  },
+  o: BlankText,
+  offset: { x: number; y: number },
 ) {
   const t = figma.createText();
   t.fontName = { family, style: o.bold ? "Bold" : "Regular" };
@@ -169,9 +357,9 @@ function addText(
   t.fills = [solid("#2B2B2B")];
   t.textAutoResize = "NONE";
   t.resize(o.w, o.h);
-  t.x = o.x;
-  t.y = o.y;
-  t.name = o.name;
+  t.x = offset.x + o.x;
+  t.y = offset.y + o.y;
+  t.name = textLayerName(o.bind, o.fallback);
   if (o.maxLines && o.maxLines > 1) {
     t.textTruncation = "ENDING";
     t.maxLines = o.maxLines;
@@ -179,7 +367,7 @@ function addText(
   parent.appendChild(t);
 }
 
-async function createBlank() {
+async function createBlank(orientation: DesignOrientation) {
   const family = await loadFonts();
   if (!family) {
     post({
@@ -188,23 +376,33 @@ async function createBlank() {
     });
     return;
   }
+  const layout = DESIGN_LAYOUTS[orientation];
+  const { ticket: size, stub: stubArea, body: bodyArea } = layout;
+  const spec = BLANK[orientation];
+  // 가로형은 위아래로, 세로형은 옆으로 4장을 늘어놓는다
+  const sideBySide = orientation === "vertical";
   const gap = 120;
+  const span = (len: number) => len * 4 + gap * 3;
   const design = figma.createFrame();
   design.name = "design:새 디자인";
   design.fills = [];
   design.clipsContent = false;
-  design.resize(TICKET.w, TICKET.h * 4 + gap * 3);
+  design.resize(
+    sideBySide ? span(size.w) : size.w,
+    sideBySide ? size.h : span(size.h),
+  );
   design.setPluginData(MARK, "1");
   const view = figma.viewport.center;
-  design.x = Math.round(view.x - TICKET.w / 2);
+  design.x = Math.round(view.x - design.width / 2);
   design.y = Math.round(view.y - design.height / 2);
   figma.currentPage.appendChild(design);
 
   DESIGN_PHOTO_COUNTS.forEach((n, i) => {
     const t = figma.createFrame();
     t.name = `ticket-${n}`;
-    t.resize(TICKET.w, TICKET.h);
-    t.y = i * (TICKET.h + gap);
+    t.resize(size.w, size.h);
+    if (sideBySide) t.x = i * (size.w + gap);
+    else t.y = i * (size.h + gap);
     t.cornerRadius = 24;
     t.clipsContent = true;
     t.fills = [solid("#F7F3EE")];
@@ -213,103 +411,56 @@ async function createBlank() {
     // 아래 그림이 될 기본 레이어 (자유롭게 바꾸거나 지워도 됨)
     const stub = figma.createRectangle();
     stub.name = "공동 쪽 배경";
-    stub.resize(STUB_W, TICKET.h);
+    stub.resize(stubArea.w, stubArea.h);
+    stub.x = stubArea.x;
+    stub.y = stubArea.y;
     stub.fills = [solid("#E8D9C5")];
     t.appendChild(stub);
 
+    // 절취선: 두 홈 사이를 잇는 점선 (양 끝 60px은 비움)
+    const [a, b] = layout.notches;
     const perf = figma.createLine();
     perf.name = "절취선";
-    perf.resize(TICKET.h - 2 * 60, 0);
+    perf.resize(Math.hypot(b.x - a.x, b.y - a.y) - 2 * 60, 0);
     perf.strokes = [solid("#9C8B7A")];
     perf.strokeWeight = 3;
     perf.dashPattern = [16, 12];
-    perf.rotation = -90;
-    perf.x = STUB_W;
-    perf.y = 60;
+    if (a.x === b.x) {
+      perf.rotation = -90;
+      perf.x = a.x;
+      perf.y = a.y + 60;
+    } else {
+      perf.x = a.x + 60;
+      perf.y = a.y;
+    }
     t.appendChild(perf);
 
     // 사진 자리 (사진 수만큼). 그림보다 위에 둔다
-    BLANK_PHOTOS[n].forEach(([x, y, w, h], k) => {
+    spec.photos[n].forEach(([x, y, w, h], k) => {
       const r = figma.createRectangle();
       r.name = photoLayerName(k + 1);
       r.resize(w, h);
-      r.x = x;
-      r.y = y;
+      r.x = bodyArea.x + x;
+      r.y = bodyArea.y + y;
       r.cornerRadius = 16;
       r.fills = [solid("#C9C3BA")];
       t.appendChild(r);
     });
 
-    // 안내용: 절취선 위아래 홈 (앱에서 이 크기로 잘림, 내보낼 때 빠짐)
-    for (const cy of [0, TICKET.h]) {
+    // 안내용: 절취선 양 끝 홈 (앱에서 이 크기로 잘림, 내보낼 때 빠짐)
+    for (const c of layout.notches) {
       const notch = figma.createEllipse();
       notch.name = "guide:notch";
       notch.resize(56, 56);
-      notch.x = STUB_W - 28;
-      notch.y = cy - 28;
+      notch.x = c.x - 28;
+      notch.y = c.y - 28;
       notch.fills = [solid("#FFFFFF")];
       t.appendChild(notch);
     }
 
     // 글자 자리 (예시 글자는 앱에서 공동 티켓 값으로 바뀜)
-    addText(t, family, {
-      name: textLayerName("static"),
-      chars: "MEMO:RE",
-      x: 40,
-      y: 48,
-      w: 320,
-      h: 40,
-      size: 28,
-      bold: true,
-    });
-    addText(t, family, {
-      name: textLayerName("title", "우리의 하루"),
-      chars: "부산 바다 여행",
-      x: 40,
-      y: 300,
-      w: 320,
-      h: 130,
-      size: 48,
-      bold: true,
-      maxLines: 2,
-    });
-    addText(t, family, {
-      name: textLayerName("date"),
-      chars: "2026.11.16",
-      x: 40,
-      y: 600,
-      w: 320,
-      h: 50,
-      size: 30,
-    });
-    addText(t, family, {
-      name: textLayerName("groupName"),
-      chars: "마인두",
-      x: 40,
-      y: 660,
-      w: 320,
-      h: 50,
-      size: 28,
-      bold: true,
-    });
-    addText(t, family, {
-      name: textLayerName("participants"),
-      chars: "이름 · 이름 · 이름 · 이름",
-      x: 40,
-      y: 716,
-      w: 320,
-      h: 40,
-      size: 22,
-    });
-    addText(t, family, {
-      name: textLayerName("date"),
-      chars: "2026.11.16",
-      x: 1620,
-      y: 80,
-      w: 320,
-      h: 50,
-      size: 30,
-    });
+    spec.stubTexts.forEach((o) => addText(t, family, o, stubArea));
+    spec.bodyTexts.forEach((o) => addText(t, family, o, bodyArea));
   });
 
   figma.currentPage.selection = [design];
@@ -317,7 +468,7 @@ async function createBlank() {
   sendSelection();
   post({
     type: "notice",
-    message: "빈 틀을 만들었어요. 맨 바깥 프레임 이름을 바꾸고 꾸며 주세요.",
+    message: `${orientation === "vertical" ? "세로" : "가로"} 빈 틀을 만들었어요. 맨 바깥 프레임 이름을 바꾸고 꾸며 주세요.`,
   });
 }
 
@@ -387,6 +538,16 @@ async function applyBackground() {
     });
   }
 
+  const orientation = orientationOf(found[0]);
+  if (!orientation || found.some((t) => orientationOf(t) !== orientation)) {
+    return post({
+      type: "notice",
+      message: `ticket-1~4 판의 크기가 ${SIZE_TEXT} 중 하나로 같아야 해요.`,
+    });
+  }
+  const layout = DESIGN_LAYOUTS[orientation];
+  const size = layout.ticket;
+
   const { width, height } = await source.getSizeAsync();
   const prepared = await prepareImage(await source.getBytesAsync());
   // 바탕을 지운 새 그림이 오면 그걸 쓴다 (원본 해상도 그대로)
@@ -403,12 +564,12 @@ async function applyBackground() {
     box.h > 0;
   const fit = trimmed
     ? (() => {
-        const s = Math.min(TICKET.w / box.w, TICKET.h / box.h);
+        const s = Math.min(size.w / box.w, size.h / box.h);
         const w = Math.round(box.w * s);
         const h = Math.round(box.h * s);
         return {
-          x: Math.round((TICKET.w - w) / 2),
-          y: Math.round((TICKET.h - h) / 2),
+          x: Math.round((size.w - w) / 2),
+          y: Math.round((size.h - h) / 2),
           w,
           h,
           scale: s,
@@ -417,9 +578,9 @@ async function applyBackground() {
     : {
         x: 0,
         y: 0,
-        w: TICKET.w,
-        h: TICKET.h,
-        scale: Math.max(TICKET.w / width, TICKET.h / height),
+        w: size.w,
+        h: size.h,
+        scale: Math.max(size.w / width, size.h / height),
       };
   const paint: ImagePaint = trimmed
     ? {
@@ -477,21 +638,21 @@ async function applyBackground() {
     notes.push(
       `투명한 여백을 잘라 내고 티켓 부분(${box.w}×${box.h}px)만 맞췄어요.`,
     );
-    if (fit.w < TICKET.w - 2 || fit.h < TICKET.h - 2) {
+    if (fit.w < size.w - 2 || fit.h < size.h - 2) {
       notes.push(
-        `티켓 비율이 ${(box.w / box.h).toFixed(2)}:1이라 ${fit.w < TICKET.w - 2 ? "좌우" : "위아래"}에 투명한 틈이 남아요 (판은 2.5:1).`,
+        `티켓 비율이 ${(box.w / box.h).toFixed(2)}:1이라 ${fit.w < size.w - 2 ? "좌우" : "위아래"}에 투명한 틈이 남아요 (판은 ${ratioText(layout)}).`,
       );
     }
   } else {
     const ratio = width / height;
-    const target = TICKET.w / TICKET.h;
+    const target = size.w / size.h;
     if (Math.abs(ratio / target - 1) > 0.01) {
       const cut =
         ratio > target
-          ? `좌우가 약 ${Math.round((TICKET.h * ratio - TICKET.w) / 2)}px씩`
-          : `위아래가 약 ${Math.round((TICKET.w / ratio - TICKET.h) / 2)}px씩`;
+          ? `좌우가 약 ${Math.round((size.h * ratio - size.w) / 2)}px씩`
+          : `위아래가 약 ${Math.round((size.w / ratio - size.h) / 2)}px씩`;
       notes.push(
-        `이미지 비율이 ${ratio.toFixed(2)}:1이라 ${cut} 잘렸어요 (티켓은 2.5:1).`,
+        `이미지 비율이 ${ratio.toFixed(2)}:1이라 ${cut} 잘렸어요 (티켓은 ${ratioText(layout)}).`,
       );
     }
   }
@@ -665,6 +826,7 @@ async function polygonPoints(
 async function readPhoto(
   node: SceneNode,
   origin: { x: number; y: number },
+  layout: Layout,
   issues: Issue[],
 ): Promise<DesignPhotoSlot | null> {
   const box = boxFromTransform(
@@ -679,7 +841,7 @@ async function readPhoto(
       message: `"${node.name}"이 뒤집혀 있어요.`,
       nodeId: node.id,
     });
-  if (box.x + box.w / 2 < STUB_W) {
+  if (inRect(layout.stub, box.x + box.w / 2, box.y + box.h / 2)) {
     issues.push({
       level: "error",
       message: `"${node.name}"이 공동 쪽에 있어요. 사진은 개인 쪽에만 들어가요.`,
@@ -695,8 +857,8 @@ async function readPhoto(
     });
   }
   const base = {
-    x: box.x - STUB_W,
-    y: box.y,
+    x: box.x - layout.body.x,
+    y: box.y - layout.body.y,
     w: box.w,
     h: box.h,
     rotate: box.rotate,
@@ -848,12 +1010,15 @@ function readText(
       });
     }
   }
-  return { text, centerX: box.x + box.w / 2 };
+  return { text, center: { x: box.x + box.w / 2, y: box.y + box.h / 2 } };
 }
 
-async function convert(
-  frame: FrameNode,
-): Promise<{ issues: Issue[]; design: DesignFile | null; plans: Plan[] }> {
+async function convert(frame: FrameNode): Promise<{
+  issues: Issue[];
+  design: DesignFile | null;
+  plans: Plan[];
+  layout: Layout;
+}> {
   const issues: Issue[] = [];
   const plans: Plan[] = [];
   const meta = readMeta(frame);
@@ -881,6 +1046,12 @@ async function convert(
   const warnedImages = new Set<string>();
   let cornerRadius = 24;
   let notchRadius = 0;
+  // 방향은 ticket-1 크기로 정하고, 나머지 판도 같은 크기인지 본다
+  const first = frame.children.find(
+    (c): c is FrameNode => c.type === "FRAME" && c.name === "ticket-1",
+  );
+  const orientation = (first && orientationOf(first)) ?? "horizontal";
+  const layout = DESIGN_LAYOUTS[orientation];
 
   for (const n of DESIGN_PHOTO_COUNTS) {
     const ticket = frame.children.find(
@@ -896,11 +1067,12 @@ async function convert(
     }
     const bad = (m: string) =>
       issues.push({ level: "error", message: m, nodeId: ticket.id });
-    if (
-      Math.abs(ticket.width - TICKET.w) > 1 ||
-      Math.abs(ticket.height - TICKET.h) > 1
-    ) {
-      bad(`ticket-${n}의 크기가 ${TICKET.w}×${TICKET.h}이 아니에요.`);
+    if (orientationOf(ticket) !== orientation) {
+      bad(
+        n === "1"
+          ? `ticket-1의 크기가 ${SIZE_TEXT}이 아니에요.`
+          : `ticket-${n}의 크기가 ticket-1과 달라요 (${layout.ticket.w}×${layout.ticket.h}이어야 해요).`,
+      );
     }
     if (ticket.rotation !== 0) bad(`ticket-${n}이 돌아가 있어요.`);
     if (!ticket.clipsContent) {
@@ -955,17 +1127,25 @@ async function convert(
         photos.push({
           index: parsed.index,
           node,
-          slot: await readPhoto(node, origin, issues),
+          slot: await readPhoto(node, origin, layout, issues),
         });
       } else if (parsed.kind === "text") {
         hide.push(node);
         const r = readText(node, parsed.bind, parsed.fallback, origin, issues);
         if (!r) continue;
-        if (r.centerX < STUB_W) {
-          nStubTexts.push(r.text);
+        if (inRect(layout.stub, r.center.x, r.center.y)) {
+          nStubTexts.push({
+            ...r.text,
+            x: r.text.x - layout.stub.x,
+            y: r.text.y - layout.stub.y,
+          });
           stubNodes.push(node);
         } else {
-          texts.push({ ...r.text, x: r.text.x - STUB_W });
+          texts.push({
+            ...r.text,
+            x: r.text.x - layout.body.x,
+            y: r.text.y - layout.body.y,
+          });
           textNodes.push(node);
         }
       }
@@ -1029,10 +1209,16 @@ async function convert(
     const byId = (ids: string[]) =>
       ticket.children.filter((c) => ids.includes(c.id));
     const over = byId(split.over);
+    const stubArea = layout.stub;
     for (const o of over) {
+      const bb = o.absoluteBoundingBox;
+      // 위 그림이 공동 쪽 자리와 겹치는지 (공동 쪽은 그림 한 장이라 위 그림이 없다)
       if (
-        o.absoluteBoundingBox &&
-        o.absoluteBoundingBox.x < origin.x + STUB_W
+        bb &&
+        bb.x < origin.x + stubArea.x + stubArea.w &&
+        bb.x + bb.width > origin.x + stubArea.x &&
+        bb.y < origin.y + stubArea.y + stubArea.h &&
+        bb.y + bb.height > origin.y + stubArea.y
       ) {
         issues.push({
           level: "warn",
@@ -1066,8 +1252,8 @@ async function convert(
 
     plans.push({ ticket, hide, under: byId(split.under), over });
     if (slots.every((s): s is DesignPhotoSlot => s !== null)) {
-      body[n] = { under: `body-${n}-under.png`, photos: slots, texts };
-      if (over.length) body[n].over = `body-${n}-over.png`;
+      body[n] = { under: `body-${n}-under.webp`, photos: slots, texts };
+      if (over.length) body[n].over = `body-${n}-over.webp`;
     }
   }
 
@@ -1086,10 +1272,11 @@ async function convert(
     id: meta.id,
     name: meta.name,
     category,
+    orientation,
     tags: meta.tags,
     mainColor: meta.mainColor,
     shape: { cornerRadius, notchRadius },
-    stub: { image: "stub.png", texts: stubTexts },
+    stub: { image: "stub.webp", texts: stubTexts },
     body,
   };
   const parsed = designFileSchema.safeParse(candidate);
@@ -1122,7 +1309,12 @@ async function convert(
   issues.sort(
     (x, y) => Number(x.level !== "error") - Number(y.level !== "error"),
   );
-  return { issues, design: parsed.success ? parsed.data : null, plans };
+  return {
+    issues,
+    design: parsed.success ? parsed.data : null,
+    plans,
+    layout,
+  };
 }
 
 // ─── 그림 내보내기 ───────────────────────────────────────
@@ -1178,7 +1370,7 @@ async function exportWithout(
   const copy = ticket.clone();
   figma.currentPage.appendChild(copy);
   copy.x = ticket.absoluteTransform[0][2];
-  copy.y = ticket.absoluteTransform[1][2] - TICKET.h * 6;
+  copy.y = ticket.absoluteTransform[1][2] - ticket.height * 6;
   try {
     const targets = paths
       .map((p) => nodeAt(copy, p))
@@ -1193,7 +1385,8 @@ async function exportWithout(
   }
 }
 
-async function exportImages(plans: Plan[]) {
+async function exportImages(plans: Plan[], layout: Layout) {
+  const crop = (r: Rect): ImageJob["crop"] => [r.x, r.y, r.w, r.h];
   const sources: Record<string, Uint8Array> = {};
   const jobs: ImageJob[] = [];
   const stubSources: string[] = [];
@@ -1207,14 +1400,14 @@ async function exportImages(plans: Plan[]) {
     stubSources.push(`ticket-${n}-under`);
     if (n === "1")
       jobs.push({
-        file: "stub.png",
+        file: "stub.webp",
         source: "ticket-1-under",
-        crop: [0, 0, STUB_W, TICKET.h],
+        crop: crop(layout.stub),
       });
     jobs.push({
-      file: `body-${n}-under.png`,
+      file: `body-${n}-under.webp`,
       source: `ticket-${n}-under`,
-      crop: [STUB_W, 0, TICKET.w - STUB_W, TICKET.h],
+      crop: crop(layout.body),
     });
 
     if (p.over.length) {
@@ -1224,9 +1417,9 @@ async function exportImages(plans: Plan[]) {
         true,
       );
       jobs.push({
-        file: `body-${n}-over.png`,
+        file: `body-${n}-over.webp`,
         source: `ticket-${n}-over`,
-        crop: [STUB_W, 0, TICKET.w - STUB_W, TICKET.h],
+        crop: crop(layout.body),
       });
     }
   }
@@ -1257,7 +1450,7 @@ figma.ui.onmessage = async (msg: ToCode) => {
   try {
     // 피그마는 플러그인 작업을 따로 표시하지 않으면 여러 동작을 Ctrl+Z 한 번에 같이 되돌린다
     if (msg.type === "create-blank") {
-      await createBlank();
+      await createBlank(msg.orientation);
       return figma.commitUndo();
     }
     if (msg.type === "apply-background") {
@@ -1287,7 +1480,7 @@ figma.ui.onmessage = async (msg: ToCode) => {
       if (msg.meta.name) frame.name = `design:${msg.meta.name}`;
       return;
     }
-    const { issues, design, plans } = await convert(frame);
+    const { issues, design, plans, layout } = await convert(frame);
     if (
       msg.type === "check" ||
       !design ||
@@ -1295,7 +1488,7 @@ figma.ui.onmessage = async (msg: ToCode) => {
     ) {
       return post({ type: "checked", issues, design });
     }
-    const images = await exportImages(plans);
+    const images = await exportImages(plans, layout);
     post({ type: "exported", issues, design, ...images });
   } catch (e) {
     post({
