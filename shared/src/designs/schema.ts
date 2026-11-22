@@ -24,6 +24,16 @@ const box = {
   h: z.number().positive(),
 };
 type Box = { x: number; y: number; w: number; h: number };
+// 세운 글자(90°·-90°)는 가운데 기준으로 돌린 뒤의 상자로 캔버스 안인지 본다
+const shownBox = (t: Box & { rotate: number }): Box =>
+  t.rotate === 0
+    ? t
+    : {
+        x: t.x + t.w / 2 - t.h / 2,
+        y: t.y + t.h / 2 - t.w / 2,
+        w: t.h,
+        h: t.w,
+      };
 const STUB_TEXT_LABELS: Record<string, string> = {
   date: "날짜",
   groupName: "그룹명",
@@ -55,7 +65,12 @@ export const designTextSchema = z
     value: z.string().max(30).optional(),
     // 공동 티켓 값이 비었을 때 대신 쓰는 문구 (예: 제목 없음)
     fallback: z.string().max(30).optional(),
-    ...box,
+    // 칸은 돌리기 전 상자다. 90°·-90°로 세운 글자는 돌리기 전 상자가 캔버스 밖으로 나갈 수 있어서
+    // x·y의 아래 한계를 두지 않고, 캔버스 안에 있는지는 돌린 뒤 모양으로 검사한다 (아래 inside)
+    x: z.number(),
+    y: z.number(),
+    w: z.number().positive(),
+    h: z.number().positive(),
     font: z.enum(DESIGN_FONT_IDS),
     size: z.number().min(16).max(240),
     weight: z.enum(["regular", "bold"]).default("regular"),
@@ -119,7 +134,12 @@ export const designFileSchema = z
       area: string,
       path: (string | number)[],
     ) => {
-      if (b.x + b.w > size.w + 0.5 || b.y + b.h > size.h + 0.5) {
+      if (
+        b.x < -0.5 ||
+        b.y < -0.5 ||
+        b.x + b.w > size.w + 0.5 ||
+        b.y + b.h > size.h + 0.5
+      ) {
         ctx.addIssue({
           code: "custom",
           message: `${area}(${size.w}×${size.h}) 밖으로 나갔습니다`,
@@ -128,7 +148,7 @@ export const designFileSchema = z
       }
     };
     d.stub.texts.forEach((t, i) =>
-      inside(t, DESIGN_STUB_SIZE, "공동 쪽", ["stub", "texts", i]),
+      inside(shownBox(t), DESIGN_STUB_SIZE, "공동 쪽", ["stub", "texts", i]),
     );
     for (const [bind, { min, max }] of Object.entries(
       DESIGN_STUB_TEXT_COUNTS,
@@ -169,7 +189,12 @@ export const designFileSchema = z
         }
       }
       v.texts.forEach((t, i) =>
-        inside(t, DESIGN_BODY_SIZE, "개인 쪽", ["body", n, "texts", i]),
+        inside(shownBox(t), DESIGN_BODY_SIZE, "개인 쪽", [
+          "body",
+          n,
+          "texts",
+          i,
+        ]),
       );
     }
   });

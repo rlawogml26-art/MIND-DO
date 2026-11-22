@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# 디자인 등록부 생성물 (shared/scripts/gen-designs.mjs)
+src/designs/assets.generated.ts
