@@ -1,8 +1,7 @@
 import {
-  DESIGN_BODY_SIZE,
+  DESIGN_LAYOUTS,
   DESIGN_PHOTO_COUNTS,
-  DESIGN_STUB_SIZE,
-  DESIGN_TICKET_SIZE,
+  type DesignOrientation,
 } from "./constants.js";
 import type { DesignFile, DesignPhotoSlot, DesignText } from "./schema.js";
 
@@ -45,13 +44,14 @@ export type DrawText = {
 export type DrawOp = DrawImage | DrawPhoto | DrawText;
 
 export type DrawList = {
-  // 티켓 한 장의 캔버스 (px). 렌더러는 화면 크기에 맞춰 줄여 그린다
+  orientation: DesignOrientation;
+  // 티켓 한 장의 캔버스 (px). 가로형 2000×800, 세로형 800×2000. 렌더러는 화면 크기에 맞춰 줄여 그린다
   width: number;
   height: number;
-  // 바깥 모양: 둥근 모서리 + 절취선 위아래의 반원 홈 (홈 가운데 x = 공동 쪽 오른쪽 끝)
+  // 바깥 모양: 둥근 모서리 + 절취선 양 끝의 반원 홈
   cornerRadius: number;
   notchRadius: number;
-  notchX: number;
+  notches: { x: number; y: number }[];
   ops: DrawOp[];
 };
 
@@ -83,7 +83,7 @@ function textFor(t: DesignText, values: TicketTextValues): string {
 function textOps(
   texts: DesignText[],
   values: TicketTextValues,
-  offsetX: number,
+  offset: { x: number; y: number },
 ): DrawText[] {
   const ops: DrawText[] = [];
   for (const t of texts) {
@@ -93,8 +93,8 @@ function textOps(
       kind: "text",
       text,
       style: {
-        x: t.x + offsetX,
-        y: t.y,
+        x: t.x + offset.x,
+        y: t.y + offset.y,
         w: t.w,
         h: t.h,
         font: t.font,
@@ -126,29 +126,18 @@ export function buildDrawList(
   photoCount: number,
   values: TicketTextValues,
 ): DrawList {
-  const bodyX = DESIGN_STUB_SIZE.w;
+  const layout = DESIGN_LAYOUTS[design.orientation];
+  const { stub, body } = layout;
   const variant = design.body[photoVariantKey(photoCount)];
 
   const ops: DrawOp[] = [];
   // 1. 아래 그림: 공동 쪽 그림 + 개인 쪽 아래 그림
-  ops.push({
-    kind: "image",
-    file: design.stub.image,
-    x: 0,
-    y: 0,
-    ...DESIGN_STUB_SIZE,
-  });
-  ops.push({
-    kind: "image",
-    file: variant.under,
-    x: bodyX,
-    y: 0,
-    ...DESIGN_BODY_SIZE,
-  });
+  ops.push({ kind: "image", file: design.stub.image, ...stub });
+  ops.push({ kind: "image", file: variant.under, ...body });
   // 2. 사진: 겹치면 1번(대표) 사진이 맨 위에 오도록 뒤 번호부터 그린다
   variant.photos
     .map((slot, photoIndex) => ({
-      slot: { ...slot, x: slot.x + bodyX },
+      slot: { ...slot, x: slot.x + body.x, y: slot.y + body.y },
       photoIndex,
     }))
     .reverse()
@@ -157,24 +146,19 @@ export function buildDrawList(
     );
   // 3. 위 그림
   if (variant.over) {
-    ops.push({
-      kind: "image",
-      file: variant.over,
-      x: bodyX,
-      y: 0,
-      ...DESIGN_BODY_SIZE,
-    });
+    ops.push({ kind: "image", file: variant.over, ...body });
   }
   // 4. 글자
-  ops.push(...textOps(design.stub.texts, values, 0));
-  ops.push(...textOps(variant.texts, values, bodyX));
+  ops.push(...textOps(design.stub.texts, values, stub));
+  ops.push(...textOps(variant.texts, values, body));
 
   return {
-    width: DESIGN_TICKET_SIZE.w,
-    height: DESIGN_TICKET_SIZE.h,
+    orientation: design.orientation,
+    width: layout.ticket.w,
+    height: layout.ticket.h,
     cornerRadius: design.shape.cornerRadius,
     notchRadius: design.shape.notchRadius,
-    notchX: bodyX,
+    notches: layout.notches,
     ops,
   };
 }

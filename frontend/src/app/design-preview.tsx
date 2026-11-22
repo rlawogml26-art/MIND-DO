@@ -35,6 +35,7 @@ function DesignPreview() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [count, setCount] = useState(1);
   const [emptyTitle, setEmptyTitle] = useState(false);
+  const [lieDown, setLieDown] = useState(false);
 
   const pick = async () => {
     // 기본 사진 선택 창은 사진첩 권한 없이 동작해 Expo Go에서도 쓸 수 있다
@@ -80,6 +81,12 @@ function DesignPreview() {
           >
             <Text>제목 비우기</Text>
           </Pressable>
+          <Pressable
+            onPress={() => setLieDown((v) => !v)}
+            style={[button, lieDown && selected]}
+          >
+            <Text>세로형 눕히기</Text>
+          </Pressable>
         </View>
       </View>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 24 }}>
@@ -89,7 +96,8 @@ function DesignPreview() {
         {DESIGNS.map((d) => (
           <View key={d.id} style={{ gap: 6 }}>
             <Text>
-              {d.name} · {d.id} · {d.category}
+              {d.name} · {d.id} · {d.category} ·{" "}
+              {d.orientation === "vertical" ? "세로" : "가로"}
             </Text>
             <TicketRenderer
               designId={d.id}
@@ -103,7 +111,13 @@ function DesignPreview() {
                   : []
               }
               values={values}
-              width={ticketWidth}
+              // 세로형은 세운 채로 화면 너비를 다 쓰면 너무 길어서 절반 폭으로 보여 준다
+              width={
+                d.orientation === "vertical" && !lieDown
+                  ? ticketWidth / 2
+                  : ticketWidth
+              }
+              lieDown={lieDown}
             />
           </View>
         ))}

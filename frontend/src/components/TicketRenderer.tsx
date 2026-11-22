@@ -2,6 +2,7 @@ import {
   PHOTO_UPLOAD_MAX_COUNT,
   buildDrawList,
   findDesign,
+  type DrawList,
   type DrawOp,
   type DrawText,
   type DesignPhotoSlot,
@@ -27,7 +28,7 @@ import { DESIGN_ASSETS } from "../designs/assets.generated";
 
 // 개인 티켓 한 장(공동 쪽 + 개인 쪽)을 디자인 파일대로 그린다 (AGENTS.md "티켓 디자인").
 // 무엇을 어디에 그릴지는 shared의 buildDrawList가 정하고, 여기서는 그 목록대로 칠하기만 한다.
-// 캔버스 좌표(2000×800 px)를 화면 너비에 맞춰 줄여 그린다.
+// 캔버스 좌표(가로형 2000×800, 세로형 800×2000 px)를 화면 너비에 맞춰 줄여 그린다.
 
 type TicketRendererProps = {
   designId: string;
@@ -35,6 +36,8 @@ type TicketRendererProps = {
   photoUris: string[];
   values: TicketTextValues;
   width: number;
+  // 세로형을 시계 방향으로 90도 눕혀 공동 쪽이 왼쪽에 오게 그린다 (일괄 보기, 11/18). 가로형에는 영향 없음
+  lieDown?: boolean;
 };
 
 // 글꼴 id → 기기 글꼴 이름.
@@ -55,25 +58,24 @@ const TEXT_ALIGN: Record<DrawText["style"]["align"], TextAlign> = {
 
 const deg = (d: number) => (d * Math.PI) / 180;
 
-function ticketClip(
-  width: number,
-  height: number,
-  cornerRadius: number,
-  notchRadius: number,
-  notchX: number,
-): SkPath {
+function ticketClip(list: DrawList): SkPath {
   const outline = Skia.Path.RRect(
     Skia.RRectXY(
-      Skia.XYWHRect(0, 0, width, height),
-      cornerRadius,
-      cornerRadius,
+      Skia.XYWHRect(0, 0, list.width, list.height),
+      list.cornerRadius,
+      list.cornerRadius,
     ),
   );
-  if (notchRadius <= 0) return outline;
-  const top = Skia.Path.Circle(notchX, 0, notchRadius);
-  const bottom = Skia.Path.Circle(notchX, height, notchRadius);
-  const notches = Skia.Path.MakeFromOp(top, bottom, PathOp.Union) ?? top;
-  return Skia.Path.MakeFromOp(outline, notches, PathOp.Difference) ?? outline;
+  if (list.notchRadius <= 0) return outline;
+  return list.notches.reduce(
+    (path, n) =>
+      Skia.Path.MakeFromOp(
+        path,
+        Skia.Path.Circle(n.x, n.y, list.notchRadius),
+        PathOp.Difference,
+      ) ?? path,
+    outline,
+  );
 }
 
 function photoClip(slot: DesignPhotoSlot): SkPath {
@@ -189,6 +191,7 @@ export default function TicketRenderer({
   photoUris,
   values,
   width,
+  lieDown = false,
 }: TicketRendererProps) {
   const design = findDesign(designId);
   const photoCount = Math.min(
@@ -212,23 +215,19 @@ export default function TicketRenderer({
   const p2 = useImage(photoUris[2] ?? null);
   const p3 = useImage(photoUris[3] ?? null);
 
-  const clip = useMemo(
-    () =>
-      list
-        ? ticketClip(
-            list.width,
-            list.height,
-            list.cornerRadius,
-            list.notchRadius,
-            list.notchX,
-          )
-        : null,
-    [list],
-  );
+  const clip = useMemo(() => (list ? ticketClip(list) : null), [list]);
 
   if (!list || !clip) return null;
 
-  const scale = width / list.width;
+  const rotated = lieDown && list.orientation === "vertical";
+  // 눕히면 화면에서 가로·세로가 바뀐다
+  const shownW = rotated ? list.height : list.width;
+  const shownH = rotated ? list.width : list.height;
+  const scale = width / shownW;
+  // 시계 방향 90도: (x, y) → (높이 - y, x). 아래쪽 공동 쪽이 왼쪽으로 온다
+  const transform = rotated
+    ? [{ scale }, { translateX: list.height }, { rotate: Math.PI / 2 }]
+    : [{ scale }];
   const photoImages = [p0, p1, p2, p3];
   const imageByFile = new Map<string, SkImage | null>([
     [images[0]?.file ?? "", stubImg],
@@ -266,9 +265,9 @@ export default function TicketRenderer({
   };
 
   return (
-    <Canvas style={{ width, height: list.height * scale }}>
-      <Group transform={[{ scale }]} clip={clip}>
-        {list.ops.map(render)}
+    <Canvas style={{ width, height: shownH * scale }}>
+      <Group transform={transform}>
+        <Group clip={clip}>{list.ops.map(render)}</Group>
       </Group>
     </Canvas>
   );

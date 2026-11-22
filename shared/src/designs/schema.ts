@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { moodTagSchema } from "../mood-tags.js";
 import {
-  DESIGN_BODY_SIZE,
   DESIGN_CATEGORIES,
   DESIGN_FONT_IDS,
+  DESIGN_LAYOUTS,
+  DESIGN_ORIENTATIONS,
   DESIGN_PHOTO_COUNTS,
   DESIGN_PHOTO_SHAPES,
-  DESIGN_STUB_SIZE,
   DESIGN_STUB_TEXT_COUNTS,
   DESIGN_TEXT_BINDS,
 } from "./constants.js";
@@ -107,6 +107,8 @@ export const designFileSchema = z
     id: z.string().regex(/^[a-z0-9_]+$/),
     name: z.string().min(1).max(20),
     category: z.enum(DESIGN_CATEGORIES),
+    // 선택 칸이라 방향이 없는 기존 디자인 파일은 가로형으로 읽힌다
+    orientation: z.enum(DESIGN_ORIENTATIONS).default("horizontal"),
     tags: z.array(moodTagSchema).min(1).max(5),
     // 사진 색과 어울리는지 코드가 비교하는 대표 색
     mainColor: hex,
@@ -127,6 +129,7 @@ export const designFileSchema = z
     }),
   })
   .superRefine((d, ctx) => {
+    const layout = DESIGN_LAYOUTS[d.orientation];
     // path를 함께 넣어야 검사 도구(피그마 플러그인, CI)가 어느 칸인지 짚을 수 있다
     const inside = (
       b: Box,
@@ -148,7 +151,7 @@ export const designFileSchema = z
       }
     };
     d.stub.texts.forEach((t, i) =>
-      inside(shownBox(t), DESIGN_STUB_SIZE, "공동 쪽", ["stub", "texts", i]),
+      inside(shownBox(t), layout.stub, "공동 쪽", ["stub", "texts", i]),
     );
     for (const [bind, { min, max }] of Object.entries(
       DESIGN_STUB_TEXT_COUNTS,
@@ -173,7 +176,7 @@ export const designFileSchema = z
         });
       }
       v.photos.forEach((p, i) =>
-        inside(p, DESIGN_BODY_SIZE, "개인 쪽", ["body", n, "photos", i]),
+        inside(p, layout.body, "개인 쪽", ["body", n, "photos", i]),
       );
       // 대표 사진(1번)이 가장 작은 칸이면 안 된다 (11/18). 다른 칸과 같거나 큰 칸이 하나라도 있으면 됨
       const [main, ...rest] = v.photos;
@@ -189,12 +192,7 @@ export const designFileSchema = z
         }
       }
       v.texts.forEach((t, i) =>
-        inside(shownBox(t), DESIGN_BODY_SIZE, "개인 쪽", [
-          "body",
-          n,
-          "texts",
-          i,
-        ]),
+        inside(shownBox(t), layout.body, "개인 쪽", ["body", n, "texts", i]),
       );
     }
   });

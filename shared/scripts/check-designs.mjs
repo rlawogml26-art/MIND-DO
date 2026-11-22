@@ -6,10 +6,9 @@ import { basename, dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {
-  DESIGN_BODY_SIZE,
   DESIGN_CATEGORIES,
+  DESIGN_LAYOUTS,
   DESIGN_PHOTO_COUNTS,
-  DESIGN_STUB_SIZE,
   designFileSchema,
 } from "../dist/index.js";
 
@@ -87,11 +86,11 @@ for (const entry of readdirSync(designsDir)) {
     if (seen.has(d.id)) fail(owner, `id ${d.id}가 겹칩니다`);
     seen.add(d.id);
 
-    checkPng(d.id, d.stub.image, DESIGN_STUB_SIZE, owner);
+    const layout = DESIGN_LAYOUTS[d.orientation];
+    checkPng(d.id, d.stub.image, layout.stub, owner);
     for (const n of DESIGN_PHOTO_COUNTS) {
-      checkPng(d.id, d.body[n].under, DESIGN_BODY_SIZE, owner);
-      if (d.body[n].over)
-        checkPng(d.id, d.body[n].over, DESIGN_BODY_SIZE, owner);
+      checkPng(d.id, d.body[n].under, layout.body, owner);
+      if (d.body[n].over) checkPng(d.id, d.body[n].over, layout.body, owner);
     }
   }
 }
