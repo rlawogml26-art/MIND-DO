@@ -6,11 +6,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch",
+    "build": "node scripts/gen-designs.mjs && tsc -p tsconfig.json",
+    "dev": "node scripts/gen-designs.mjs && tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit && node scripts/check-designs.mjs"
   },
   "dependencies": {
     "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "prettier": "3.9.9"
   }
 }

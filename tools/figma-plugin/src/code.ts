@@ -787,9 +787,9 @@ function readText(
   const lines =
     node.textTruncation === "ENDING" && node.maxLines
       ? node.maxLines
-      : Math.max(1, Math.floor((rotate === 0 ? box.h : box.w) / (size * 1.2)));
+      : Math.max(1, Math.floor(box.h / (size * 1.2)));
   const maxLines = Math.min(3, lines);
-  if ((rotate === 0 ? box.h : box.w) < maxLines * size * 1.2) {
+  if (box.h < maxLines * size * 1.2) {
     issues.push({
       level: "warn",
       message: `"${node.name}" 칸 높이가 빠듯해요. 앱에서 글자가 잘릴 수 있어요.`,
