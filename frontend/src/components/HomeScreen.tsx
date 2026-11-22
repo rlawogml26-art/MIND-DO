@@ -15,8 +15,8 @@ import { getIssuedTicket, type IssuedTicket } from "../storage/issued-tickets";
 import { IssuedTicketFlipPreview } from "./TicketEditor";
 import MenuExperience from "./MenuScreens";
 
-import logo from "./assets/로고.png";
-import ticketIcon from "./assets/티켓로고아이콘.png";
+import logo from "../../assets/images/memore/logo.png";
+import ticketIcon from "../../assets/images/memore/ticket-icon.png";
 
 const colors = {
   canvas: "#FFF8EF",
