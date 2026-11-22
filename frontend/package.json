@@ -6,6 +6,7 @@
     "@expo/ui": "~57.0.25",
     "@mind-do/shared": "0.0.0",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@shopify/react-native-skia": "2.6.2",
     "expo": "~57.0.30",
     "expo-constants": "~57.0.22",
     "expo-device": "~57.0.2",
