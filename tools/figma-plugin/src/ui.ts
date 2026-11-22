@@ -1,4 +1,5 @@
 import {
+  DESIGN_LAYOUTS,
   DESIGN_TEXT_BINDS,
   MOOD_TAGS,
   type DesignFile,
@@ -93,7 +94,12 @@ function showIssues(issues: Issue[]) {
   );
 }
 
-$("blank").addEventListener("click", () => send({ type: "create-blank" }));
+$("blank").addEventListener("click", () =>
+  send({ type: "create-blank", orientation: "horizontal" }),
+);
+$("blank-vertical").addEventListener("click", () =>
+  send({ type: "create-blank", orientation: "vertical" }),
+);
 $("background").addEventListener("click", () =>
   send({ type: "apply-background" }),
 );
@@ -162,11 +168,14 @@ async function buildZip(
 
   // 공동 쪽 그림이 판마다 다르면 알려 줌 (ticket-1 것을 씀)
   const warnings: string[] = [];
+  const stub = DESIGN_LAYOUTS[design.orientation].stub;
   const stubOf = (key: string) =>
-    cropCanvas(
-      decoded.get(key) as ImageBitmap,
-      [0, 0, 400, 800],
-    ).ctx.getImageData(0, 0, 400, 800);
+    cropCanvas(decoded.get(key) as ImageBitmap, [
+      stub.x,
+      stub.y,
+      stub.w,
+      stub.h,
+    ]).ctx.getImageData(0, 0, stub.w, stub.h);
   const first = stubOf(stubSources[0]);
   stubSources.slice(1).forEach((key) => {
     if (!sameStub(first, stubOf(key)))
