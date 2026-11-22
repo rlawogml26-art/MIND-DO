@@ -1252,8 +1252,8 @@ async function convert(frame: FrameNode): Promise<{
 
     plans.push({ ticket, hide, under: byId(split.under), over });
     if (slots.every((s): s is DesignPhotoSlot => s !== null)) {
-      body[n] = { under: `body-${n}-under.png`, photos: slots, texts };
-      if (over.length) body[n].over = `body-${n}-over.png`;
+      body[n] = { under: `body-${n}-under.webp`, photos: slots, texts };
+      if (over.length) body[n].over = `body-${n}-over.webp`;
     }
   }
 
@@ -1276,7 +1276,7 @@ async function convert(frame: FrameNode): Promise<{
     tags: meta.tags,
     mainColor: meta.mainColor,
     shape: { cornerRadius, notchRadius },
-    stub: { image: "stub.png", texts: stubTexts },
+    stub: { image: "stub.webp", texts: stubTexts },
     body,
   };
   const parsed = designFileSchema.safeParse(candidate);
@@ -1400,12 +1400,12 @@ async function exportImages(plans: Plan[], layout: Layout) {
     stubSources.push(`ticket-${n}-under`);
     if (n === "1")
       jobs.push({
-        file: "stub.png",
+        file: "stub.webp",
         source: "ticket-1-under",
         crop: crop(layout.stub),
       });
     jobs.push({
-      file: `body-${n}-under.png`,
+      file: `body-${n}-under.webp`,
       source: `ticket-${n}-under`,
       crop: crop(layout.body),
     });
@@ -1417,7 +1417,7 @@ async function exportImages(plans: Plan[], layout: Layout) {
         true,
       );
       jobs.push({
-        file: `body-${n}-over.png`,
+        file: `body-${n}-over.webp`,
         source: `ticket-${n}-over`,
         crop: crop(layout.body),
       });

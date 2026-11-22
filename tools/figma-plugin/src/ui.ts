@@ -1,5 +1,6 @@
 import {
   DESIGN_LAYOUTS,
+  DESIGN_PHOTO_COUNTS,
   DESIGN_TEXT_BINDS,
   MOOD_TAGS,
   type DesignFile,
@@ -141,13 +142,31 @@ function cropCanvas(img: ImageBitmap, [x, y, w, h]: ImageJob["crop"]) {
   return { canvas, ctx };
 }
 
-const toPng = (canvas: HTMLCanvasElement) =>
+// 내보내는 그림 품질 (0~1). 0.9면 눈으로 차이가 거의 없고, PNG보다 몇 배~수십 배 작다
+const WEBP_QUALITY = 0.9;
+
+const toWebp = (canvas: HTMLCanvasElement) =>
   new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("PNG 변환 실패"))),
-      "image/png",
+      (b) =>
+        // WebP를 못 만드는 환경은 PNG로 바꿔 주므로, 파일 이름(.webp)과 내용이 어긋나지 않게 막는다
+        b && b.type === "image/webp"
+          ? resolve(b)
+          : reject(new Error("WebP 변환 실패")),
+      "image/webp",
+      WEBP_QUALITY,
     ),
   );
+
+// 같은 그림인지 보려고 픽셀 전체로 지문을 만든다 (FNV-1a)
+function fingerprint(img: ImageData) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < img.data.length; i++) {
+    h ^= img.data[i];
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${img.width}x${img.height}:${h >>> 0}`;
+}
 
 function sameStub(a: ImageData, b: ImageData) {
   if (a.data.length !== b.data.length) return false;
@@ -185,18 +204,45 @@ async function buildZip(
   });
 
   const zip = new JSZip();
-  const json = JSON.stringify(design, null, 2) + "\n";
-  zip.file(`shared/src/designs/${design.category}/${design.id}.json`, json);
+  // 사진 수별 판의 그림이 같으면 한 파일만 넣고 디자인 파일이 그 파일을 가리키게 한다 (앱 용량)
+  const byPrint = new Map<string, string>();
+  const rename = new Map<string, string>();
   for (const job of jobs) {
-    const { canvas } = cropCanvas(
+    const { canvas, ctx } = cropCanvas(
       decoded.get(job.source) as ImageBitmap,
       job.crop,
     );
+    const print = fingerprint(
+      ctx.getImageData(0, 0, canvas.width, canvas.height),
+    );
+    const same = byPrint.get(print);
+    if (same) {
+      rename.set(job.file, same);
+      continue;
+    }
+    byPrint.set(print, job.file);
     zip.file(
       `frontend/assets/designs/${design.id}/${job.file}`,
-      await toPng(canvas),
+      await toWebp(canvas),
     );
   }
+  const fileOf = (f: string) => rename.get(f) ?? f;
+  const body = { ...design.body };
+  for (const n of DESIGN_PHOTO_COUNTS) {
+    const v = design.body[n];
+    body[n] = {
+      ...v,
+      under: fileOf(v.under),
+      ...(v.over ? { over: fileOf(v.over) } : {}),
+    };
+  }
+  const out: DesignFile = {
+    ...design,
+    stub: { ...design.stub, image: fileOf(design.stub.image) },
+    body,
+  };
+  const json = JSON.stringify(out, null, 2) + "\n";
+  zip.file(`shared/src/designs/${design.category}/${design.id}.json`, json);
   return { blob: await zip.generateAsync({ type: "blob" }), warnings };
 }
 
