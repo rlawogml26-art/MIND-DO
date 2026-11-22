@@ -20,10 +20,47 @@ export const DESIGN_CATEGORY_PAGE_NAMES: Record<
   film: "필름",
 };
 
-// 캔버스 크기 (px). 티켓 한 장 = 공동 쪽 + 개인 쪽 (2.5:1)
+// 가로형 캔버스 크기 (px). 피그마 플러그인이 아직 쓰고 있어 남겨 둔다 (플러그인 세로형 PR에서 DESIGN_LAYOUTS로 바꾸고 지움)
 export const DESIGN_STUB_SIZE = { w: 400, h: 800 } as const;
 export const DESIGN_BODY_SIZE = { w: 1600, h: 800 } as const;
 export const DESIGN_TICKET_SIZE = { w: 2000, h: 800 } as const;
+
+// 방향 (11/18). 티켓 한 장 = 공동 쪽 + 개인 쪽 (2.5:1).
+// 세로형은 위 1600이 개인 쪽, 아래 400이 공동 쪽이다
+export const DESIGN_ORIENTATIONS = ["horizontal", "vertical"] as const;
+export type DesignOrientation = (typeof DESIGN_ORIENTATIONS)[number];
+
+type LayoutRect = { x: number; y: number; w: number; h: number };
+// 방향별 배치: 티켓 전체 크기, 그 안의 공동 쪽·개인 쪽 자리, 절취선 양 끝의 홈 가운데.
+// 디자인 파일의 칸 좌표는 공동 쪽·개인 쪽 각자의 왼쪽 위가 기준이다
+export const DESIGN_LAYOUTS: Record<
+  DesignOrientation,
+  {
+    ticket: { w: number; h: number };
+    stub: LayoutRect;
+    body: LayoutRect;
+    notches: [{ x: number; y: number }, { x: number; y: number }];
+  }
+> = {
+  horizontal: {
+    ticket: { w: 2000, h: 800 },
+    stub: { x: 0, y: 0, w: 400, h: 800 },
+    body: { x: 400, y: 0, w: 1600, h: 800 },
+    notches: [
+      { x: 400, y: 0 },
+      { x: 400, y: 800 },
+    ],
+  },
+  vertical: {
+    ticket: { w: 800, h: 2000 },
+    stub: { x: 0, y: 1600, w: 800, h: 400 },
+    body: { x: 0, y: 0, w: 800, h: 1600 },
+    notches: [
+      { x: 0, y: 1600 },
+      { x: 800, y: 1600 },
+    ],
+  },
+};
 
 // 사진 수별 판
 export const DESIGN_PHOTO_COUNTS = ["1", "2", "3", "4"] as const;
