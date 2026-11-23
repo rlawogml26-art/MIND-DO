@@ -1,0 +1,210 @@
+{
+  "id": "ticket_liquidgloss_01",
+  "name": "ticket_liquidgloss_1",
+  "category": "ticket",
+  "orientation": "horizontal",
+  "tags": ["맑음", "귀여움", "활기참", "축하"],
+  "mainColor": "#FCEEAE",
+  "shape": {
+    "cornerRadius": 24,
+    "notchRadius": 28
+  },
+  "stub": {
+    "image": "stub.webp",
+    "texts": [
+      {
+        "bind": "static",
+        "value": "MEMO:RE",
+        "x": 40,
+        "y": 49,
+        "w": 320,
+        "h": 40,
+        "font": "sans",
+        "size": 28,
+        "weight": "bold",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "title",
+        "fallback": "우리의 하루",
+        "x": 40,
+        "y": 254,
+        "w": 320,
+        "h": 216,
+        "font": "sans",
+        "size": 48,
+        "weight": "bold",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 3,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "groupName",
+        "x": 40,
+        "y": 504,
+        "w": 320,
+        "h": 50,
+        "font": "sans",
+        "size": 28,
+        "weight": "bold",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "participants",
+        "x": 40,
+        "y": 560,
+        "w": 320,
+        "h": 40,
+        "font": "sans",
+        "size": 22,
+        "weight": "regular",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "date",
+        "x": 30,
+        "y": 656,
+        "w": 320,
+        "h": 50,
+        "font": "sans",
+        "size": 30,
+        "weight": "regular",
+        "color": "#2B2B2B",
+        "align": "right",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      }
+    ]
+  },
+  "body": {
+    "1": {
+      "under": "body-1-under.webp",
+      "photos": [
+        {
+          "x": 31,
+          "y": 48,
+          "w": 1450,
+          "h": 700,
+          "shape": "rect",
+          "radius": 50,
+          "rotate": 0
+        }
+      ],
+      "texts": []
+    },
+    "2": {
+      "under": "body-2-under.webp",
+      "photos": [
+        {
+          "x": 28,
+          "y": 50,
+          "w": 940,
+          "h": 700,
+          "shape": "rect",
+          "radius": 50,
+          "rotate": 0
+        },
+        {
+          "x": 977,
+          "y": 48,
+          "w": 520,
+          "h": 700,
+          "shape": "rect",
+          "radius": 50,
+          "rotate": 0
+        }
+      ],
+      "texts": []
+    },
+    "3": {
+      "under": "body-3-under.webp",
+      "photos": [
+        {
+          "x": 28,
+          "y": 50,
+          "w": 480,
+          "h": 700,
+          "shape": "rect",
+          "radius": 50,
+          "rotate": 0
+        },
+        {
+          "x": 508,
+          "y": 50,
+          "w": 480,
+          "h": 700,
+          "shape": "rect",
+          "radius": 50,
+          "rotate": 0
+        },
+        {
+          "x": 988,
+          "y": 50,
+          "w": 480,
+          "h": 700,
+          "shape": "rect",
+          "radius": 50,
+          "rotate": 0
+        }
+      ],
+      "texts": []
+    },
+    "4": {
+      "under": "body-4-under.webp",
+      "photos": [
+        {
+          "x": 28,
+          "y": 68,
+          "w": 650,
+          "h": 660,
+          "shape": "rect",
+          "radius": 50,
+          "rotate": 0
+        },
+        {
+          "x": 708,
+          "y": 68,
+          "w": 380,
+          "h": 380,
+          "shape": "rect",
+          "radius": 60,
+          "rotate": 0
+        },
+        {
+          "x": 1118,
+          "y": 68,
+          "w": 380,
+          "h": 380,
+          "shape": "rect",
+          "radius": 60,
+          "rotate": 0
+        },
+        {
+          "x": 708,
+          "y": 468,
+          "w": 790,
+          "h": 260,
+          "shape": "rect",
+          "radius": 60,
+          "rotate": 0
+        }
+      ],
+      "texts": []
+    }
+  }
+}
