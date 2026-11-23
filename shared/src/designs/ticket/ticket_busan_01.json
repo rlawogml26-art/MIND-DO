@@ -4,7 +4,7 @@
   "category": "ticket",
   "orientation": "horizontal",
   "tags": ["따뜻함", "여행", "자연", "설렘", "감성"],
-  "mainColor": "#E794AE",
+  "mainColor": "#C8AA32",
   "shape": {
     "cornerRadius": 24,
     "notchRadius": 28
