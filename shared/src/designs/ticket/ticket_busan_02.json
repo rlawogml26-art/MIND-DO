@@ -1,6 +1,6 @@
 {
   "id": "ticket_busan_02",
-  "name": "윤슬 티켓 (쿨톤)",
+  "name": "쿨톤",
   "category": "ticket",
   "orientation": "horizontal",
   "tags": ["맑음", "여행", "자연", "설렘", "감성"],
@@ -26,7 +26,12 @@
         "align": "left",
         "rotate": 0,
         "maxLines": 1,
-        "letterSpacing": 0
+        "letterSpacing": 0,
+        "shadow": {
+          "color": "#FFFFFF",
+          "dx": 0,
+          "dy": 0
+        }
       },
       {
         "bind": "title",
@@ -42,12 +47,17 @@
         "align": "left",
         "rotate": 0,
         "maxLines": 2,
-        "letterSpacing": 0
+        "letterSpacing": 0,
+        "shadow": {
+          "color": "#FFFFFF",
+          "dx": 0,
+          "dy": 0
+        }
       },
       {
         "bind": "date",
         "x": 40,
-        "y": 600,
+        "y": 510,
         "w": 320,
         "h": 50,
         "font": "sans",
@@ -57,14 +67,19 @@
         "align": "left",
         "rotate": 0,
         "maxLines": 1,
-        "letterSpacing": 0
+        "letterSpacing": 0,
+        "shadow": {
+          "color": "#FFFFFF",
+          "dx": 0,
+          "dy": 0
+        }
       },
       {
         "bind": "groupName",
         "x": 40,
-        "y": 660,
-        "w": 320,
-        "h": 50,
+        "y": 565,
+        "w": 78,
+        "h": 34,
         "font": "sans",
         "size": 28,
         "weight": "bold",
@@ -72,14 +87,19 @@
         "align": "left",
         "rotate": 0,
         "maxLines": 1,
-        "letterSpacing": 0
+        "letterSpacing": 0,
+        "shadow": {
+          "color": "#FFFFFF",
+          "dx": 0,
+          "dy": 0
+        }
       },
       {
         "bind": "participants",
         "x": 40,
-        "y": 716,
-        "w": 320,
-        "h": 40,
+        "y": 615,
+        "w": 229,
+        "h": 26,
         "font": "sans",
         "size": 22,
         "weight": "regular",
@@ -87,7 +107,12 @@
         "align": "left",
         "rotate": 0,
         "maxLines": 1,
-        "letterSpacing": 0
+        "letterSpacing": 0,
+        "shadow": {
+          "color": "#FFFFFF",
+          "dx": 0,
+          "dy": 0
+        }
       }
     ]
   },
@@ -110,8 +135,8 @@
           "bind": "date",
           "x": 1220,
           "y": 80,
-          "w": 320,
-          "h": 50,
+          "w": 150,
+          "h": 36,
           "font": "sans",
           "size": 30,
           "weight": "regular",

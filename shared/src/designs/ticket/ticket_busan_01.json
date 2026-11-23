@@ -1,9 +1,9 @@
 {
   "id": "ticket_busan_01",
-  "name": "웜톤 티켓 (윤슬)",
+  "name": "웜톤",
   "category": "ticket",
   "orientation": "horizontal",
-  "tags": ["따뜻함", "자연", "데이트", "설렘", "감성"],
+  "tags": ["따뜻함", "여행", "자연", "설렘", "감성"],
   "mainColor": "#E794AE",
   "shape": {
     "cornerRadius": 24,
@@ -26,7 +26,12 @@
         "align": "left",
         "rotate": 0,
         "maxLines": 1,
-        "letterSpacing": 0
+        "letterSpacing": 0,
+        "shadow": {
+          "color": "#FFFFFF",
+          "dx": 0,
+          "dy": 0
+        }
       },
       {
         "bind": "title",
@@ -42,12 +47,17 @@
         "align": "left",
         "rotate": 0,
         "maxLines": 2,
-        "letterSpacing": 0
+        "letterSpacing": 0,
+        "shadow": {
+          "color": "#FFFFFF",
+          "dx": 0,
+          "dy": 0
+        }
       },
       {
         "bind": "date",
         "x": 40,
-        "y": 600,
+        "y": 510,
         "w": 320,
         "h": 50,
         "font": "sans",
@@ -57,12 +67,17 @@
         "align": "left",
         "rotate": 0,
         "maxLines": 1,
-        "letterSpacing": 0
+        "letterSpacing": 0,
+        "shadow": {
+          "color": "#FFFFFF",
+          "dx": 0,
+          "dy": 0
+        }
       },
       {
         "bind": "groupName",
         "x": 40,
-        "y": 660,
+        "y": 565,
         "w": 320,
         "h": 50,
         "font": "sans",
@@ -72,12 +87,17 @@
         "align": "left",
         "rotate": 0,
         "maxLines": 1,
-        "letterSpacing": 0
+        "letterSpacing": 0,
+        "shadow": {
+          "color": "#FFFFFF",
+          "dx": 0,
+          "dy": 0
+        }
       },
       {
         "bind": "participants",
         "x": 40,
-        "y": 716,
+        "y": 615,
         "w": 320,
         "h": 40,
         "font": "sans",
@@ -87,7 +107,12 @@
         "align": "left",
         "rotate": 0,
         "maxLines": 1,
-        "letterSpacing": 0
+        "letterSpacing": 0,
+        "shadow": {
+          "color": "#FFFFFF",
+          "dx": 0,
+          "dy": 0
+        }
       }
     ]
   },
