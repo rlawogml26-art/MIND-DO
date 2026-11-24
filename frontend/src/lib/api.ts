@@ -1,5 +1,14 @@
 import {
+  ErrorCode,
+  createGroupInviteResponseSchema,
+  createGroupRequestSchema,
+  createSharedTicketRequestSchema,
   currentUserResponseSchema,
+  groupResponseSchema,
+  inviteInfoResponseSchema,
+  joinGroupResponseSchema,
+  signupRequestSchema,
+  signupResponseSchema,
   groupDetailResponseSchema,
   groupListResponseSchema,
   loginRequestSchema,
@@ -9,7 +18,10 @@ import {
   sharedTicketPhotoUploadUrlsResponseSchema,
   aiDraftsResponseSchema,
   issuedTicketResponseSchema,
+  type CreateGroupRequest,
+  type CreateSharedTicketRequest,
   type LoginRequest,
+  type SignupRequest,
   type SharedTicketPhotoUploadRequest,
   type AiDraftsRequest,
   type TicketDesign,
@@ -51,14 +63,11 @@ function baseUrl(): string {
 const errorBodySchema = z.object({ error: z.object({ code: z.string() }) });
 const dataBodySchema = z.object({ data: z.unknown() });
 
-async function request<S extends z.ZodType>(
-  path: string,
-  schema: S,
-  init: { method?: string; body?: unknown } = {},
-): Promise<z.infer<S>> {
-  let response: Response;
+type RequestInit = { method?: string; body?: unknown };
+
+async function send(path: string, init: RequestInit): Promise<Response> {
   try {
-    response = await fetch(`${baseUrl()}${path}`, {
+    return await fetch(`${baseUrl()}${path}`, {
       method: init.method ?? "GET",
       credentials: "include",
       headers:
@@ -70,20 +79,59 @@ async function request<S extends z.ZodType>(
   } catch {
     throw new ApiError(0, NETWORK_ERROR);
   }
+}
+
+// 토큰 갱신은 한 번에 하나만 보낸다 (AGENTS.md "로그인 토큰").
+// 동시에 두 번 갱신하면 두 번째 요청이 이미 바뀐 토큰을 들고 가서 서버가 탈취로 보고 로그아웃시킨다.
+// 갱신 중에 만료를 만난 다른 요청은 같은 갱신이 끝나기를 기다렸다가 다시 보낸다
+let refreshing: Promise<boolean> | null = null;
+
+function refreshOnce(): Promise<boolean> {
+  if (!refreshing) {
+    refreshing = send("/api/auth/refresh", { method: "POST" })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshing = null;
+      });
+  }
+  return refreshing;
+}
+
+async function readErrorCode(response: Response): Promise<string> {
+  const body: unknown = await response.json().catch(() => null);
+  const error = errorBodySchema.safeParse(body);
+  return error.success ? error.data.error.code : SERVER_ERROR;
+}
+
+async function request<S extends z.ZodType>(
+  path: string,
+  schema: S,
+  init: RequestInit = {},
+): Promise<z.infer<S>> {
+  let response = await send(path, init);
+
+  // 액세스 토큰이 만료됐으면 갱신 후 한 번만 다시 보낸다. 갱신도 실패하면 로그인 화면으로 보내도록
+  // INVALID_REFRESH_TOKEN을 던진다
+  if (response.status === 401 && !path.startsWith("/api/auth/")) {
+    const code = await readErrorCode(response.clone());
+    if (code === ErrorCode.ACCESS_TOKEN_EXPIRED) {
+      if (!(await refreshOnce())) {
+        throw new ApiError(401, ErrorCode.INVALID_REFRESH_TOKEN);
+      }
+      response = await send(path, init);
+    }
+  }
 
   if (response.status >= HTTP_SERVER_ERROR_MIN) {
     throw new ApiError(response.status, SERVER_ERROR);
   }
 
-  const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const error = errorBodySchema.safeParse(body);
-    throw new ApiError(
-      response.status,
-      error.success ? error.data.error.code : SERVER_ERROR,
-    );
+    throw new ApiError(response.status, await readErrorCode(response));
   }
 
+  const body: unknown = await response.json().catch(() => null);
   const parsed = schema.safeParse(dataBodySchema.safeParse(body).data?.data);
   if (!parsed.success) throw new ApiError(response.status, SERVER_ERROR);
   return parsed.data;
@@ -96,6 +144,17 @@ export const login = (input: LoginRequest) =>
     body: loginRequestSchema.parse(input),
   });
 
+// 회원가입 성공 시 서버가 로그인 쿠키까지 내려준다 (가입 즉시 로그인)
+export const signup = (input: SignupRequest) =>
+  request("/api/auth/signup", signupResponseSchema, {
+    method: "POST",
+    body: signupRequestSchema.parse(input),
+  });
+
+// 서버 응답과 관계없이 앱은 로그인 화면으로 보낸다 (노션 명세 "로그아웃")
+export const logout = () =>
+  request("/api/auth/logout", z.object({}), { method: "POST" });
+
 export const getMe = () => request("/api/users/me", currentUserResponseSchema);
 
 // 그룹
@@ -105,11 +164,47 @@ export const getMyGroups = () =>
 export const getGroupDetail = (groupId: number) =>
   request(`/api/groups/${groupId}`, groupDetailResponseSchema);
 
+export const createGroup = (input: CreateGroupRequest) =>
+  request("/api/groups", groupResponseSchema, {
+    method: "POST",
+    body: createGroupRequestSchema.parse(input),
+  });
+
+// 초대 링크 만들기. 응답의 링크 주소는 이때 한 번만 받으므로 화면이 바로 복사·공유한다
+export const createGroupInvite = (groupId: number) =>
+  request(`/api/groups/${groupId}/invites`, createGroupInviteResponseSchema, {
+    method: "POST",
+  });
+
+// 초대 토큰은 링크 주소의 마지막 부분. 앱 안에서 붙여넣은 링크에서 꺼내 넘긴다
+export const getInvite = (token: string) =>
+  request(
+    `/api/invites/${encodeURIComponent(token)}`,
+    inviteInfoResponseSchema,
+  );
+
+export const joinGroupByInvite = (token: string) =>
+  request(
+    `/api/invites/${encodeURIComponent(token)}/join`,
+    joinGroupResponseSchema,
+    { method: "POST" },
+  );
+
 // 공동 티켓
 export const getGroupSharedTickets = (groupId: number) =>
   request(
     `/api/groups/${groupId}/shared-tickets`,
     sharedTicketListResponseSchema,
+  );
+
+export const createSharedTicket = (
+  groupId: number,
+  input: CreateSharedTicketRequest,
+) =>
+  request(
+    `/api/groups/${groupId}/shared-tickets`,
+    sharedTicketDetailResponseSchema,
+    { method: "POST", body: createSharedTicketRequestSchema.parse(input) },
   );
 
 export const getSharedTicketDetail = (sharedTicketId: number) =>
