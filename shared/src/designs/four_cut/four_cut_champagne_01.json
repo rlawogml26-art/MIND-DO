@@ -30,7 +30,7 @@
       {
         "bind": "participants",
         "x": 40,
-        "y": 456,
+        "y": 583,
         "w": 320,
         "h": 40,
         "font": "sans",
@@ -45,7 +45,7 @@
       {
         "bind": "groupName",
         "x": 40,
-        "y": 400,
+        "y": 527,
         "w": 320,
         "h": 50,
         "font": "sans",
@@ -61,7 +61,7 @@
         "bind": "title",
         "fallback": "우리의 하루",
         "x": 40,
-        "y": 305,
+        "y": 252,
         "w": 320,
         "h": 130,
         "font": "sans",
