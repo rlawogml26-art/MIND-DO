@@ -109,7 +109,12 @@ export const inviteInfoResponseSchema = z.object({
 });
 
 // 그룹 나가기 (POST /api/groups/{groupId}/leave)
-// 나간 사람의 개인 티켓은 그룹에 그대로 남고, 원본은 본인 보관함에도 그대로 있다
+// keepTickets: true면 완성된 내 개인 티켓을 그룹에 남기고, false면 그룹 연결을 끊는다.
+// 어느 쪽이든 원본은 내 보관함에 남는다 (탈퇴 시 본인 선택)
+export const leaveGroupRequestSchema = z.object({
+  keepTickets: z.boolean(),
+});
+
 export const leaveGroupResponseSchema = z.object({
   groupId: positiveIdSchema,
   // 혼자 남은 사람이 나가서 그룹이 삭제됐는지
@@ -129,4 +134,5 @@ export type GroupListResponse = z.infer<typeof groupListResponseSchema>;
 export type GroupMember = z.infer<typeof groupMemberSchema>;
 export type GroupDetailResponse = z.infer<typeof groupDetailResponseSchema>;
 export type InviteInfoResponse = z.infer<typeof inviteInfoResponseSchema>;
+export type LeaveGroupRequest = z.infer<typeof leaveGroupRequestSchema>;
 export type LeaveGroupResponse = z.infer<typeof leaveGroupResponseSchema>;

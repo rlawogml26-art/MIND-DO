@@ -16,6 +16,7 @@ import {
   loginRequestSchema,
   loginResponseSchema,
   joinGroupResponseSchema,
+  leaveGroupRequestSchema,
   leaveGroupResponseSchema,
   groupListResponseSchema,
   groupDetailResponseSchema,
@@ -105,6 +106,10 @@ const options: swaggerJsdoc.Options = {
         JoinGroupResponse: z.toJSONSchema(joinGroupResponseSchema, {
           target: "openapi-3.0",
           io: "output",
+        }),
+        LeaveGroupRequest: z.toJSONSchema(leaveGroupRequestSchema, {
+          target: "openapi-3.0",
+          io: "input",
         }),
         LeaveGroupResponse: z.toJSONSchema(leaveGroupResponseSchema, {
           target: "openapi-3.0",

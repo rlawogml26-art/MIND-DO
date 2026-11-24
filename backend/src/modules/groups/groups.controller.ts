@@ -10,6 +10,7 @@ import {
   inviteInfoResponseSchema,
   joinGroupInviteParamsSchema,
   joinGroupResponseSchema,
+  leaveGroupRequestSchema,
   leaveGroupResponseSchema,
   USER_GROUP_MAX,
 } from "@mind-do/shared";
@@ -310,7 +311,8 @@ export const getInvite = async (req: Request, res: Response) => {
 
 export const postLeaveGroup = async (req: Request, res: Response) => {
   const parsedParams = groupIdParamsSchema.safeParse(req.params);
-  if (!parsedParams.success) {
+  const parsedBody = leaveGroupRequestSchema.safeParse(req.body);
+  if (!parsedParams.success || !parsedBody.success) {
     return res.status(400).json({
       error: {
         code: ErrorCode.INVALID_INPUT,
@@ -323,6 +325,7 @@ export const postLeaveGroup = async (req: Request, res: Response) => {
     const result = await leaveGroup(
       req.headers.cookie,
       parsedParams.data.groupId,
+      parsedBody.data.keepTickets,
     );
     return res
       .status(200)

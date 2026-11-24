@@ -268,11 +268,12 @@ export const getInviteInfo = async (
 export const leaveGroup = async (
   cookieHeader: string | undefined,
   groupId: number,
+  keepTickets: boolean,
 ): Promise<LeaveGroupResponse> => {
   const userId = getAuthenticatedUserId(
     getAccessTokenFromCookieHeader(cookieHeader),
   );
-  const result = await repository.leaveGroup({ groupId, userId });
+  const result = await repository.leaveGroup({ groupId, userId, keepTickets });
   if (result.status === "group_not_found") throw new GroupNotFoundError();
   if (result.status === "default_group_not_allowed") {
     throw new DefaultGroupNotAllowedError();

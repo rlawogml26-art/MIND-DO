@@ -223,7 +223,7 @@ router.post("/:groupId/invites", postGroupInvite);
  * /api/groups/{groupId}/leave:
  *   post:
  *     summary: 그룹 나가기
- *     description: 그룹에서 나갑니다. 내 개인 티켓은 그룹에 그대로 남고 원본은 내 보관함에도 남습니다. 그룹장이 나가면 가장 먼저 들어온 멤버가 그룹장이 되고, 혼자 남은 사람이 나가면 그룹이 삭제됩니다.
+ *     description: 그룹에서 나갑니다. keepTickets가 true면 완성된 내 개인 티켓을 그룹에 남기고, false면 그룹 연결을 끊습니다. 어느 쪽이든 원본은 내 보관함에 남고, 아직 완성하지 않은 내 슬롯은 지워집니다. 그룹장이 나가면 가장 먼저 들어온 멤버가 그룹장이 되고, 혼자 남은 사람이 나가면 그룹이 삭제되며 그 그룹의 모든 개인 티켓 연결이 끊깁니다(원본은 각자 보관함에 남음).
  *     tags: [그룹]
  *     security:
  *       - AccessTokenCookie: []
@@ -234,6 +234,12 @@ router.post("/:groupId/invites", postGroupInvite);
  *         schema:
  *           type: integer
  *           minimum: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/LeaveGroupRequest'
  *     responses:
  *       200:
  *         description: 나가기 성공
@@ -245,7 +251,7 @@ router.post("/:groupId/invites", postGroupInvite);
  *                 data:
  *                   $ref: '#/components/schemas/LeaveGroupResponse'
  *       400:
- *         description: 그룹 ID 검증 실패 (INVALID_INPUT)
+ *         description: 그룹 ID 또는 keepTickets 검증 실패 (INVALID_INPUT)
  *         content:
  *           application/json:
  *             schema:
