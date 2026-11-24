@@ -1,0 +1,274 @@
+{
+  "id": "ticket_water_2",
+  "name": "물",
+  "category": "ticket",
+  "orientation": "horizontal",
+  "tags": ["맑음", "차분함", "자연"],
+  "mainColor": "#435A6F",
+  "shape": {
+    "cornerRadius": 24,
+    "notchRadius": 28
+  },
+  "stub": {
+    "image": "stub.webp",
+    "texts": [
+      {
+        "bind": "static",
+        "value": "memo:re",
+        "x": 40,
+        "y": 48,
+        "w": 296,
+        "h": 40,
+        "font": "sans",
+        "size": 28,
+        "weight": "bold",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "title",
+        "fallback": "우리의 하루",
+        "x": 64,
+        "y": 270,
+        "w": 296,
+        "h": 130,
+        "font": "sans",
+        "size": 48,
+        "weight": "bold",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 2,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "date",
+        "x": 64,
+        "y": 220,
+        "w": 320,
+        "h": 50,
+        "font": "sans",
+        "size": 30,
+        "weight": "regular",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "groupName",
+        "x": 71,
+        "y": 418,
+        "w": 301,
+        "h": 50,
+        "font": "sans",
+        "size": 28,
+        "weight": "bold",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "participants",
+        "x": 71,
+        "y": 374,
+        "w": 280,
+        "h": 40,
+        "font": "sans",
+        "size": 22,
+        "weight": "regular",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      }
+    ]
+  },
+  "body": {
+    "1": {
+      "under": "body-1-under.webp",
+      "photos": [
+        {
+          "x": 97,
+          "y": 88,
+          "w": 1063,
+          "h": 613,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        }
+      ],
+      "texts": [
+        {
+          "bind": "date",
+          "x": 1283,
+          "y": 671,
+          "w": 194,
+          "h": 50,
+          "font": "sans",
+          "size": 30,
+          "weight": "regular",
+          "color": "#2B2B2B",
+          "align": "left",
+          "rotate": 0,
+          "maxLines": 1,
+          "letterSpacing": 0
+        }
+      ]
+    },
+    "2": {
+      "under": "body-1-under.webp",
+      "photos": [
+        {
+          "x": 102,
+          "y": 88,
+          "w": 540,
+          "h": 622,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 662,
+          "y": 88,
+          "w": 540,
+          "h": 622,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        }
+      ],
+      "texts": [
+        {
+          "bind": "date",
+          "x": 1283,
+          "y": 671,
+          "w": 194,
+          "h": 50,
+          "font": "sans",
+          "size": 30,
+          "weight": "regular",
+          "color": "#2B2B2B",
+          "align": "left",
+          "rotate": 0,
+          "maxLines": 1,
+          "letterSpacing": 0
+        }
+      ]
+    },
+    "3": {
+      "under": "body-1-under.webp",
+      "photos": [
+        {
+          "x": 88,
+          "y": 86,
+          "w": 720,
+          "h": 628,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 828,
+          "y": 86,
+          "w": 360,
+          "h": 304,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 828,
+          "y": 410,
+          "w": 360,
+          "h": 304,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        }
+      ],
+      "texts": [
+        {
+          "bind": "date",
+          "x": 1283,
+          "y": 671,
+          "w": 194,
+          "h": 50,
+          "font": "sans",
+          "size": 30,
+          "weight": "regular",
+          "color": "#2B2B2B",
+          "align": "left",
+          "rotate": 0,
+          "maxLines": 1,
+          "letterSpacing": 0
+        }
+      ]
+    },
+    "4": {
+      "under": "body-1-under.webp",
+      "photos": [
+        {
+          "x": 83,
+          "y": 85,
+          "w": 540,
+          "h": 306,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 643,
+          "y": 85,
+          "w": 540,
+          "h": 306,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 83,
+          "y": 409,
+          "w": 540,
+          "h": 306,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 643,
+          "y": 409,
+          "w": 540,
+          "h": 306,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        }
+      ],
+      "texts": [
+        {
+          "bind": "date",
+          "x": 1283,
+          "y": 671,
+          "w": 194,
+          "h": 50,
+          "font": "sans",
+          "size": 30,
+          "weight": "regular",
+          "color": "#2B2B2B",
+          "align": "left",
+          "rotate": 0,
+          "maxLines": 1,
+          "letterSpacing": 0
+        }
+      ]
+    }
+  }
+}
