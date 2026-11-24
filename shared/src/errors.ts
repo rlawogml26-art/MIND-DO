@@ -9,6 +9,7 @@ export enum ErrorCode {
   // 인증 (모든 API 공통, 로그인)
   UNAUTHORIZED = "UNAUTHORIZED", // 401 로그인 안 됨 → 로그인 화면
   ACCESS_TOKEN_EXPIRED = "ACCESS_TOKEN_EXPIRED", // 401 액세스 토큰 만료 → 토큰 갱신 후 재요청
+  INVALID_REFRESH_TOKEN = "INVALID_REFRESH_TOKEN", // 401 토큰 갱신 실패: 리프레시 토큰 없음·만료·무효·재사용 (구분하지 않음) → 로그인 화면
   INVALID_CREDENTIALS = "INVALID_CREDENTIALS", // 401 이메일 또는 비밀번호 불일치 (둘을 구분하지 않음)
   EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS", // 409 이미 가입된 이메일
 

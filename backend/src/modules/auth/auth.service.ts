@@ -156,6 +156,20 @@ export function verifyAccessToken(
 export function getAccessTokenFromCookieHeader(
   cookieHeader: string | undefined,
 ): string | undefined {
+  return getCookieValue(cookieHeader, "accessToken");
+}
+
+export function getRefreshTokenFromCookieHeader(
+  cookieHeader: string | undefined,
+): string | undefined {
+  return getCookieValue(cookieHeader, "refreshToken");
+}
+
+// 같은 이름의 쿠키가 두 개 오면 어느 쪽이 진짜인지 알 수 없으므로 없는 것으로 본다
+function getCookieValue(
+  cookieHeader: string | undefined,
+  cookieName: string,
+): string | undefined {
   if (!cookieHeader) return undefined;
 
   let token: string | undefined;
@@ -164,7 +178,7 @@ export function getAccessTokenFromCookieHeader(
     if (separatorIndex < 0) continue;
 
     const name = cookie.slice(0, separatorIndex).trim();
-    if (name !== "accessToken") continue;
+    if (name !== cookieName) continue;
     if (token !== undefined) return undefined;
 
     const value = cookie.slice(separatorIndex + 1).trim();
@@ -181,6 +195,10 @@ export function getAuthenticatedUserId(token: string | undefined): number {
   return verifyAccessToken(token, getJwtSecret());
 }
 
+export function hashRefreshToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 function createRefreshToken(
   refreshTokenTtlSeconds: number,
   nowSeconds: number,
@@ -188,7 +206,7 @@ function createRefreshToken(
   const token = randomBytes(32).toString("base64url");
   return {
     token,
-    tokenHash: createHash("sha256").update(token).digest("hex"),
+    tokenHash: hashRefreshToken(token),
     expiresAt: new Date((nowSeconds + refreshTokenTtlSeconds) * 1000),
   };
 }
@@ -271,4 +289,55 @@ export const login = async (input: LoginRequest) => {
     refreshTokenTtlSeconds: session.refreshTokenTtlSeconds,
     cookieSecure: session.cookieSecure,
   };
+};
+
+// 리프레시 토큰으로 새 액세스·리프레시 토큰을 발급한다 (AGENTS.md "로그인 토큰").
+// 실패 이유(없음·만료·이미 씀·탈퇴)는 구분하지 않고 모두 UnauthorizedError로 돌린다.
+// 응답은 INVALID_REFRESH_TOKEN 하나라 재사용을 감지했는지도 드러나지 않는다 (노션 명세 "토큰 갱신")
+export const refresh = async (cookieHeader: string | undefined) => {
+  const configuration = getAuthConfiguration();
+  const token = getRefreshTokenFromCookieHeader(cookieHeader);
+  if (!token) throw new UnauthorizedError();
+
+  const stored = await repository.findRefreshToken(hashRefreshToken(token));
+  if (!stored) throw new UnauthorizedError();
+
+  // 이미 무효가 된 토큰이 다시 들어오면 탈취로 보고 그 사용자의 토큰을 모두 무효로 만든다
+  if (stored.revokedAt !== null) {
+    await repository.revokeAllRefreshTokens(stored.userId);
+    throw new UnauthorizedError();
+  }
+  if (stored.expiresAt.getTime() <= Date.now()) throw new UnauthorizedError();
+  if (stored.user.deletedAt !== null) throw new UnauthorizedError();
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const session = createSessionTokens(stored.userId, configuration, nowSeconds);
+  const rotated = await repository.rotateRefreshToken(
+    stored.id,
+    stored.userId,
+    session.refreshTokenHash,
+    session.refreshTokenExpiresAt,
+  );
+  if (!rotated) {
+    await repository.revokeAllRefreshTokens(stored.userId);
+    throw new UnauthorizedError();
+  }
+
+  return {
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken,
+    accessTokenTtlSeconds: session.accessTokenTtlSeconds,
+    refreshTokenTtlSeconds: session.refreshTokenTtlSeconds,
+    cookieSecure: session.cookieSecure,
+  };
+};
+
+// 쿠키에 리프레시 토큰이 없거나 이미 무효여도 로그아웃은 성공으로 본다 (쿠키는 컨트롤러가 지운다)
+export const logout = async (
+  cookieHeader: string | undefined,
+): Promise<{ cookieSecure: boolean }> => {
+  const configuration = getAuthConfiguration();
+  const token = getRefreshTokenFromCookieHeader(cookieHeader);
+  if (token) await repository.revokeRefreshToken(hashRefreshToken(token));
+  return { cookieSecure: configuration.cookieSecure };
 };
