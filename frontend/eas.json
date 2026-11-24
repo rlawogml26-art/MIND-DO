@@ -10,7 +10,8 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://dev-api.memore.site"
-      }
+      },
+      "node": "24.11.1"
     },
     "production": {
       "distribution": "internal",
@@ -19,7 +20,8 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://api.memore.site"
-      }
+      },
+      "node": "24.11.1"
     }
   }
 }
