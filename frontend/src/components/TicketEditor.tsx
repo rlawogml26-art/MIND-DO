@@ -119,12 +119,12 @@ type Step =
   | "error";
 
 const C = {
-  bg: "#FFF8EF",
-  brown: "#654C40",
-  outline: "#987966",
-  accent: "#CF897C",
-  gray: "#DFDFDF",
-  cream: "#FFF8EF",
+  bg: "#FFFFFF",
+  brown: "#252A3A",
+  outline: "#7C8292",
+  accent: "#4053E8",
+  gray: "#F3F4F6",
+  cream: "#FFFFFF",
   white: "#FFFFFF",
 };
 const STEPS: Step[] = [
@@ -344,6 +344,8 @@ const FramePreview = ({
           width: ticketWidth,
           height: ticketHeight,
           borderRadius: 10 * scale,
+          backgroundColor: showOrientationSymbol ? "#F7F8FA" : "#FFFDF8",
+          borderColor: showOrientationSymbol ? "#DDE2E9" : "#E8D8CA",
         },
       ]}
     >
@@ -354,13 +356,14 @@ const FramePreview = ({
             width: stubWidth,
             height: ticketHeight,
             padding: 8 * scale,
-            backgroundColor: "#F0C8BE",
+            backgroundColor: showOrientationSymbol ? "#E6EFF2" : "#F0C8BE",
           },
         ]}
       >
         <Text
           style={[
             styles.ticketPassBrand,
+            showOrientationSymbol && styles.orientationTicketText,
             { fontSize: 8 * scale, lineHeight: 11 * scale },
           ]}
         >
@@ -370,6 +373,7 @@ const FramePreview = ({
           <TextInput
             style={[
               styles.ticketPassTitle,
+              showOrientationSymbol && styles.orientationTicketText,
               stubTextStyle,
               {
                 fontSize: 11 * scale,
@@ -394,6 +398,7 @@ const FramePreview = ({
           <Text
             style={[
               styles.ticketPassTitle,
+              showOrientationSymbol && styles.orientationTicketText,
               stubTextStyle,
               {
                 fontSize: 11 * scale,
@@ -409,6 +414,7 @@ const FramePreview = ({
         <Text
           style={[
             styles.ticketPassDate,
+            showOrientationSymbol && styles.orientationTicketText,
             { fontSize: 8 * scale, lineHeight: 10 * scale },
           ]}
           numberOfLines={1}
@@ -419,6 +425,7 @@ const FramePreview = ({
           <TextInput
             style={[
               styles.ticketPassPlace,
+              showOrientationSymbol && styles.orientationTicketText,
               stubTextStyle,
               {
                 fontSize: 10 * scale,
@@ -443,6 +450,7 @@ const FramePreview = ({
           <Text
             style={[
               styles.ticketPassPlace,
+              showOrientationSymbol && styles.orientationTicketText,
               stubTextStyle,
               {
                 fontSize: 10 * scale,
@@ -465,6 +473,7 @@ const FramePreview = ({
             height: ticketHeight,
             borderTopRightRadius: 10 * scale,
             borderBottomRightRadius: 10 * scale,
+            backgroundColor: showOrientationSymbol ? "#F7F8FA" : "#F5EFE5",
           },
         ]}
       >
@@ -474,7 +483,11 @@ const FramePreview = ({
             photoOrientation === "portrait" &&
               !showOrientationSymbol &&
               styles.ticketPassArtCanvasPortrait,
-            { width: artCanvasWidth, height: artCanvasHeight },
+            {
+              width: artCanvasWidth,
+              height: artCanvasHeight,
+              backgroundColor: showOrientationSymbol ? "#F7F8FA" : "#F5EFE5",
+            },
           ]}
         >
           {previewPhotos.length > 0 ? (
@@ -520,6 +533,7 @@ const FramePreview = ({
                 <View
                   style={[
                     styles.ticketPassSymbolHead,
+                    showOrientationSymbol && styles.orientationTicketSymbol,
                     {
                       width: 22 * scale,
                       height: 22 * scale,
@@ -530,6 +544,7 @@ const FramePreview = ({
                 <View
                   style={[
                     styles.ticketPassSymbolBody,
+                    showOrientationSymbol && styles.orientationTicketSymbol,
                     {
                       width: 50 * scale,
                       height: 18 * scale,
@@ -614,6 +629,7 @@ const FramePreview = ({
         pointerEvents="none"
         style={[
           styles.ticketPassPerforation,
+          showOrientationSymbol && styles.orientationTicketPerforation,
           {
             left: stubWidth - 0.5 * scale,
             top: 8 * scale,
@@ -625,6 +641,7 @@ const FramePreview = ({
         pointerEvents="none"
         style={[
           styles.ticketPassPunchHole,
+          showOrientationSymbol && { opacity: 0 },
           {
             left: stubWidth - 5 * scale,
             top: -5 * scale,
@@ -637,6 +654,7 @@ const FramePreview = ({
         pointerEvents="none"
         style={[
           styles.ticketPassPunchHole,
+          showOrientationSymbol && { opacity: 0 },
           {
             left: stubWidth - 5 * scale,
             bottom: -5 * scale,
@@ -653,19 +671,19 @@ const FramePreview = ({
 function BackTicketContent({
   text,
   date,
-  color,
   onMore,
 }: {
   text: string;
   date: string;
-  color: string;
   onMore: () => void;
 }) {
   const shortened = Array.from(text).length > 34;
   return (
-    <View style={[styles.backTicketInner, { backgroundColor: color }]}>
-      <Text style={styles.backTicketLogo}>MEMO:RE</Text>
-      <View style={styles.backTicketRule} />
+    <View style={styles.backTicketInner}>
+      <View style={styles.backTicketHeading}>
+        <Text style={styles.backTicketLogo}>MEMORY NOTE</Text>
+        <Text style={styles.backTicketDate}>{date}</Text>
+      </View>
       <View style={styles.backMemoOnlyTextWrap}>
         <Text style={styles.backMemoOnlyText} numberOfLines={shortened ? 3 : 5}>
           {text || "이날의 기억을 적어 주세요"}
@@ -680,7 +698,6 @@ function BackTicketContent({
           </Pressable>
         )}
       </View>
-      <Text style={styles.backTicketDate}>{date}</Text>
     </View>
   );
 }
@@ -699,7 +716,6 @@ export function IssuedTicketFlipPreview({
 }) {
   const safeFrame = Math.max(0, Math.min(FRAMES.length - 1, ticket.frame ?? 0));
   if (showingBack) {
-    const color = ticket.backColor ?? "#F2E8DC";
     return (
       <View
         style={[
@@ -707,14 +723,13 @@ export function IssuedTicketFlipPreview({
           {
             width: ticketWidth,
             height: ticketWidth * (128 / 320),
-            backgroundColor: color,
+            backgroundColor: "#FFFFFF",
           },
         ]}
       >
         <BackTicketContent
           text={ticket.memo ?? ""}
           date={(ticket.visitDate ?? "").replace(/-/g, ".")}
-          color={color}
           onMore={onMore}
         />
       </View>
@@ -1195,7 +1210,11 @@ export default function TicketCreationScreen({
         </ScrollView>
       </View>
       {(confirmed || frameChosen) && (
-        <Action label="이 디자인 선택" onPress={() => go("decorate")} />
+        <Action
+          label="이 디자인 선택"
+          onPress={() => go("decorate")}
+          variant="frame"
+        />
       )}
     </View>
   );
@@ -1203,12 +1222,19 @@ export default function TicketCreationScreen({
   const Action = ({
     label,
     onPress,
+    variant = "default",
   }: {
     label: string;
     onPress: () => void;
+    variant?: "default" | "frame";
   }) => (
-    <View style={styles.bottomWrap}>
-      <Pressable style={styles.action} onPress={onPress}>
+    <View
+      style={[styles.bottomWrap, variant === "frame" && styles.frameActionWrap]}
+    >
+      <Pressable
+        style={[styles.action, variant === "frame" && styles.frameAction]}
+        onPress={onPress}
+      >
         <Text style={styles.actionText}>{label}</Text>
       </Pressable>
     </View>
@@ -1290,7 +1316,7 @@ export default function TicketCreationScreen({
         location: ticketPlace.trim() || originGroupName?.trim() || "",
         backStyle: 0,
         memo: backText.trim(),
-        backColor: "#F2E8DC",
+        backColor: "#FFFFFF",
         issuedAt: new Date().toISOString(),
       };
       const created = await issueTicketOnce(snapshot);
@@ -1348,7 +1374,9 @@ export default function TicketCreationScreen({
                     key={index}
                     style={[
                       styles.creationProgressSegment,
-                      index <= workflowStage && styles.creationProgressActive,
+                      styles.photoCreationProgressSegment,
+                      index <= workflowStage &&
+                        styles.photoCreationProgressActive,
                     ]}
                   />
                 ))}
@@ -1365,6 +1393,9 @@ export default function TicketCreationScreen({
                 >
                   <Text style={styles.creationLabel}>
                     추억 사진 (최대 {PHOTO_UPLOAD_MAX_COUNT}장)
+                  </Text>
+                  <Text style={styles.creationCount}>
+                    {memoryPhotos.length} / {PHOTO_UPLOAD_MAX_COUNT}장
                   </Text>
                 </View>
                 <View style={styles.memoryPhotoRow}>
@@ -1478,14 +1509,11 @@ export default function TicketCreationScreen({
 
               <View style={styles.creationSection}>
                 <View style={styles.creationSectionHeading}>
-                  <Text style={styles.creationLabel}>티켓 분위기 (선택)</Text>
+                  <Text style={styles.creationLabel}>티켓 분위기</Text>
                   <Text style={styles.creationCount}>
                     {Array.from(caption).length}/{MOOD_PROMPT_MAX}
                   </Text>
                 </View>
-                <Text style={styles.captionUsageHint}>
-                  티켓 제목과 별도로 저장해 두었다가 템플릿 생성에 사용해요.
-                </Text>
                 <TextInput
                   accessibilityLabel={`AI 템플릿용 티켓 분위기 입력, 최대 ${MOOD_PROMPT_MAX}자`}
                   style={styles.creationMessageInput}
@@ -1494,7 +1522,7 @@ export default function TicketCreationScreen({
                   onChangeText={setCaption}
                   maxLength={MOOD_PROMPT_MAX}
                   placeholder="예: 따뜻한 노을빛 여행 / 세련된 전시회 기록"
-                  placeholderTextColor="#A99A90"
+                  placeholderTextColor="#9AA0AE"
                   textAlignVertical="top"
                   returnKeyType="done"
                 />
@@ -1964,6 +1992,10 @@ export default function TicketCreationScreen({
                   },
                 ]}
               >
+                <View style={styles.backMemoPreviewHeading}>
+                  <Text style={styles.backMemoPreviewBrand}>MEMORY NOTE</Text>
+                  <Text style={styles.backMemoPreviewDate}>{ticketDate}</Text>
+                </View>
                 <Text style={styles.backMemoPreviewText}>
                   {backText || "뒷면 문구가 여기에 표시돼요"}
                 </Text>
@@ -1985,7 +2017,7 @@ export default function TicketCreationScreen({
                 value={backText}
                 onChangeText={setBackText}
                 placeholder="티켓 뒷면에 남길 문구를 적어 주세요"
-                placeholderTextColor="#987966"
+                placeholderTextColor="#9AA0AE"
                 textAlignVertical="top"
               />
             </View>
@@ -2029,6 +2061,10 @@ export default function TicketCreationScreen({
                     },
                   ]}
                 >
+                  <View style={styles.backMemoPreviewHeading}>
+                    <Text style={styles.backMemoPreviewBrand}>MEMORY NOTE</Text>
+                    <Text style={styles.backMemoPreviewDate}>{ticketDate}</Text>
+                  </View>
                   <Text style={styles.backMemoPreviewText}>
                     {backText || "뒷면 문구가 없어요"}
                   </Text>
@@ -2223,8 +2259,21 @@ export default function TicketCreationScreen({
   }
 
   return (
-    <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+    <SafeAreaView
+      style={[
+        styles.root,
+        (step === "photos" || step === "frames" || step === "frameConfirm") &&
+          styles.photoEntryRoot,
+      ]}
+    >
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor={
+          step === "photos" || step === "frames" || step === "frameConfirm"
+            ? "#FFFFFF"
+            : C.bg
+        }
+      />
       <Modal
         visible={photoChangeVisible}
         transparent
@@ -2347,7 +2396,9 @@ export default function TicketCreationScreen({
               onPress={closePhotoPicker}
               style={styles.photoPickerClose}
             >
-              <Text style={styles.backText}>‹</Text>
+              <Text style={[styles.backText, styles.photoPickerBackText]}>
+                ‹
+              </Text>
             </Pressable>
             <Text style={styles.photoPickerTitle}>추억 사진 선택</Text>
             <Text style={styles.photoPickerCount}>
@@ -2370,11 +2421,23 @@ export default function TicketCreationScreen({
             renderItem={({ item }) =>
               item.id === "__camera__" ? (
                 <Pressable
-                  style={[styles.cameraTile, { width: cell, height: cell }]}
+                  style={[
+                    styles.cameraTile,
+                    styles.photoPickerCameraTile,
+                    { width: cell, height: cell },
+                  ]}
                   onPress={() => void shoot()}
                 >
-                  <Text style={styles.cameraIcon}>◎</Text>
-                  <Text style={styles.cameraText}>촬영하기</Text>
+                  <Text
+                    style={[styles.cameraIcon, styles.photoPickerCameraIcon]}
+                  >
+                    ◎
+                  </Text>
+                  <Text
+                    style={[styles.cameraText, styles.photoPickerCameraText]}
+                  >
+                    촬영하기
+                  </Text>
                 </Pressable>
               ) : (
                 <Pressable
@@ -2414,14 +2477,21 @@ export default function TicketCreationScreen({
             }
           />
           <View style={styles.photoPickerFooter}>
-            <Pressable style={styles.action} onPress={closePhotoPicker}>
+            <Pressable
+              style={[styles.action, styles.photoPickerAction]}
+              onPress={closePhotoPicker}
+            >
               <Text style={styles.actionText}>선택 완료</Text>
             </Pressable>
           </View>
         </SafeAreaView>
       </Modal>
       <KeyboardAvoidingView
-        style={styles.root}
+        style={[
+          styles.root,
+          (step === "photos" || step === "frames" || step === "frameConfirm") &&
+            styles.photoEntryRoot,
+        ]}
         behavior={
           Platform.OS === "ios"
             ? "padding"
@@ -2431,16 +2501,28 @@ export default function TicketCreationScreen({
         }
       >
         <View
-          style={[styles.header, step === "photos" && styles.creationHeader]}
+          style={[
+            styles.header,
+            step === "photos" && styles.creationHeader,
+            (step === "frames" || step === "frameConfirm") &&
+              styles.ticketStepHeader,
+          ]}
         >
           <Pressable
             onPress={back}
-            style={[styles.back, step === "photos" && styles.creationBack]}
+            style={[
+              styles.back,
+              step === "photos" && styles.creationBack,
+              (step === "frames" || step === "frameConfirm") &&
+                styles.ticketStepBack,
+            ]}
           >
             <Text
               style={[
                 styles.backText,
                 step === "photos" && styles.creationBackText,
+                (step === "frames" || step === "frameConfirm") &&
+                  styles.ticketStepBackText,
               ]}
             >
               ‹
@@ -2450,11 +2532,13 @@ export default function TicketCreationScreen({
             style={[
               styles.headerTitle,
               step === "photos" && styles.creationHeaderTitle,
+              (step === "frames" || step === "frameConfirm") &&
+                styles.ticketStepHeaderTitle,
             ]}
           >
             {step === "photos"
               ? ticketDate
-                ? `${Number(ticketDate.slice(5, 7))}월 ${Number(ticketDate.slice(8, 10))}일`
+                ? ticketDate.replace(/-/g, ".")
                 : "날짜 선택"
               : step === "decorate" ||
                   step === "stickers" ||
@@ -2516,7 +2600,12 @@ export default function TicketCreationScreen({
                   key={index}
                   style={[
                     styles.creationProgressSegment,
-                    index <= workflowStage && styles.creationProgressActive,
+                    (step === "frames" || step === "frameConfirm") &&
+                      styles.photoCreationProgressSegment,
+                    index <= workflowStage &&
+                      (step === "frames" || step === "frameConfirm"
+                        ? styles.photoCreationProgressActive
+                        : styles.creationProgressActive),
                   ]}
                 />
               ))}
@@ -2528,14 +2617,16 @@ export default function TicketCreationScreen({
   );
 }
 const styles = StyleSheet.create({
-  creationStart: { flex: 1, backgroundColor: C.bg },
+  creationStart: { flex: 1, backgroundColor: "#FFFFFF" },
+  photoCreationProgressSegment: { backgroundColor: "#E5E7EB" },
+  photoCreationProgressActive: { backgroundColor: C.accent },
   creationStartContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 17,
     paddingTop: 16,
     paddingBottom: 20,
   },
   creationTitle: {
-    color: "#352722",
+    color: C.brown,
     fontSize: 16,
     lineHeight: 24,
     fontWeight: "500",
@@ -2567,14 +2658,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  ticketReviewBack: { backgroundColor: "#F2E8DC" },
+  ticketReviewBack: { backgroundColor: "#FFFFFF" },
   creationProgressSegment: {
     flex: 1,
     height: 3,
     borderRadius: 1.5,
-    backgroundColor: "#E8DFD6",
+    backgroundColor: "#E5E7EB",
   },
-  creationProgressActive: { backgroundColor: C.outline },
+  creationProgressActive: { backgroundColor: C.accent },
   creationSection: {},
   creationPhotoSection: { marginBottom: 14 },
   creationOrientationSection: { marginBottom: 14 },
@@ -2586,13 +2677,13 @@ const styles = StyleSheet.create({
   },
   creationPhotoHeading: { marginBottom: 14 },
   creationLabel: {
-    color: "#352722",
+    color: C.brown,
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "400",
-    letterSpacing: 0.4,
+    letterSpacing: 0.1,
   },
-  creationCount: { color: C.outline, fontSize: 12, lineHeight: 16 },
+  creationCount: { color: C.accent, fontSize: 12, lineHeight: 16 },
   captionUsageHint: {
     color: C.brown,
     fontSize: 11,
@@ -2601,8 +2692,8 @@ const styles = StyleSheet.create({
   },
   memoryPhotoRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   memoryPhotoWrap: {
-    width: 74,
-    height: 74,
+    width: 71,
+    height: 72,
     position: "relative",
     flexShrink: 0,
   },
@@ -2620,35 +2711,34 @@ const styles = StyleSheet.create({
   },
   removeMemoryPhotoText: { color: "#FFFFFF", fontSize: 14, lineHeight: 16 },
   addMemoryPhoto: {
-    width: 74,
-    height: 74,
+    width: 71,
+    height: 72,
     flexShrink: 0,
     borderRadius: 10,
-    backgroundColor: "#FFFDF8",
+    backgroundColor: C.gray,
     alignItems: "center",
     justifyContent: "center",
   },
   addMemoryPhotoActive: {
-    borderWidth: 2,
-    borderColor: C.accent,
-    backgroundColor: "#F0C8BE",
+    borderWidth: 0,
+    backgroundColor: C.gray,
   },
-  addMemoryPhotoPlus: { color: C.brown, fontSize: 22, lineHeight: 28 },
+  addMemoryPhotoPlus: { color: C.accent, fontSize: 22, lineHeight: 28 },
   orientationChoices: { flexDirection: "row", gap: 12 },
   orientationCard: {
     flex: 1,
     height: 112,
     borderRadius: 13,
     borderWidth: 1,
-    borderColor: "#E8D8CA",
-    backgroundColor: "#FFFDF8",
+    borderColor: "#E2E5EC",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     padding: 12,
   },
   orientationCardSelected: {
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: C.accent,
-    backgroundColor: "#FFFDF8",
+    backgroundColor: "#FFFFFF",
   },
   orientationChoiceLabel: {
     width: 130,
@@ -2668,8 +2758,8 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E8D8CA",
-    backgroundColor: "#FFFDF8",
+    borderColor: "#E2E5EC",
+    backgroundColor: "#FFFFFF",
     color: C.brown,
     paddingHorizontal: 12,
     paddingVertical: 12,
@@ -2684,18 +2774,18 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
   },
   creationInlineAction: {
-    height: 52,
-    borderRadius: 10,
-    marginTop: 14,
+    height: 48,
+    borderRadius: 14,
+    marginTop: 12,
     marginBottom: 0,
   },
   creationActionButton: { backgroundColor: C.accent },
-  creationActionText: { color: "#FFFFFF", fontSize: 14, fontWeight: "400" },
-  creationActionDisabled: { backgroundColor: "#E8DFD6" },
+  creationActionText: { color: "#FFFFFF", fontSize: 14, fontWeight: "500" },
+  creationActionDisabled: { backgroundColor: "#DDE1F7" },
   actionDisabled: { backgroundColor: "#E3DED8" },
   photoChangeShade: {
     flex: 1,
-    backgroundColor: "rgba(45, 34, 28, 0.28)",
+    backgroundColor: "rgba(37, 42, 58, 0.24)",
     justifyContent: "center",
     paddingHorizontal: 18,
   },
@@ -2708,11 +2798,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "stretch",
     justifyContent: "space-around",
-    backgroundColor: "#E6C9BE",
-    opacity: 0.72,
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+    opacity: 1,
   },
   photoChangeCard: {
-    backgroundColor: "#FFFDFC",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 18,
     shadowColor: "#000",
@@ -2737,7 +2829,7 @@ const styles = StyleSheet.create({
     width: 19,
     height: 19,
     borderRadius: 10,
-    backgroundColor: C.brown,
+    backgroundColor: C.accent,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2746,31 +2838,33 @@ const styles = StyleSheet.create({
     width: 54,
     height: 60,
     borderWidth: 1,
-    borderColor: "#E9D8CD",
+    borderColor: "#DDE2E9",
     borderRadius: 7,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
   },
-  photoChangeAddText: { color: C.outline, fontSize: 25, lineHeight: 29 },
+  photoChangeAddText: { color: C.accent, fontSize: 25, lineHeight: 29 },
   photoChangeConfirm: {
     height: 44,
     marginTop: 13,
     borderRadius: 8,
-    backgroundColor: "#C58F80",
+    backgroundColor: C.accent,
     alignItems: "center",
     justifyContent: "center",
   },
   photoChangeConfirmText: { color: C.white, fontSize: 13, fontWeight: "700" },
   photoChangeCancel: { alignItems: "center", paddingTop: 9, paddingBottom: 1 },
   photoChangeCancelText: { color: C.brown, fontSize: 12 },
-  photoPickerRoot: { flex: 1, backgroundColor: C.bg },
+  photoPickerRoot: { flex: 1, backgroundColor: "#FFFFFF" },
   photoPickerHeader: {
     height: 54,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#E8D8CA",
+    borderBottomColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
   },
   photoPickerClose: {
     width: 42,
@@ -2787,11 +2881,16 @@ const styles = StyleSheet.create({
   },
   photoPickerCount: {
     width: 42,
-    color: C.outline,
+    color: C.accent,
     fontSize: 11,
     textAlign: "right",
   },
-  photoPickerList: { flex: 1 },
+  photoPickerBackText: { color: C.brown },
+  photoPickerList: { flex: 1, backgroundColor: "#FFFFFF" },
+  photoPickerCameraTile: { backgroundColor: C.gray },
+  photoPickerCameraIcon: { color: C.accent },
+  photoPickerCameraText: { color: "#667085" },
+  photoPickerAction: { backgroundColor: C.accent },
   photoPickerFooter: {
     paddingHorizontal: 18,
     paddingTop: 8,
@@ -2827,7 +2926,7 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
     borderRadius: 9,
   },
-  designOptionSelected: { borderColor: C.accent, backgroundColor: "#F8E9E3" },
+  designOptionSelected: { borderColor: C.accent, backgroundColor: "#F5F7FF" },
   designThumbnail: {
     width: 108,
     height: 44,
@@ -2842,7 +2941,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
   },
-  designOptionTextSelected: { color: C.brown, fontWeight: "700" },
+  designOptionTextSelected: { color: C.accent, fontWeight: "700" },
   photoComposition: {
     width: "100%",
     flex: 1,
@@ -2869,11 +2968,17 @@ const styles = StyleSheet.create({
     width: 204,
     height: 348,
     maxWidth: "100%",
-    backgroundColor: "#F2E8DC",
-    borderWidth: 0,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DDE2E9",
     borderRadius: 12,
-    padding: 8,
+    padding: 7,
     overflow: "hidden",
+    shadowColor: "#202332",
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   backTicketShell: {
     width: 235,
@@ -2888,17 +2993,21 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     borderRadius: 12,
-    alignItems: "center",
-    paddingHorizontal: 8,
-    paddingTop: 20,
+    alignItems: "stretch",
+    paddingHorizontal: 14,
+    paddingTop: 12,
     paddingBottom: 12,
+    backgroundColor: "#FFFFFF",
+  },
+  backTicketHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   backTicketLogo: {
-    color: "#987966",
-    fontSize: 15,
-    fontFamily: "serif",
-    fontStyle: "italic",
-    marginBottom: 10,
+    color: C.accent,
+    fontSize: 9,
+    fontWeight: "700",
   },
   backTicketRule: {
     height: 1,
@@ -2909,29 +3018,25 @@ const styles = StyleSheet.create({
   backMemoOnlyTextWrap: {
     flex: 1,
     width: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 12,
+    alignItems: "flex-start",
+    justifyContent: "flex-start",
+    paddingHorizontal: 0,
+    paddingTop: 10,
   },
   backMemoOnlyText: {
-    color: "#654C40",
+    color: C.brown,
     fontSize: 12,
     lineHeight: 17,
-    fontWeight: "500",
-    textAlign: "center",
+    fontWeight: "400",
+    textAlign: "left",
   },
   backMore: {
-    color: "#654C40",
+    color: C.accent,
     fontSize: 11,
     fontWeight: "700",
     textDecorationLine: "underline",
   },
-  backTicketDate: {
-    color: "#987966",
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: "auto",
-  },
+  backTicketDate: { color: C.outline, fontSize: 9, fontWeight: "400" },
   backMemoScreen: { flex: 1, backgroundColor: C.bg },
   backMemoPreviewArea: {
     flex: 1,
@@ -2940,20 +3045,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   backMemoTicket: {
-    backgroundColor: "#F2E8DC",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E8D8CA",
-    borderRadius: 10,
-    paddingHorizontal: 22,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
+    borderColor: "#DDE2E9",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignItems: "stretch",
+    justifyContent: "flex-start",
+    shadowColor: "#202332",
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
+  backMemoPreviewHeading: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  backMemoPreviewBrand: { color: C.accent, fontSize: 9, fontWeight: "700" },
+  backMemoPreviewDate: { color: C.outline, fontSize: 9 },
   backMemoPreviewText: {
     color: C.brown,
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: "center",
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "left",
   },
   backMemoEditor: { paddingHorizontal: 20, paddingBottom: 18 },
   backMemoHeading: {
@@ -2968,9 +3087,9 @@ const styles = StyleSheet.create({
     minHeight: 112,
     maxHeight: 160,
     borderWidth: 1,
-    borderColor: "#E8D8CA",
+    borderColor: "#E2E5EC",
     borderRadius: 10,
-    backgroundColor: "#FFFDF8",
+    backgroundColor: "#FFFFFF",
     color: C.brown,
     fontSize: 14,
     lineHeight: 21,
@@ -3002,13 +3121,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: C.outline,
-    backgroundColor: "#F3E9DF",
+    borderColor: "#DDE2E9",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
   },
   draftSaveButtonText: { color: C.brown, fontSize: 12, fontWeight: "600" },
   root: { flex: 1, backgroundColor: C.bg },
+  photoEntryRoot: { backgroundColor: "#FFFFFF" },
   decorateScreen: { flex: 1, backgroundColor: C.bg },
   decoratePreviewArea: {
     flex: 1,
@@ -3160,14 +3280,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   stickerSheet: {
-    height: 205,
-    backgroundColor: "#FFFDFC",
+    height: 250,
+    backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderTopColor: "#E9D6CC",
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
+    borderTopColor: "#E5E7EB",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     paddingHorizontal: 12,
-    paddingTop: 6,
+    paddingTop: 10,
   },
   stickerSheetToolbar: {
     height: 24,
@@ -3177,16 +3297,16 @@ const styles = StyleSheet.create({
   },
   stickerToolbarSpacer: { flex: 1 },
   stickerSheetTitle: { color: C.brown, fontSize: 15, fontWeight: "600" },
-  stickerSheetCancel: { color: "#D98B7D", fontSize: 22, width: 35 },
+  stickerSheetCancel: { color: C.accent, fontSize: 22, width: 35 },
   stickerSheetConfirm: {
-    color: "#D98B7D",
+    color: C.accent,
     fontSize: 20,
     width: 35,
     textAlign: "right",
   },
   stickerCategoryRow: { alignItems: "center", gap: 18, paddingVertical: 3 },
-  stickerCategoryText: { fontSize: 11, color: "#8C7E74" },
-  stickerCategoryActive: { color: C.brown, fontWeight: "700" },
+  stickerCategoryText: { fontSize: 11, color: C.outline },
+  stickerCategoryActive: { color: C.accent, fontWeight: "700" },
   stickerGridScroll: { flex: 1, marginTop: 2 },
   stickerGrid: {
     flexDirection: "row",
@@ -3234,21 +3354,23 @@ const styles = StyleSheet.create({
   decorateTabs: {
     height: 74,
     flexDirection: "row",
-    backgroundColor: "#E6C9BE",
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
     alignItems: "stretch",
     justifyContent: "space-around",
   },
   decorateTab: { flex: 1, justifyContent: "center", alignItems: "center" },
-  decorateTabText: { fontSize: 13, fontWeight: "600", color: "#FFFDF8" },
-  decorateTabTextActive: { color: C.brown },
+  decorateTabText: { fontSize: 13, fontWeight: "600", color: C.outline },
+  decorateTabTextActive: { color: C.accent },
   donePill: {
     minWidth: 64,
     height: 30,
     paddingHorizontal: 10,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: C.outline,
-    backgroundColor: "#F3E9DF",
+    borderColor: "#DDE2E9",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -3266,7 +3388,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 13,
   },
-  creationHeader: { height: 56, marginBottom: 10, gap: 12 },
+  ticketStepHeader: { backgroundColor: "#FFFFFF" },
+  ticketStepBack: { backgroundColor: "#FFFFFF" },
+  ticketStepBackText: { color: C.brown },
+  ticketStepHeaderTitle: { color: C.brown },
+  creationHeader: {
+    height: 56,
+    marginBottom: 10,
+    gap: 12,
+    backgroundColor: "#FFFFFF",
+  },
   back: {
     width: 40,
     height: 42,
@@ -3274,20 +3405,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   creationBack: {
+    width: 32,
     height: 40,
-    borderWidth: 1,
-    borderColor: "#E8DFD6",
-    borderRadius: 12,
-    backgroundColor: "#FFFDFA",
+    borderWidth: 0,
+    backgroundColor: "#FFFFFF",
   },
   backText: { color: C.brown, fontSize: 34, lineHeight: 39 },
-  creationBackText: { color: "#352722", fontSize: 24, lineHeight: 30 },
+  creationBackText: { color: C.brown, fontSize: 24, lineHeight: 30 },
   headerTitle: { color: C.brown, fontSize: 16, fontWeight: "500" },
   creationHeaderTitle: {
-    color: "#000000",
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: "400",
+    color: C.brown,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "500",
+    position: "absolute",
+    left: 0,
+    right: 0,
+    textAlign: "center",
   },
   body: { flex: 1 },
   helper: {
@@ -3356,7 +3490,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: C.brown,
+    backgroundColor: C.accent,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -3460,7 +3594,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   backPhoto: { width: 75, height: 75 },
-  frameScreen: { flex: 1 },
+  frameScreen: { flex: 1, backgroundColor: "#FFFFFF" },
+  frameActionWrap: { backgroundColor: "rgba(255,255,255,0.97)" },
+  frameAction: { backgroundColor: C.accent },
   framePickerArea: { marginTop: 6, paddingBottom: 92 },
   frameVerticalList: { maxHeight: 185 },
   frameVerticalScroll: { paddingHorizontal: 22, gap: 9, paddingBottom: 10 },
@@ -3492,6 +3628,8 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   ticketPassBrand: { color: C.brown, letterSpacing: 0.35, lineHeight: 11 },
+  orientationTicketText: { color: "#667082" },
+  orientationTicketSymbol: { backgroundColor: "#34416F" },
   ticketPassTitle: {
     color: C.brown,
     lineHeight: 14,
@@ -3560,6 +3698,7 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     borderColor: "rgba(255,253,248,0.9)",
   },
+  orientationTicketPerforation: { borderColor: "#C9D2DD" },
   ticketPassPunchHole: {
     position: "absolute",
     borderRadius: 10,
