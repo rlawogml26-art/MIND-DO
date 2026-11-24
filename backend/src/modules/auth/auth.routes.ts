@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { login, signup } from "./auth.controller.js";
+import { login, logout, refresh, signup } from "./auth.controller.js";
 
 const router = Router();
 
@@ -7,7 +7,7 @@ const router = Router();
  * @swagger
  * tags:
  *   name: 인증
- *   description: 회원가입 및 로그인
+ *   description: 회원가입, 로그인, 토큰 갱신, 로그아웃
  */
 
 /**
@@ -112,5 +112,61 @@ router.post("/signup", signup);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post("/login", login);
+
+/**
+ * @swagger
+ * /api/auth/refresh:
+ *   post:
+ *     summary: 토큰 갱신
+ *     description: 요청 body 없이 refreshToken 쿠키로 새 accessToken·refreshToken을 발급합니다. 쓴 refreshToken은 무효가 되고, 이미 무효가 된 refreshToken이 다시 오면 그 사용자의 refreshToken을 모두 무효로 만듭니다.
+ *     tags: [인증]
+ *     responses:
+ *       200:
+ *         description: 갱신 성공. 새 accessToken과 refreshToken은 HttpOnly 쿠키로 설정됩니다.
+ *         headers:
+ *           Set-Cookie:
+ *             description: accessToken, refreshToken HttpOnly 쿠키
+ *             schema:
+ *               type: string
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *       401:
+ *         description: refreshToken이 없거나 만료·무효 (INVALID_REFRESH_TOKEN, 다시 로그인)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: 서버 오류
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post("/refresh", refresh);
+
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: 로그아웃
+ *     description: refreshToken 쿠키의 토큰을 무효로 만들고 두 쿠키를 지웁니다. 쿠키가 없거나 이미 무효여도 성공으로 응답합니다.
+ *     tags: [인증]
+ *     responses:
+ *       200:
+ *         description: 로그아웃 성공 (data는 빈 객체)
+ *       500:
+ *         description: 서버 오류
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post("/logout", logout);
 
 export default router;
