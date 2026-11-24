@@ -1,6 +1,33 @@
 import { Prisma } from "../../generated/prisma/client.js";
 import { getPrismaClient } from "../../lib/prisma.js";
 
+export async function findOwnedCompletedTickets(userId: number) {
+  const tickets = await getPrismaClient().ticket.findMany({
+    where: { userId, status: "COMPLETED", deletedAt: null },
+    orderBy: [{ visitDate: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      visitDate: true,
+      memo: true,
+      design: true,
+      images: {
+        orderBy: { sortOrder: "asc" },
+        select: { s3Key: true, sortOrder: true },
+      },
+    },
+  });
+  return tickets.map((ticket) => ({
+    ticketId: ticket.id,
+    visitDate: toDateOnly(ticket.visitDate),
+    memo: ticket.memo,
+    design: ticket.design,
+    photos: ticket.images.map(({ s3Key, sortOrder }) => ({
+      photoKey: s3Key,
+      sortOrder,
+    })),
+  }));
+}
+
 type CheckPhotoUploadAccessInput = {
   sharedTicketId: number;
   userId: number;

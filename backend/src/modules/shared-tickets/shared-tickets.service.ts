@@ -143,6 +143,21 @@ const canEditSharedTicket = (
   userId: number,
 ) => sharedTicket.creatorId === userId || sharedTicket.leaderId === userId;
 
+export async function getMyTickets(cookieHeader: string | undefined) {
+  const tickets = await repository.findOwnedCompletedTickets(
+    getRequesterId(cookieHeader),
+  );
+  return {
+    tickets: await Promise.all(
+      tickets.map(async (ticket) => ({
+        ...ticket,
+        design: toStoredDesign(ticket.design),
+        photos: await toPhotoResponses(ticket.photos),
+      })),
+    ),
+  };
+}
+
 export const getSharedTicketDetail = async (
   cookieHeader: string | undefined,
   sharedTicketId: number,

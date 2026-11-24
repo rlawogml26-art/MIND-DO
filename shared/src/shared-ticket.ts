@@ -86,6 +86,22 @@ export const ticketPhotoResponseSchema = z.object({
   sortOrder: z.number().int().positive(),
 });
 
+export const myTicketListResponseSchema = z.object({
+  tickets: z.array(
+    z.object({
+      ticketId: z.number().int().positive(),
+      visitDate: ticketDateSchema,
+      photos: z.array(ticketPhotoResponseSchema),
+      memo: z.string().nullable(),
+      design: ticketDesignSchema.nullable(),
+    }),
+  ),
+});
+
+export type MyTicket = z.infer<
+  typeof myTicketListResponseSchema
+>["tickets"][number];
+
 export const issuedTicketResponseSchema = z.object({
   ticketId: z.number().int().positive(),
   sharedTicketId: z.number().int().positive(),

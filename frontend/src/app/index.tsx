@@ -2,23 +2,16 @@ import { ErrorCode, type LoginResponse } from "@mind-do/shared";
 import { useEffect, useState } from "react";
 import { Alert } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { getIssuedTicket, type IssuedTicket } from "../storage/issued-tickets";
 import HomeScreen from "../components/HomeScreen";
 import MyPageScreen, { type Profile } from "../components/MyPageScreen";
-import TicketCreationScreen from "../components/TicketEditor";
 import LoginScreen from "../components/LoginScreen";
 import GroupScreen, {
   kstDate,
   type DemoGroup,
 } from "../components/GroupScreen";
-import {
-  ApiError,
-  getGroupSharedTickets,
-  getMyGroups,
-  logout,
-} from "../lib/api";
+import { ApiError, getMyGroups, logout } from "../lib/api";
 
-type RootScreen = "home" | "group" | "my" | "dateSelection" | "ticket";
+type RootScreen = "home" | "group" | "my";
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -32,10 +25,6 @@ function AppContent() {
   const [user, setUser] = useState<LoginResponse | null>(null);
   const [groups, setGroups] = useState<DemoGroup[]>([]);
   const [screen, setScreen] = useState<RootScreen>("home");
-  const [selectedVisitDate, setSelectedVisitDate] = useState<
-    string | undefined
-  >(undefined);
-  const [viewTicket, setViewTicket] = useState<IssuedTicket | null>(null);
   const [profile, setProfile] = useState<Profile>({
     nickname: "닉네임 입력",
     introduction: "나를 소개해보세요.",
@@ -44,10 +33,10 @@ function AppContent() {
   });
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || screen !== "group") return;
     let active = true;
     void getMyGroups()
-      .then(async ({ groups: serverGroups }) => {
+      .then(({ groups: serverGroups }) => {
         if (!active) return;
         const summaries = serverGroups.map((group) => ({
           id: String(group.groupId),
@@ -58,31 +47,7 @@ function AppContent() {
           createdAt: kstDate(group.createdAt),
           tickets: [],
         }));
-        if (screen !== "home" && screen !== "dateSelection") {
-          setGroups(summaries);
-          return;
-        }
-        const withTickets = await Promise.all(
-          summaries.map(async (group) => {
-            try {
-              const list = await getGroupSharedTickets(Number(group.id));
-              return {
-                ...group,
-                tickets: list.sharedTickets.map((ticket) => ({
-                  date: ticket.ticketDate,
-                  title: ticket.title ?? "",
-                  completed: ticket.completedCount,
-                  invitees: ticket.slotCount,
-                  sharedTicketId: ticket.sharedTicketId,
-                  myStatus: ticket.myStatus,
-                })),
-              };
-            } catch {
-              return group;
-            }
-          }),
-        );
-        if (active) setGroups(withTickets);
+        setGroups(summaries);
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -106,66 +71,14 @@ function AppContent() {
 
   const openGroups = () => setScreen("group");
 
-  const openTickets = (visitDate?: string) => {
-    if (!visitDate) {
-      setScreen("dateSelection");
-      return;
-    }
-    // 날짜별 발권 기록을 먼저 확인합니다. 이미 발권했으면 읽기 전용으로 엽니다.
-    void (async () => {
-      try {
-        const existing = await getIssuedTicket(visitDate);
-        if (!existing) {
-          openGroups();
-          return;
-        }
-        setViewTicket(existing);
-        setSelectedVisitDate(visitDate);
-        setScreen("ticket");
-      } catch {
-        Alert.alert(
-          "티켓 확인 오류",
-          "발권 기록을 확인하지 못했어요. 다시 시도해 주세요.",
-        );
-      }
-    })();
-  };
-
   if (!user) {
     return <LoginScreen onLoggedIn={setUser} />;
   }
 
-  if (screen === "ticket") {
-    return (
-      <TicketCreationScreen
-        selectedVisitDate={selectedVisitDate}
-        issuedTicket={viewTicket}
-        onBackHome={() => setScreen("home")}
-        onCreateNew={() => {
-          setViewTicket(null);
-          setSelectedVisitDate(undefined);
-          openGroups();
-        }}
-      />
-    );
-  }
-  if (screen === "dateSelection") {
-    return (
-      <HomeScreen
-        dateSelectionMode
-        onCancelDateSelection={() => setScreen("home")}
-        onOpenMy={() => setScreen("my")}
-        onOpenGroup={openGroups}
-        onOpenTickets={openTickets}
-        groups={groups}
-      />
-    );
-  }
   if (screen === "group") {
     return (
       <GroupScreen
         onOpenHome={() => setScreen("home")}
-        onOpenTickets={() => openTickets()}
         onOpenMy={() => setScreen("my")}
         groups={groups}
         onGroupsChange={setGroups}
@@ -178,7 +91,6 @@ function AppContent() {
       <MyPageScreen
         onOpenHome={() => setScreen("home")}
         onOpenGroup={openGroups}
-        groups={groups}
         savedProfile={profile}
         onSaveProfile={setProfile}
       />
@@ -188,13 +100,9 @@ function AppContent() {
     <HomeScreen
       onOpenMy={() => setScreen("my")}
       onOpenGroup={openGroups}
-      onOpenTickets={openTickets}
-      groups={groups}
       onLogout={() => {
         void logout().catch(() => {});
         setScreen("home");
-        setViewTicket(null);
-        setSelectedVisitDate(undefined);
         setGroups([]);
         setUser(null);
       }}

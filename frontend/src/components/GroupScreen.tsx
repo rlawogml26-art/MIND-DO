@@ -53,7 +53,6 @@ import {
   getSharedTicketDetail,
   joinGroupByInvite,
 } from "../lib/api";
-import type { IssuedTicket } from "../storage/issued-tickets";
 
 export type JointTicket = {
   date: string;
@@ -62,12 +61,6 @@ export type JointTicket = {
   invitees: number;
   sharedTicketId?: number;
   myStatus?: SharedTicketListResponse["sharedTickets"][number]["myStatus"];
-  kind?: "joint" | "personal";
-  memberTickets?: {
-    memberId: string;
-    memberName: string;
-    ticket: IssuedTicket;
-  }[];
 };
 
 function sortJointTicketsByDate(tickets: JointTicket[]): JointTicket[] {
@@ -90,7 +83,6 @@ export type DemoGroup = {
 
 type GroupScreenProps = {
   onOpenHome: () => void;
-  onOpenTickets: () => void;
   onOpenMy: () => void;
   groups: DemoGroup[];
   currentUserId: number;
@@ -824,10 +816,7 @@ export default function GroupScreen({
     );
   }, [selectedGroup, removedMembersByGroup]);
   const groupTicketsForDisplay = useMemo(
-    () =>
-      (selectedGroup?.tickets ?? []).filter(
-        (ticket) => ticket.kind !== "personal",
-      ),
+    () => selectedGroup?.tickets ?? [],
     [selectedGroup],
   );
   const sortedTickets = useMemo(() => {
@@ -1894,7 +1883,7 @@ export default function GroupScreen({
                   >
                     {sortedTickets.map((ticket, index) => (
                       <TicketStub
-                        key={`${ticket.date}-${ticket.kind ?? "joint"}-${ticket.title}`}
+                        key={`${ticket.sharedTicketId ?? ticket.date}`}
                         ticket={ticket}
                         groupName={selectedGroup.name}
                         index={index}

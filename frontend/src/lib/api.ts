@@ -18,6 +18,7 @@ import {
   sharedTicketPhotoUploadUrlsResponseSchema,
   aiDraftsResponseSchema,
   issuedTicketResponseSchema,
+  myTicketListResponseSchema,
   type CreateGroupRequest,
   type CreateSharedTicketRequest,
   type LoginRequest,
@@ -156,6 +157,8 @@ export const logout = () =>
   request("/api/auth/logout", z.object({}), { method: "POST" });
 
 export const getMe = () => request("/api/users/me", currentUserResponseSchema);
+export const getMyTickets = () =>
+  request("/api/users/me/tickets", myTicketListResponseSchema);
 
 // 그룹
 export const getMyGroups = () =>
