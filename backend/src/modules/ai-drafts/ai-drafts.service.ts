@@ -17,6 +17,8 @@ import {
 } from "./ai-drafts.repository.js";
 import {
   createFallbackDrafts,
+  eligibleCategories,
+  NoEligibleCategoryError,
   selectionToDrafts,
 } from "./ai-drafts.selection.js";
 import type { PreparedPhoto } from "./ai-drafts.image.js";
@@ -44,6 +46,10 @@ export async function createAiDrafts(
   const access = await checkAiDraftAccess(sharedTicketId, userId);
   assertAccess(access);
 
+  // 디자인 목록은 배포된 코드에 들어 있어 요청마다 달라지지 않는다. 생성 횟수를 쓰기 전에 막는다
+  const categories = eligibleCategories();
+  if (categories.length === 0) throw new NoEligibleCategoryError();
+
   const prefix = `tickets/${sharedTicketId}/${userId}/`;
   if (input.photoKeys.some((photoKey) => !photoKey.startsWith(prefix))) {
     throw new InvalidPhotoKeyError();
@@ -70,16 +76,13 @@ export async function createAiDrafts(
     const selection = await generateAiDraftSelection(
       preparedPhotos,
       input.moodPrompt ?? null,
+      categories,
       aiDraftsConfig,
     );
+    const photoColors = preparedPhotos.flatMap((photo) => photo.accentColors);
     const response = selection
-      ? selectionToDrafts(
-          selection,
-          preparedPhotos.flatMap((photo) => photo.accentColors),
-        )
-      : createFallbackDrafts(
-          preparedPhotos.flatMap((photo) => photo.accentColors),
-        );
+      ? selectionToDrafts(selection, photoColors)
+      : createFallbackDrafts(photoColors);
     assertAccess(await checkAiDraftAccess(sharedTicketId, userId));
     const source = response.drafts[0]?.source ?? "fallback";
     process.stdout.write(
@@ -87,6 +90,7 @@ export async function createAiDrafts(
         event: "AI drafts generated",
         durationMs: Date.now() - startedAt,
         source,
+        category: selection?.category ?? null,
         moodTags: selection?.moodTags ?? [],
       })}\n`,
     );
