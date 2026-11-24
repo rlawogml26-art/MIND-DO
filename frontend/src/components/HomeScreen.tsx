@@ -1,5 +1,5 @@
-import { SLOT_STATUS_COMPLETED } from "@mind-do/shared";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import type { MyTicket } from "@mind-do/shared";
+import { useMemo, useState } from "react";
 import {
   Alert,
   Image,
@@ -10,10 +10,8 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import * as issuedStorage from "../storage/issued-tickets";
-import { getIssuedTicket, type IssuedTicket } from "../storage/issued-tickets";
-import { IssuedTicketFlipPreview } from "./TicketEditor";
-import * as MediaLibrary from "expo-media-library/legacy";
+import { useMyTickets } from "../hooks/use-my-tickets";
+import TicketRenderer from "./TicketRenderer";
 
 import logo from "../../assets/memo-re-wordmark.png";
 
@@ -276,23 +274,14 @@ const bottomNavStyles = StyleSheet.create({
   },
 });
 
-/** 로그인한 사용자가 각 그룹에서 직접 발권한 개인 티켓입니다. */
-export type MyGroupTicket = IssuedTicket & {
-  id?: string;
-  groupId?: string;
-  groupName?: string;
-};
-
 function PersonalPhotoTicket({
   ticket,
   width,
 }: {
-  ticket: IssuedTicket;
+  ticket: MyTicket;
   width: number;
 }) {
-  const photos = [ticket.front, ...(ticket.backs ?? [])]
-    .filter((uri): uri is string => Boolean(uri))
-    .slice(0, 3);
+  const photos = ticket.photos.map((photo) => photo.url);
   const photoHeight = width * 0.39;
   return (
     <View style={[styles.personalPhotoTicket, { width }]}>
@@ -334,7 +323,7 @@ function PersonalPhotoTicket({
       </View>
       <View style={styles.personalPhotoCaptionRow}>
         <Text style={styles.personalPhotoTitle} numberOfLines={1}>
-          {ticket.title || "나의 티켓"}
+          나의 티켓
         </Text>
         <Text style={styles.personalPhotoDate}>
           {formattedDate(ticket.visitDate)}
@@ -348,7 +337,7 @@ function PersonalTicketBack({
   ticket,
   width,
 }: {
-  ticket: IssuedTicket;
+  ticket: MyTicket;
   width: number;
 }) {
   return (
@@ -366,69 +355,11 @@ function PersonalTicketBack({
   );
 }
 
-type TicketListEntry = {
-  key: string;
-  ticket: IssuedTicket;
-  source: "group" | "personal";
-  groupName?: string;
-  groupId?: string;
-};
-
-type GroupCalendarTicket = {
-  myStatus?: string | null;
-  date: string;
-  title: string;
-  kind?: "joint" | "personal";
-  memberTickets?: {
-    memberId: string;
-    memberName: string;
-    ticket: IssuedTicket;
-  }[];
-};
-
 type HomeScreenProps = {
   onOpenMy: () => void;
   onOpenGroup: () => void;
-  onOpenTickets: (date?: string) => void;
-  dateSelectionMode?: boolean;
-  onCancelDateSelection?: () => void;
   onLogout?: () => void;
-  /** 선택 사항: 같은 날짜의 여러 장을 반환하는 저장소/서버 조회 함수 */
-  loadIssuedTicketsForDate?: (date: string) => Promise<IssuedTicket[]>;
-  /**
-   * 그룹별로 '내가 직접 만든 개인 티켓' 전체를 가져오는 함수.
-   * 그룹 멤버가 만든 다른 사람의 티켓이나 공동 티켓은 포함하지 마세요.
-   * 홈에 전달하지 않으면 저장소의 getMyGroupTickets() export를 자동으로 찾습니다.
-   */
-  loadMyGroupTickets?: () => Promise<MyGroupTicket[]>;
-  groups?: {
-    id: string;
-    name: string;
-    isDefault?: boolean;
-    tickets: GroupCalendarTicket[];
-  }[];
 };
-
-type StorageWithOptionalList = typeof issuedStorage & {
-  getIssuedTickets?: (date: string) => Promise<IssuedTicket[]>;
-  getMyGroupTickets?: () => Promise<MyGroupTicket[]>;
-};
-
-const storageWithList = issuedStorage as StorageWithOptionalList;
-
-/**
- * 기존의 날짜별 1장 저장소와, 향후 날짜별 여러 장 저장소를 모두 지원합니다.
- * 저장소에 getIssuedTickets(date)가 추가되면 HomeScreen을 다시 수정할 필요가 없습니다.
- */
-async function getTicketsForDate(date: string): Promise<IssuedTicket[]> {
-  if (typeof storageWithList.getIssuedTickets === "function") {
-    const tickets = await storageWithList.getIssuedTickets(date);
-    return Array.isArray(tickets) ? tickets.filter(Boolean) : [];
-  }
-  const ticket = await getIssuedTicket(date);
-  return ticket ? [ticket] : [];
-}
-
 function currentMonth() {
   const today = new Date();
   return new Date(today.getFullYear(), today.getMonth(), 1);
@@ -440,93 +371,6 @@ function todayDateKey() {
   const month = String(today.getMonth() + 1).padStart(2, "0");
   const day = String(today.getDate()).padStart(2, "0");
   return `${today.getFullYear()}-${month}-${day}`;
-}
-
-function dateKey(value: string | null | undefined): string {
-  const match = /^(\d{4})[-.](\d{1,2})[-.](\d{1,2})/.exec(value ?? "");
-  return match
-    ? `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`
-    : "";
-}
-
-// Group tickets are also written to the date archive. Keep those copies out
-// of the personal record list when the group entry is available.
-function issuedTicketFingerprint(
-  ticket: Pick<IssuedTicket, "visitDate" | "issuedAt" | "front" | "title">,
-) {
-  return `${dateKey(ticket.visitDate)}:${ticket.issuedAt ?? ""}:${ticket.front ?? ""}:${ticket.title ?? ""}`;
-}
-
-/** 한 날짜에 여러 그룹의 티켓이 있어도 중복 없이 모두 표시합니다. */
-function makeTicketEntries(
-  selectedDay: string,
-  personalTickets: IssuedTicket[],
-  myGroupTickets: MyGroupTicket[],
-): TicketListEntry[] {
-  const used = new Set<string>();
-  const items: TicketListEntry[] = [];
-  const add = (
-    ticket: IssuedTicket,
-    source: "group" | "personal",
-    groupName?: string,
-  ) => {
-    if (dateKey(ticket.visitDate) !== selectedDay) return;
-    const typed = ticket as MyGroupTicket;
-    // 서버 id가 우선이며, 기존 날짜별 로컬 티켓은 발권 시간 등으로 중복 제거.
-    const uniqueKey = typed.id
-      ? `id:${typed.id}`
-      : `fallback:${dateKey(ticket.visitDate)}:${ticket.issuedAt ?? ""}:${ticket.front ?? ""}:${ticket.title ?? ""}`;
-    if (used.has(uniqueKey)) return;
-    used.add(uniqueKey);
-    items.push({
-      key: `${source}-${uniqueKey}`,
-      ticket,
-      source,
-      groupName: groupName?.trim() || undefined,
-      groupId: typed.groupId,
-    });
-  };
-  myGroupTickets.forEach((ticket) => add(ticket, "group", ticket.groupName));
-  personalTickets.forEach((ticket) => add(ticket, "personal"));
-  return items.sort((a, b) =>
-    (b.ticket.issuedAt ?? "").localeCompare(a.ticket.issuedAt ?? ""),
-  );
-}
-
-function findGroupPersonalEntry(
-  group: { id: string; name: string },
-  groupTickets: GroupCalendarTicket[],
-  commonTicket: GroupCalendarTicket | undefined,
-  entries: TicketListEntry[],
-): TicketListEntry | undefined {
-  const listedEntry = entries.find(
-    (item) =>
-      item.source === "group" &&
-      (item.groupId === group.id || item.groupName === group.name),
-  );
-  if (listedEntry) return listedEntry;
-
-  const embeddedTicket =
-    commonTicket?.memberTickets?.find(
-      (memberTicket) => memberTicket.memberId === "me",
-    )?.ticket ??
-    groupTickets
-      .find(
-        (ticket) =>
-          ticket.kind === "personal" &&
-          dateKey(ticket.date) === dateKey(commonTicket?.date),
-      )
-      ?.memberTickets?.find((memberTicket) => memberTicket.memberId === "me")
-      ?.ticket;
-  if (!embeddedTicket) return undefined;
-
-  return {
-    key: `group-${group.id}-${dateKey(embeddedTicket.visitDate)}`,
-    ticket: embeddedTicket,
-    source: "group",
-    groupId: group.id,
-    groupName: group.name,
-  };
 }
 
 function formattedDate(date: string) {
@@ -572,43 +416,25 @@ function showPendingFeature() {
 }
 
 function BatchTicketCard({
-  label,
-  entry,
-  commonTicket,
-  emptyText = "아직 생성된 공동 티켓이 없어요",
+  ticket,
   onPress,
 }: {
-  label: string;
-  entry?: TicketListEntry;
-  commonTicket?: { date: string; title: string };
-  emptyText?: string;
+  ticket: MyTicket;
   onPress: () => void;
 }) {
-  if (!entry && !commonTicket) {
-    return (
-      <View style={styles.batchEmptyTicket}>
-        <Text style={styles.batchEmptyPlus}>＋</Text>
-        <Text style={styles.batchEmptyText}>{emptyText}</Text>
-      </View>
-    );
-  }
-  const ticket = entry?.ticket;
-  const title = commonTicket?.title || ticket?.title || label;
-  const date = commonTicket?.date || ticket?.visitDate || "";
-  const thumbnail = ticket?.front || (ticket?.backs ?? []).find(Boolean);
-  // 개인 티켓은 왼쪽에 정보, 오른쪽에는 사진만 꽉 차게 표시합니다.
-  const card = entry ? (
-    <>
+  const thumbnail = ticket.photos[0]?.url;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="내 티켓 보기"
+      onPress={onPress}
+      style={styles.batchTicket}
+    >
       <View style={styles.batchTicketStub}>
         <Text style={styles.batchStubBrand}>MEMO:RE</Text>
-        <Text style={styles.batchTicketTitle} numberOfLines={2}>
-          {ticket?.title || label}
-        </Text>
-        <Text style={styles.batchStubDate} numberOfLines={1}>
-          {ticketDateWithWeekday(ticket?.visitDate || date)}
-        </Text>
-        <Text style={styles.batchStubLabel} numberOfLines={1}>
-          {label}
+        <Text style={styles.batchTicketTitle}>나의 티켓</Text>
+        <Text style={styles.batchStubDate}>
+          {ticketDateWithWeekday(ticket.visitDate)}
         </Text>
       </View>
       <View style={styles.batchTicketPhotoPanel}>
@@ -624,96 +450,25 @@ function BatchTicketCard({
           />
         )}
       </View>
-    </>
-  ) : (
-    <>
-      <View style={styles.batchTicketStub}>
-        <Text style={styles.batchStubBrand}>MEMO:RE</Text>
-        <Text style={styles.batchTicketTitle} numberOfLines={2}>
-          {title}
-        </Text>
-        <Text style={styles.batchStubDate} numberOfLines={1}>
-          {ticketDateWithWeekday(date)}
-        </Text>
-        <Text style={styles.batchStubLabel} numberOfLines={2}>
-          {label}
-        </Text>
-      </View>
-      <View style={styles.batchTicketDetails}>
-        <Text style={styles.batchTicketBrand} numberOfLines={1}>
-          MEMORY BOARDING PASS
-        </Text>
-        <View style={styles.batchTicketImageWrap}>
-          {thumbnail ? (
-            <Image
-              source={{ uri: thumbnail }}
-              style={styles.batchTicketPhoto}
-              resizeMode="cover"
-            />
-          ) : (
-            <View
-              style={[styles.batchTicketPhoto, styles.batchTicketPhotoEmpty]}
-            />
-          )}
-        </View>
-        <Text style={styles.batchTicketName} numberOfLines={1}>
-          {ticket?.title || title}
-        </Text>
-        <Text style={styles.batchTicketCaption} numberOfLines={1}>
-          {formattedDate(date)}
-        </Text>
-      </View>
-    </>
-  );
-  if (!entry) return <View style={styles.batchTicket}>{card}</View>;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${label} ${ticket?.title || "티켓"} 보기`}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.batchTicket,
-        pressed && styles.slotPressed,
-      ]}
-    >
-      {card}
     </Pressable>
   );
 }
-
-export default function HomeScreen({
-  onOpenMy,
-  onOpenGroup,
-  onOpenTickets,
-  groups = [],
-  dateSelectionMode = false,
-  onCancelDateSelection,
-  loadIssuedTicketsForDate,
-  loadMyGroupTickets,
-}: HomeScreenProps) {
+export default function HomeScreen({ onOpenMy, onOpenGroup }: HomeScreenProps) {
   const [monthDate, setMonthDate] = useState(currentMonth);
-  const [issuedDates, setIssuedDates] = useState<Set<string>>(new Set());
-  const [selectedDate, setSelectedDate] = useState<string | null>(() =>
-    dateSelectionMode ? null : todayDateKey(),
-  );
+  const [selectedDate, setSelectedDate] = useState(todayDateKey);
   const [showAllTickets, setShowAllTickets] = useState(false);
-  const [groupTicketPage, setGroupTicketPage] = useState<IssuedTicket | null>(
-    null,
-  );
-  const [groupTicketIsPersonal, setGroupTicketIsPersonal] = useState(false);
-  const [dateTickets, setDateTickets] = useState<TicketListEntry[]>([]);
-  const [myGroupTickets, setMyGroupTickets] = useState<MyGroupTicket[]>([]);
-  const [listLoading, setListLoading] = useState(false);
+  const [previewTicketId, setPreviewTicketId] = useState<number | null>(null);
   const [showingBack, setShowingBack] = useState(false);
-  const [savingTicketImage, setSavingTicketImage] = useState(false);
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  // GroupScreen also separates the built-in default group from regular groups.
-  // The Home "나의 기록" tile represents the personal record, so don't render
-  // the built-in group again as an unknown group card.
-  const regularGroups = useMemo(
-    () => groups.filter((group) => !group.isDefault),
-    [groups],
+  const {
+    tickets,
+    loading: listLoading,
+    failed: ticketLoadFailed,
+    reload,
+  } = useMyTickets();
+  const groupTicketPage = tickets.find(
+    (ticket) => ticket.ticketId === previewTicketId,
   );
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const calendarRows = Math.ceil(
     (new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay() +
       new Date(
@@ -729,278 +484,32 @@ export default function HomeScreen({
     Math.floor((calendarHeight - 90) / calendarRows),
   );
 
-  // 티켓은 원본 320×128 비율을 유지하며 작게 보여줍니다.
-  // 가로 원본을 90도 회전시키기 때문에, 팝업의 세로 길이는 원본 가로 길이입니다.
-  // 이전처럼 원본을 500px 넘게 키우면 이미지가 지나치게 확대/잘릴 수 있습니다.
-
-  const fetchDateTickets = useCallback(
-    (date: string) =>
-      loadIssuedTicketsForDate
-        ? loadIssuedTicketsForDate(date)
-        : getTicketsForDate(date),
-    [loadIssuedTicketsForDate],
+  const markedDates = useMemo(
+    () => new Set(tickets.map((ticket) => ticket.visitDate)),
+    [tickets],
+  );
+  const recordCount = tickets.length;
+  const dateTickets = tickets.filter(
+    (ticket) => ticket.visitDate === selectedDate,
   );
 
-  const fetchMyGroupTickets = useCallback(async (): Promise<
-    MyGroupTicket[]
-  > => {
-    const loader = loadMyGroupTickets ?? storageWithList.getMyGroupTickets;
-    const result =
-      typeof loader === "function"
-        ? await loader()
-        : groups.flatMap((group) =>
-            group.tickets.flatMap((groupTicket) =>
-              (groupTicket.memberTickets ?? [])
-                .filter((memberTicket) => memberTicket.memberId === "me")
-                .map((memberTicket) => ({
-                  ...memberTicket.ticket,
-                  groupId: group.id,
-                  groupName: group.name,
-                })),
-            ),
-          );
-    if (!Array.isArray(result))
-      throw new Error("그룹 티켓 응답이 배열이 아닙니다.");
-    // 호출자가 현재 로그인한 사용자의 티켓만 제공한다는 계약입니다.
-    return result.filter((ticket): ticket is MyGroupTicket =>
-      Boolean(ticket && typeof ticket.visitDate === "string"),
-    );
-  }, [groups, loadMyGroupTickets]);
-
-  // 달력에서도 그룹 티켓이 발권된 날짜에 티켓 마크를 표시합니다.
-  useEffect(() => {
-    let active = true;
-    void fetchMyGroupTickets()
-      .then((tickets) => {
-        if (active) setMyGroupTickets(tickets);
-      })
-      .catch((error) => {
-        console.warn(
-          "그룹에서 만든 내 티켓 목록을 불러오지 못했습니다.",
-          error,
-        );
-      });
-    return () => {
-      active = false;
-    };
-  }, [fetchMyGroupTickets]);
-
-  const markedDates = useMemo(() => {
-    const dates = new Set(issuedDates);
-    myGroupTickets.forEach((ticket) => {
-      const key = dateKey(ticket.visitDate);
-      if (key) dates.add(key);
-    });
-    groups.forEach((group) => {
-      group.tickets.forEach((ticket) => {
-        if (ticket.myStatus !== SLOT_STATUS_COMPLETED) return;
-        const key = dateKey(ticket.date);
-        if (key) dates.add(key);
-      });
-    });
-    return dates;
-  }, [issuedDates, myGroupTickets, groups]);
-
-  // A group ticket is also stored in the date archive, so count its date once.
-  const recordCount = useMemo(() => {
-    const dates = new Set(issuedDates);
-    myGroupTickets.forEach((ticket) => {
-      const key = dateKey(ticket.visitDate);
-      if (key) dates.add(key);
-    });
-    return dates.size;
-  }, [issuedDates, myGroupTickets]);
-
-  const selectedDaySlots = selectedDate
-    ? [
-        {
-          key: "personal",
-          label: "나의 기록",
-          commonTicket: undefined,
-          entry: dateTickets.find((item) => item.source === "personal"),
-        },
-        ...regularGroups.map((group) => {
-          const commonTicket = group.tickets.find(
-            (ticket) =>
-              ticket.kind !== "personal" &&
-              dateKey(ticket.date) === selectedDate,
-          );
-          return {
-            key: group.id,
-            label: group.name,
-            commonTicket,
-            entry: commonTicket
-              ? findGroupPersonalEntry(
-                  group,
-                  group.tickets,
-                  commonTicket,
-                  dateTickets,
-                )
-              : undefined,
-          };
-        }),
-      ]
-    : [];
-
-  const openGroupTicketPage = (
-    ticket: IssuedTicket,
-    openedFromGroup = false,
-  ) => {
+  const openTicket = (ticket: MyTicket) => {
+    setPreviewTicketId(ticket.ticketId);
     setShowingBack(false);
-    setGroupTicketIsPersonal(openedFromGroup);
-    setGroupTicketPage(ticket);
+    reload();
   };
 
-  const saveTicketImage = async () => {
-    if (savingTicketImage) return;
-    const imageUri = groupTicketPage?.front;
-    if (!imageUri) {
-      Alert.alert(
-        "저장할 사진이 없어요",
-        "이 티켓에는 저장할 사진이 없습니다.",
-      );
-      return;
-    }
-    setSavingTicketImage(true);
-    try {
-      const permission = await MediaLibrary.requestPermissionsAsync(true, [
-        "photo",
-      ]);
-      if (permission.status !== "granted") {
-        Alert.alert(
-          "사진 저장 권한",
-          "갤러리에 저장하려면 사진 저장 권한을 허용해 주세요.",
-        );
-        return;
-      }
-      if (!imageUri.startsWith("file://")) {
-        throw new Error("티켓 사진의 로컬 파일을 찾을 수 없어요.");
-      }
-      await MediaLibrary.saveToLibraryAsync(imageUri);
-      Alert.alert("저장 완료", "개인 티켓 사진을 갤러리에 저장했어요.");
-    } catch (error: unknown) {
-      console.error("티켓 이미지 저장 실패", error);
-      const message = error instanceof Error ? error.message : String(error);
-      Alert.alert("저장 실패", `티켓 이미지를 저장하지 못했어요.\n${message}`);
-    } finally {
-      setSavingTicketImage(false);
-    }
+  const openCalendarDate = (date: string) => {
+    if (date > todayDateKey()) return;
+    setSelectedDate(date);
+    setShowAllTickets(false);
+    setShowingBack(false);
   };
-
-  const openCalendarDate = async (date: string) => {
-    if (date > todayDateKey()) {
-      Alert.alert(
-        "미래 날짜는 선택할 수 없어요",
-        dateSelectionMode
-          ? "오늘 또는 지난 날짜에만 티켓 날짜를 선택할 수 있어요."
-          : "미래 날짜에는 발권된 티켓이 없어요.",
-      );
-      return;
-    }
-    // 날짜 선택 화면은 기존 생성 흐름에서 사용합니다. 일반 홈 달력은 조회만 합니다.
-    if (dateSelectionMode) {
-      onOpenTickets(date);
-      return;
-    }
-    setListLoading(true);
-    try {
-      const [personalResult, groupResult] = await Promise.allSettled([
-        fetchDateTickets(date),
-        fetchMyGroupTickets(),
-      ]);
-      const personalTickets =
-        personalResult.status === "fulfilled" &&
-        Array.isArray(personalResult.value)
-          ? personalResult.value
-          : [];
-      const groupTickets =
-        groupResult.status === "fulfilled" ? groupResult.value : myGroupTickets;
-      if (
-        personalResult.status === "rejected" &&
-        groupResult.status === "rejected"
-      ) {
-        throw new Error("개인 및 그룹 티켓 조회 실패");
-      }
-      if (groupResult.status === "fulfilled") setMyGroupTickets(groupTickets);
-
-      const groupTicketCopies = new Set(
-        groupTickets.map(issuedTicketFingerprint),
-      );
-      const personalOnlyTickets = personalTickets.filter(
-        (ticket) => !groupTicketCopies.has(issuedTicketFingerprint(ticket)),
-      );
-      const entries = makeTicketEntries(
-        date,
-        personalOnlyTickets,
-        groupTickets,
-      );
-      setDateTickets(entries);
-      setSelectedDate(date);
-      setShowAllTickets(false);
-      setShowingBack(false);
-      if (groupResult.status === "rejected") {
-        Alert.alert(
-          "일부 티켓 조회 실패",
-          "그룹 티켓을 불러오지 못해 현재 확인 가능한 티켓만 보여드려요.",
-        );
-      }
-    } catch {
-      Alert.alert(
-        "티켓 확인 오류",
-        "티켓을 불러오지 못했어요. 다시 시도해 주세요.",
-      );
-    } finally {
-      setListLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!dateSelectionMode && selectedDate) void openCalendarDate(selectedDate);
-    // Initial home load should show today's personal and per-group tickets.
-  }, []);
-
-  useEffect(() => {
-    if (!dateSelectionMode && selectedDate && groups.length > 0) {
-      void openCalendarDate(selectedDate);
-    }
-    // Refresh today's slots when App finishes loading or updating group tickets.
-  }, [groups]);
-
   const todayKey = todayDateKey();
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
   const lastDay = new Date(year, month + 1, 0).getDate();
-
-  // 달을 바꿀 때 날짜마다 발권 여부를 다시 확인합니다.
-  useEffect(() => {
-    let active = true;
-    setIssuedDates(new Set());
-    const dates = Array.from(
-      { length: lastDay },
-      (_, index) =>
-        `${year}-${String(month + 1).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`,
-    );
-    Promise.all(
-      dates.map(async (date) => {
-        try {
-          const tickets = await fetchDateTickets(date);
-          return tickets.length ? date : null;
-        } catch {
-          return null;
-        }
-      }),
-    ).then((datesWithTickets) => {
-      if (active) {
-        setIssuedDates(
-          new Set(datesWithTickets.filter((d): d is string => !!d)),
-        );
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, [year, month, lastDay, fetchDateTickets]);
 
   const cellCount = Math.ceil((firstDay + lastDay) / 7) * 7;
   const days = Array.from({ length: cellCount }, (_, index) => {
@@ -1024,7 +533,7 @@ export default function HomeScreen({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="홈으로 돌아가기"
-                onPress={() => setGroupTicketPage(null)}
+                onPress={() => setPreviewTicketId(null)}
                 style={styles.groupTicketBackButton}
               >
                 <Text style={styles.fullListBackIcon}>‹</Text>
@@ -1051,52 +560,33 @@ export default function HomeScreen({
                   pressed && styles.slotPressed,
                 ]}
               >
-                {groupTicketIsPersonal ? (
-                  showingBack ? (
-                    <PersonalTicketBack
-                      ticket={groupTicketPage}
-                      width={Math.min(screenWidth - 48, 390)}
-                    />
-                  ) : (
-                    <PersonalPhotoTicket
-                      ticket={groupTicketPage}
-                      width={Math.min(screenWidth - 48, 390)}
-                    />
-                  )
-                ) : (
-                  <IssuedTicketFlipPreview
+                {showingBack ? (
+                  <PersonalTicketBack
                     ticket={groupTicketPage}
-                    showingBack={showingBack}
-                    ticketWidth={Math.min(screenWidth - 48, 390)}
-                    onMore={() =>
-                      Alert.alert(
-                        "뒷면 문구",
-                        groupTicketPage.memo || "기록된 글이 없어요.",
-                      )
-                    }
+                    width={Math.min(screenWidth - 48, 390)}
+                  />
+                ) : groupTicketPage.design ? (
+                  <TicketRenderer
+                    designId={groupTicketPage.design.designId}
+                    photoUris={groupTicketPage.photos.map((photo) => photo.url)}
+                    values={{
+                      date: groupTicketPage.visitDate,
+                      groupName: "",
+                      participants: [],
+                    }}
+                    width={Math.min(screenWidth - 48, 390)}
+                    lieDown
+                  />
+                ) : (
+                  <PersonalPhotoTicket
+                    ticket={groupTicketPage}
+                    width={Math.min(screenWidth - 48, 390)}
                   />
                 )}
               </Pressable>
-              <View style={styles.ticketImageSaveRow}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="이미지 저장"
-                  accessibilityState={{ disabled: savingTicketImage }}
-                  disabled={savingTicketImage}
-                  onPress={() => void saveTicketImage()}
-                  style={({ pressed }) => [
-                    styles.ticketImageSaveButton,
-                    pressed && styles.slotPressed,
-                  ]}
-                >
-                  <Text style={styles.ticketImageSaveText}>
-                    {savingTicketImage ? "저장 중" : "이미지 저장"}
-                  </Text>
-                </Pressable>
-              </View>
             </View>
           </View>
-        ) : showAllTickets && selectedDate ? (
+        ) : showAllTickets ? (
           <View style={styles.fullListPage}>
             <View style={styles.fullListHeader}>
               <Pressable
@@ -1115,49 +605,27 @@ export default function HomeScreen({
             >
               <Text style={styles.fullListTitle}>오늘의 티켓</Text>
               <Text style={styles.fullListSectionLabel}>나의 기록</Text>
-              <BatchTicketCard
-                label="나의 기록"
-                entry={dateTickets.find((item) => item.source === "personal")}
-                emptyText="이 날짜에 만든 나의 기록이 없어요"
-                onPress={() => {
-                  const entry = dateTickets.find(
-                    (item) => item.source === "personal",
-                  );
-                  if (!entry) return;
-                  openGroupTicketPage(entry.ticket);
-                }}
-              />
-              {regularGroups.flatMap((group) => {
-                const commonTicket = group.tickets.find(
-                  (ticket) =>
-                    ticket.kind !== "personal" &&
-                    dateKey(ticket.date) === selectedDate,
-                );
-                const entry = commonTicket
-                  ? findGroupPersonalEntry(
-                      group,
-                      group.tickets,
-                      commonTicket,
-                      dateTickets,
-                    )
-                  : undefined;
-                // 공동 티켓 자체와 다른 멤버의 티켓은 목록에 넣지 않습니다.
-                // 이 날짜에 내가 만든 연결 개인 티켓이 있는 그룹만 노출합니다.
-                if (!commonTicket || !entry) return [];
-                return [
-                  <View key={group.id} style={styles.fullGroupSection}>
-                    <Text style={styles.fullListGroupLabel}>{group.name}</Text>
-                    <BatchTicketCard
-                      label={group.name}
-                      entry={commonTicket ? entry : undefined}
-                      commonTicket={commonTicket}
-                      onPress={() => {
-                        openGroupTicketPage(entry.ticket, true);
-                      }}
-                    />
-                  </View>,
-                ];
-              })}
+              {dateTickets.map((ticket) => (
+                <BatchTicketCard
+                  key={ticket.ticketId}
+                  ticket={ticket}
+                  onPress={() => openTicket(ticket)}
+                />
+              ))}
+              {!listLoading &&
+                !ticketLoadFailed &&
+                dateTickets.length === 0 && (
+                  <Text style={styles.emptyTickets}>
+                    이 날짜에 만든 내 티켓이 없어요.
+                  </Text>
+                )}
+              {ticketLoadFailed && (
+                <Pressable accessibilityRole="button" onPress={reload}>
+                  <Text style={styles.emptyTickets}>
+                    내 티켓을 불러오지 못했어요. 다시 시도
+                  </Text>
+                </Pressable>
+              )}
             </ScrollView>
             <BottomNavigation
               activeTab="home"
@@ -1176,40 +644,19 @@ export default function HomeScreen({
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.header}>
-                {dateSelectionMode && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="날짜 선택 취소"
-                    onPress={onCancelDateSelection}
-                    style={styles.menuButton}
-                  >
-                    <Text style={styles.menuText}>‹</Text>
-                  </Pressable>
-                )}
-                {dateSelectionMode ? (
-                  <Text style={styles.dateSelectionTitle}>티켓 날짜 선택</Text>
-                ) : (
-                  <Image
-                    source={logo}
-                    resizeMode="contain"
-                    accessibilityLabel="MEMO:RE"
-                    style={styles.logo}
-                  />
-                )}
+                <Image
+                  source={logo}
+                  resizeMode="contain"
+                  accessibilityLabel="MEMO:RE"
+                  style={styles.logo}
+                />
               </View>
-              {dateSelectionMode && (
-                <Text style={styles.dateSelectionHint}>
-                  오늘 또는 지난 날짜를 선택해 주세요.
+              <View style={styles.recordsHeading}>
+                <Text accessibilityRole="header" style={styles.recordsTitle}>
+                  나의 기록
                 </Text>
-              )}
-              {!dateSelectionMode && (
-                <View style={styles.recordsHeading}>
-                  <Text accessibilityRole="header" style={styles.recordsTitle}>
-                    나의 기록
-                  </Text>
-                  <Text style={styles.recordsCount}>{recordCount}장</Text>
-                </View>
-              )}
+                <Text style={styles.recordsCount}>{recordCount}장</Text>
+              </View>{" "}
               <View style={[styles.calendar, { minHeight: calendarHeight }]}>
                 <View style={styles.calendarHeader}>
                   <Pressable
@@ -1256,7 +703,7 @@ export default function HomeScreen({
                           return (
                             <Pressable
                               accessibilityRole="button"
-                              accessibilityLabel={`${year}년 ${month + 1}월 ${day}일 ${isFutureDate ? "미래 날짜, 선택 불가" : dateSelectionMode ? "티켓 날짜 선택" : issued ? "발권한 티켓 목록" : "발권된 티켓 없음"}`}
+                              accessibilityLabel={`${year}년 ${month + 1}월 ${day}일 ${isFutureDate ? "미래 날짜, 선택 불가" : issued ? "발권한 티켓 목록" : "발권된 티켓 없음"}`}
                               accessibilityState={{ disabled: isFutureDate }}
                               disabled={isFutureDate || listLoading}
                               onPress={() => void openCalendarDate(date)}
@@ -1281,124 +728,86 @@ export default function HomeScreen({
                   ))}
                 </View>
               </View>
-              {!dateSelectionMode && selectedDate && (
-                <View style={styles.selectedTicketsSection}>
-                  <View style={styles.selectedTicketsHeading}>
-                    <Text style={styles.selectedDateTitle}>
-                      {dateLongTitle(selectedDate)}
-                    </Text>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="이 날짜 티켓 전체 보기"
-                      onPress={() => setShowAllTickets(true)}
-                      style={styles.fullViewButton}
-                    >
-                      <Text style={styles.fullViewText}>전체 보기</Text>
-                    </Pressable>
-                  </View>
-                  {listLoading ? (
+              <View style={styles.selectedTicketsSection}>
+                {ticketLoadFailed && (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={listLoading}
+                    onPress={reload}
+                  >
                     <Text style={styles.emptyTickets}>
-                      티켓을 불러오는 중이에요.
+                      내 티켓을 불러오지 못했어요. 다시 시도
                     </Text>
-                  ) : (
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.ticketSlots}
-                    >
-                      {selectedDaySlots.map(
-                        ({ key, label, entry, commonTicket }) => (
-                          <Pressable
-                            key={key}
-                            accessibilityRole="button"
-                            accessibilityLabel={`${label} 공통 티켓 ${commonTicket ? "있음" : "없음"}`}
-                            disabled={
-                              !entry || (key !== "personal" && !commonTicket)
-                            }
-                            onPress={() => {
-                              if (!entry) return;
-                              if (key !== "personal" && commonTicket) {
-                                openGroupTicketPage(entry.ticket, true);
-                                return;
-                              }
-                              if (key === "personal" && entry) {
-                                setShowAllTickets(true);
-                              }
-                            }}
-                            style={({ pressed }) => [
-                              styles.ticketSlot,
-                              entry && pressed && styles.slotPressed,
-                            ]}
-                          >
-                            {key === "personal" && entry ? (
-                              <>
-                                <View style={styles.slotTicketStub}>
-                                  <Text
-                                    style={styles.slotTicketName}
-                                    numberOfLines={2}
-                                  >
-                                    {entry.ticket.title || label}
-                                  </Text>
-                                  <Text style={styles.slotTicketDate}>
-                                    {formattedDate(entry.ticket.visitDate)}
-                                  </Text>
-                                </View>
-                                <View style={styles.slotTicketPhoto}>
-                                  {entry.ticket.front ? (
-                                    <Image
-                                      source={{ uri: entry.ticket.front }}
-                                      style={styles.slotTicketImage}
-                                      resizeMode="cover"
-                                    />
-                                  ) : (
-                                    <View style={styles.slotTicketEmptyImage} />
-                                  )}
-                                </View>
-                              </>
-                            ) : commonTicket ? (
-                              <View style={styles.commonTicketSummary}>
-                                <Text style={styles.commonTicketDate}>
-                                  {formattedDate(commonTicket.date)}
-                                </Text>
-                                <Text
-                                  style={styles.commonTicketTitle}
-                                  numberOfLines={3}
-                                >
-                                  {commonTicket.title}
-                                </Text>
-                              </View>
-                            ) : (
-                              <View style={styles.emptySlot}>
-                                <Text style={styles.emptySlotPlus}>＋</Text>
-                              </View>
-                            )}
-                            <Text style={styles.slotLabel} numberOfLines={1}>
-                              {label}
-                            </Text>
-                          </Pressable>
-                        ),
-                      )}
-                      {selectedDaySlots.length === 0 && (
-                        <Text style={styles.emptyTickets}>
-                          표시할 그룹이 없어요.
-                        </Text>
-                      )}
-                    </ScrollView>
-                  )}
+                  </Pressable>
+                )}
+                <View style={styles.selectedTicketsHeading}>
+                  <Text style={styles.selectedDateTitle}>
+                    {dateLongTitle(selectedDate)}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="이 날짜 티켓 전체 보기"
+                    onPress={() => setShowAllTickets(true)}
+                    style={styles.fullViewButton}
+                  >
+                    <Text style={styles.fullViewText}>전체 보기</Text>
+                  </Pressable>
                 </View>
-              )}
+                {listLoading ? (
+                  <Text style={styles.emptyTickets}>
+                    티켓을 불러오는 중이에요.
+                  </Text>
+                ) : (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.ticketSlots}
+                  >
+                    {dateTickets.map((ticket) => (
+                      <Pressable
+                        key={ticket.ticketId}
+                        accessibilityRole="button"
+                        accessibilityLabel="내 티켓 보기"
+                        onPress={() => openTicket(ticket)}
+                        style={styles.ticketSlot}
+                      >
+                        <View style={styles.slotTicketStub}>
+                          <Text style={styles.slotTicketName}>나의 티켓</Text>
+                          <Text style={styles.slotTicketDate}>
+                            {formattedDate(ticket.visitDate)}
+                          </Text>
+                        </View>
+                        <View style={styles.slotTicketPhoto}>
+                          {ticket.photos[0] ? (
+                            <Image
+                              source={{ uri: ticket.photos[0].url }}
+                              style={styles.slotTicketImage}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.slotTicketEmptyImage} />
+                          )}
+                        </View>
+                      </Pressable>
+                    ))}
+                    {!ticketLoadFailed && dateTickets.length === 0 && (
+                      <Text style={styles.emptyTickets}>
+                        이 날짜에 만든 내 티켓이 없어요.
+                      </Text>
+                    )}
+                  </ScrollView>
+                )}
+              </View>
             </ScrollView>
-            {!dateSelectionMode && (
-              <BottomNavigation
-                activeTab="home"
-                onSelect={(tab) => {
-                  if (tab === "home") setMonthDate(currentMonth());
-                  else if (tab === "group") onOpenGroup();
-                  else if (tab === "my") onOpenMy();
-                  else showPendingFeature();
-                }}
-              />
-            )}
+            <BottomNavigation
+              activeTab="home"
+              onSelect={(tab) => {
+                if (tab === "home") setMonthDate(currentMonth());
+                else if (tab === "group") onOpenGroup();
+                else if (tab === "my") onOpenMy();
+                else showPendingFeature();
+              }}
+            />
           </>
         )}
       </View>

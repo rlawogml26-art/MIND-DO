@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getMe } from "./users.controller.js";
+import { getMe, getMyTicketList } from "./users.controller.js";
 
 const router = Router();
 
@@ -42,5 +42,6 @@ const router = Router();
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get("/me", getMe);
+router.get("/me/tickets", getMyTicketList);
 
 export default router;
