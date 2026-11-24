@@ -1,72 +1,50 @@
-import type { PaletteId } from "@mind-do/shared";
-import { PALETTE_RULES } from "./ai-drafts.catalog.js";
+import { COLOR_DISTANCE_MAX } from "./ai-drafts.catalog.js";
 
-// 배경색(backgroundColor) 만들기 (AGENTS.md "AI 초안" > 색)
-// 사진의 배경색 후보(accentColors, 첫 사진부터 순서대로) 중 첫 번째 색의 색상(hue)을 쓰고,
-// 선명도·밝기는 팔레트 규칙을 따른다. 후보가 없으면 팔레트 기본 색을 쓴다.
-export function makeBackgroundColor(
-  paletteId: PaletteId,
-  accentColors: readonly string[],
-): string {
-  const rule = PALETTE_RULES[paletteId];
-  const first = accentColors[0];
-  if (!first) return rule.defaultColor;
-
-  const photoHue = hexToHue(first);
-  let hue = photoHue;
-  if (rule.hueAnchor !== null) {
-    const diff = hueDiff(photoHue, rule.hueAnchor);
-    hue =
-      Math.abs(diff) <= rule.anchorRange
-        ? (photoHue + diff * rule.anchorWeight + 360) % 360
-        : rule.hueAnchor;
+// 디자인 대표 색(mainColor)과 사진 주요 색이 얼마나 가까운지 (AGENTS.md "AI 초안" > 색)
+// 사람 눈에 비슷한 정도를 재려고 RGB가 아니라 OKLab 거리를 쓴다.
+// 사진 색 후보 중 가장 가까운 색 기준으로 0~1 (1이 가장 가까움). 후보가 없으면 0
+export function colorCloseness(
+  mainColor: string,
+  photoColors: readonly string[],
+): number {
+  const target = hexToOklab(mainColor);
+  let best = Number.POSITIVE_INFINITY;
+  for (const color of photoColors) {
+    best = Math.min(best, oklabDistance(target, hexToOklab(color)));
   }
-  return hslToHex(hue, rule.saturation, rule.lightness);
+  if (!Number.isFinite(best)) return 0;
+  return Math.max(0, 1 - best / COLOR_DISTANCE_MAX);
 }
 
-// a에서 b로 가는 색상환의 짧은 쪽 각도 (-180~180)
-function hueDiff(a: number, b: number): number {
-  return ((b - a + 540) % 360) - 180;
+type Oklab = { l: number; a: number; b: number };
+
+function oklabDistance(x: Oklab, y: Oklab): number {
+  return Math.hypot(x.l - y.l, x.a - y.a, x.b - y.b);
 }
 
-function hexToHue(hex: string): number {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const max = Math.max(r, g, b);
-  const d = max - Math.min(r, g, b);
-  if (d === 0) return 0;
-  let h: number;
-  if (max === r) h = ((g - b) / d) % 6;
-  else if (max === g) h = (b - r) / d + 2;
-  else h = (r - g) / d + 4;
-  return (h * 60 + 360) % 360;
+function hexToOklab(hex: string): Oklab {
+  const [r, g, b] = [1, 3, 5].map((i) =>
+    srgbToLinear(parseInt(hex.slice(i, i + 2), 16) / 255),
+  );
+  const red = r ?? 0;
+  const green = g ?? 0;
+  const blue = b ?? 0;
+  const l = Math.cbrt(
+    0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue,
+  );
+  const m = Math.cbrt(
+    0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue,
+  );
+  const s = Math.cbrt(
+    0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue,
+  );
+  return {
+    l: 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    a: 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    b: 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  };
 }
 
-function hslToHex(h: number, s: number, l: number): string {
-  const sat = s / 100;
-  const light = l / 100;
-  const c = (1 - Math.abs(2 * light - 1)) * sat;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = light - c / 2;
-  const [r, g, b] =
-    h < 60
-      ? [c, x, 0]
-      : h < 120
-        ? [x, c, 0]
-        : h < 180
-          ? [0, c, x]
-          : h < 240
-            ? [0, x, c]
-            : h < 300
-              ? [x, 0, c]
-              : [c, 0, x];
-  return `#${[r, g, b]
-    .map((v) =>
-      Math.round((v + m) * 255)
-        .toString(16)
-        .padStart(2, "0"),
-    )
-    .join("")
-    .toUpperCase()}`;
+function srgbToLinear(v: number): number {
+  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
 }
