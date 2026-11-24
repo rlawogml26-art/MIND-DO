@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { z } from "zod";
 import {
   Alert,
   Animated,
@@ -702,6 +703,15 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   inquiryReplies: true,
   marketing: true,
 };
+const notificationSettingsSchema = z.object({
+  groupTicketInvites: z
+    .boolean()
+    .catch(DEFAULT_NOTIFICATION_SETTINGS.groupTicketInvites),
+  inquiryReplies: z
+    .boolean()
+    .catch(DEFAULT_NOTIFICATION_SETTINGS.inquiryReplies),
+  marketing: z.boolean().catch(DEFAULT_NOTIFICATION_SETTINGS.marketing),
+});
 const FAQ_ENTRIES: {
   category: Exclude<FaqCategory, "전체">;
   question: string;
@@ -792,20 +802,8 @@ export default function MenuExperience({
       .then((raw) => {
         if (!active || !raw) return;
         const saved: unknown = JSON.parse(raw);
-        if (typeof saved !== "object" || saved === null) return;
-        const values = saved as Partial<NotificationSettings>;
-        setNotificationSettings({
-          groupTicketInvites:
-            typeof values.groupTicketInvites === "boolean"
-              ? values.groupTicketInvites
-              : true,
-          inquiryReplies:
-            typeof values.inquiryReplies === "boolean"
-              ? values.inquiryReplies
-              : true,
-          marketing:
-            typeof values.marketing === "boolean" ? values.marketing : true,
-        });
+        const parsed = notificationSettingsSchema.safeParse(saved);
+        if (parsed.success) setNotificationSettings(parsed.data);
       })
       .catch(() => {
         // 저장 설정을 읽지 못하면 화면 기본값을 사용합니다.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PROFILE_NICKNAME_MAX } from "@mind-do/shared";
 import {
   Alert,
@@ -15,11 +15,7 @@ import {
   Image,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import {
-  listIssuedTickets,
-  type IssuedTicket,
-} from "../storage/issued-tickets";
-import type { DemoGroup, JointTicket } from "./GroupScreen";
+import { useMyTickets } from "../hooks/use-my-tickets";
 
 const colors = {
   "background/canvas": "#FFFFFF",
@@ -282,7 +278,6 @@ export type Profile = {
 
 type MyScreen = "profile" | "edit" | "tickets" | "following" | "followers";
 type TicketViewMode = "all" | "month";
-type TicketTypeFilter = "all" | "personal" | "shared";
 type TicketListEntry = {
   key: string;
   visitDate: string;
@@ -290,15 +285,6 @@ type TicketListEntry = {
   location: string;
   thumbnail?: string;
   segment: "full" | "shared" | "personal";
-  linkedPersonal?: IssuedTicket;
-};
-type ArchiveJointTicket = JointTicket & {
-  memberIds?: string[];
-  memberTickets?: {
-    memberId: string;
-    memberName: string;
-    ticket: IssuedTicket;
-  }[];
 };
 
 export default function MyPageScreen({
@@ -307,38 +293,25 @@ export default function MyPageScreen({
   onLogout,
   savedProfile,
   onSaveProfile,
-  groups,
 }: {
   onOpenHome: () => void;
   onOpenGroup?: () => void;
   onLogout?: () => void;
   savedProfile: Profile;
   onSaveProfile: (profile: Profile) => void;
-  groups: DemoGroup[];
 }) {
   const [screen, setScreen] = useState<MyScreen>("profile");
-  const [tickets, setTickets] = useState<IssuedTicket[]>([]);
-  const [ticketLoadError, setTicketLoadError] = useState(false);
-  useEffect(() => {
-    let active = true;
-    listIssuedTickets()
-      .then((items) => {
-        if (active) setTickets(items);
-      })
-      .catch(() => {
-        if (active) setTicketLoadError(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const {
+    tickets,
+    loading: ticketLoading,
+    failed: ticketLoadError,
+    reload,
+  } = useMyTickets();
   const [draftProfile, setDraftProfile] = useState(savedProfile);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuRoute, setMenuRoute] = useState<MenuRoute>("settings");
   const [profilePhotoExpanded, setProfilePhotoExpanded] = useState(false);
   const [ticketViewMode, setTicketViewMode] = useState<TicketViewMode>("all");
-  const [ticketTypeFilter, setTicketTypeFilter] =
-    useState<TicketTypeFilter>("all");
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [selectedYearMonth, setSelectedYearMonth] = useState(() => {
     const today = new Date();
@@ -444,107 +417,14 @@ export default function MyPageScreen({
     );
   }
   if (screen === "tickets") {
-    const personalEntries: TicketListEntry[] = tickets.map((ticket) => ({
-      key: `personal-${ticket.visitDate}`,
+    const ticketEntries: TicketListEntry[] = tickets.map((ticket) => ({
+      key: String(ticket.ticketId),
       visitDate: ticket.visitDate,
-      title: ticket.title?.trim() || "우리들의 기억",
-      location: ticket.location?.trim() || "내 티켓",
-      thumbnail:
-        ticket.front || (ticket.backs ?? []).find(Boolean) || undefined,
+      title: "나의 티켓",
+      location: "내 티켓",
+      thumbnail: ticket.photos[0]?.url,
       segment: "full",
     }));
-    const sharedEntries: TicketListEntry[] = Array.from(
-      new Map(
-        groups
-          .flatMap((group) =>
-            group.tickets
-              .filter((rawTicket) => {
-                const ticket = rawTicket as ArchiveJointTicket;
-                if (ticket.kind === "personal") return false;
-                const hasMeInMemberIds =
-                  ticket.memberIds?.includes("me") ?? false;
-                const hasMyMemberTicket =
-                  ticket.memberTickets?.some(
-                    (memberTicket) => memberTicket.memberId === "me",
-                  ) ?? false;
-                const hasParticipationMetadata =
-                  ticket.memberIds !== undefined ||
-                  ticket.memberTickets !== undefined;
-                return (
-                  hasMeInMemberIds ||
-                  hasMyMemberTicket ||
-                  !hasParticipationMetadata
-                );
-              })
-              .map((rawTicket) => {
-                const ticket = rawTicket as ArchiveJointTicket;
-                const visitDate = ticket.date.replace(/\./g, "-");
-                const linkedPersonal =
-                  ticket.memberTickets?.find(
-                    (member) => member.memberId === "me",
-                  )?.ticket ??
-                  tickets.find((personal) => personal.visitDate === visitDate);
-                return {
-                  key: `shared-${group.id}-${ticket.date}`,
-                  visitDate,
-                  title: ticket.title?.trim() || "공동 티켓",
-                  location: group.name,
-                  thumbnail:
-                    linkedPersonal?.front ||
-                    (linkedPersonal?.backs ?? []).find(Boolean) ||
-                    undefined,
-                  segment: "shared" as const,
-                  linkedPersonal,
-                };
-              }),
-          )
-          .map((ticket) => [ticket.key, ticket] as const),
-      ).values(),
-    );
-    const sharedTicketDates = new Set(
-      sharedEntries.map((ticket) => ticket.visitDate),
-    );
-    const personalEntriesByDate = new Map(
-      personalEntries.map((ticket) => [ticket.visitDate, ticket] as const),
-    );
-    for (const sharedTicket of sharedEntries) {
-      if (
-        sharedTicket.linkedPersonal &&
-        !personalEntriesByDate.has(sharedTicket.visitDate)
-      ) {
-        const ticket = sharedTicket.linkedPersonal;
-        personalEntriesByDate.set(sharedTicket.visitDate, {
-          key: `personal-${ticket.visitDate}`,
-          visitDate: ticket.visitDate,
-          title: ticket.title?.trim() || "우리들의 기억",
-          location: ticket.location?.trim() || sharedTicket.location,
-          thumbnail:
-            ticket.front || (ticket.backs ?? []).find(Boolean) || undefined,
-          segment: "personal",
-        });
-      }
-    }
-    const personalEntriesForFilter = Array.from(
-      personalEntriesByDate.values(),
-    ).map((ticket) => ({
-      ...ticket,
-      segment: sharedTicketDates.has(ticket.visitDate)
-        ? ("personal" as const)
-        : ticket.segment,
-    }));
-    const sharedEntriesForAll = sharedEntries.map((ticket) => ({
-      ...ticket,
-      segment: ticket.linkedPersonal ? ("full" as const) : ("shared" as const),
-    }));
-    const personalEntriesForAll = Array.from(
-      personalEntriesByDate.values(),
-    ).filter((ticket) => !sharedTicketDates.has(ticket.visitDate));
-    const ticketEntries =
-      ticketTypeFilter === "personal"
-        ? personalEntriesForFilter
-        : ticketTypeFilter === "shared"
-          ? sharedEntries
-          : [...personalEntriesForAll, ...sharedEntriesForAll];
     const monthFilteredEntries =
       ticketViewMode === "month"
         ? ticketEntries.filter(
@@ -670,37 +550,6 @@ export default function MyPageScreen({
             ))}
           </View>
 
-          <View style={styles.ticketTypeTabs}>
-            {(
-              [
-                { key: "all", label: "전체" },
-                { key: "personal", label: "개인 티켓" },
-                { key: "shared", label: "공동 티켓" },
-              ] as const
-            ).map((tab) => (
-              <Pressable
-                key={tab.key}
-                accessibilityRole="button"
-                accessibilityState={{ selected: ticketTypeFilter === tab.key }}
-                onPress={() => setTicketTypeFilter(tab.key)}
-                style={styles.ticketTypeTab}
-              >
-                <Text
-                  style={[
-                    styles.ticketTypeTabText,
-                    ticketTypeFilter === tab.key &&
-                      styles.ticketTypeTabTextActive,
-                  ]}
-                >
-                  {tab.label}
-                </Text>
-                {ticketTypeFilter === tab.key && (
-                  <View style={styles.ticketTypeIndicator} />
-                )}
-              </Pressable>
-            ))}
-          </View>
-
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={styles.ticketListContent}
@@ -727,24 +576,19 @@ export default function MyPageScreen({
               )}
             </View>
             {ticketLoadError ? (
+              <Pressable accessibilityRole="button" onPress={reload}>
+                <Text style={styles.ticketListEmpty}>
+                  내 티켓을 불러오지 못했어요. 다시 시도
+                </Text>
+              </Pressable>
+            ) : ticketLoading ? (
               <Text style={styles.ticketListEmpty}>
-                티켓을 불러오지 못했어요. 잠시 후 다시 열어 주세요.
+                티켓을 불러오는 중이에요.
               </Text>
             ) : visibleTickets.length === 0 ? (
               <Text style={styles.ticketListEmpty}>
-                {ticketTypeFilter === "shared"
-                  ? "공동 티켓이 없어요."
-                  : "아직 발권한 티켓이 없어요."}
+                아직 발권한 티켓이 없어요.
               </Text>
-            ) : ticketTypeFilter === "shared" ? (
-              <ScrollView
-                horizontal
-                style={styles.sharedTicketRowViewport}
-                contentContainerStyle={styles.sharedTicketRow}
-                showsHorizontalScrollIndicator={false}
-              >
-                {visibleTickets.map(renderTicketCard)}
-              </ScrollView>
             ) : (
               monthGroups.map(([month, monthTickets], monthIndex) => (
                 <View key={month} style={styles.ticketMonthGroup}>
@@ -1027,7 +871,7 @@ export default function MyPageScreen({
                 <View>
                   <Text style={styles.archiveTitle}>내 티켓 모아보기</Text>
                   <Text style={styles.archiveCount}>
-                    {ticketLoadError ? "-" : tickets.length}장
+                    {ticketLoadError || ticketLoading ? "-" : tickets.length}장
                   </Text>
                 </View>
                 <Text style={styles.archiveArrow}>›</Text>
