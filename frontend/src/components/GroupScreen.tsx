@@ -1,30 +1,30 @@
-// 후속 Issue #25: 그룹 개인 티켓 발권을 서버 공동·개인 티켓 API에 연결한다.
 import {
+  ErrorCode,
+  type InviteInfoResponse,
+  type SharedTicketDetailResponse,
+  type SharedTicketListResponse,
   GROUP_NAME_MAX,
-  GROUP_MAX_MEMBERS,
   USER_GROUP_MAX,
   JOINT_TITLE_MAX,
   groupNameSchema,
   jointTitleSchema,
-  type SharedTicketDetailResponse,
 } from "@mind-do/shared";
+import logo from "../../assets/memo-re-wordmark.png";
+import groupDefaultMascot from "../../assets/memo-re-mascot.png";
 import {
-  getGroupDetail,
-  getGroupSharedTickets,
-  getSharedTicketDetail,
-} from "../lib/api";
-import logo from "../../assets/images/memore/logo.png";
-import {
+  useEffect,
   useMemo,
   useRef,
   useState,
   type Dispatch,
   type SetStateAction,
 } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -35,11 +35,23 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import TicketCreationScreen, { IssuedTicketFlipPreview } from "./TicketEditor";
+import TicketRenderer from "./TicketRenderer";
+import {
+  ApiError,
+  createGroup as createServerGroup,
+  createGroupInvite,
+  createSharedTicket,
+  getGroupDetail,
+  getGroupSharedTickets,
+  getInvite,
+  getSharedTicketDetail,
+  joinGroupByInvite,
+} from "../lib/api";
 import type { IssuedTicket } from "../storage/issued-tickets";
 
 export type JointTicket = {
@@ -47,10 +59,8 @@ export type JointTicket = {
   title: string;
   completed: number;
   invitees: number;
-  // 서버 공동 티켓 번호와 내 슬롯 상태 (서버에서 받은 공동 티켓만 있음)
   sharedTicketId?: number;
-  myStatus?: "EMPTY" | "COMPLETED" | null;
-  invitedMemberIds?: string[];
+  myStatus?: SharedTicketListResponse["sharedTickets"][number]["myStatus"];
   kind?: "joint" | "personal";
   memberTickets?: {
     memberId: string;
@@ -58,6 +68,13 @@ export type JointTicket = {
     ticket: IssuedTicket;
   }[];
 };
+
+function sortJointTicketsByDate(tickets: JointTicket[]): JointTicket[] {
+  const dateKey = (date: string) => date.replace(/[^0-9]/g, "");
+  return [...tickets].sort((a, b) =>
+    dateKey(a.date).localeCompare(dateKey(b.date)),
+  );
+}
 
 export type DemoGroup = {
   id: string;
@@ -67,11 +84,7 @@ export type DemoGroup = {
   maxMembers: number;
   tickets: JointTicket[];
   createdAt?: string;
-  // 나를 뺀 현재 멤버. 닉네임은 겹칠 수 있어서 userId(문자열)로 구분하고,
-  // 닉네임과 가입일(한국시간 YYYY-MM-DD)은 userId로 찾는다. 그룹 상세 API에서 받는다
-  memberIds?: string[];
   memberNames?: Record<string, string>;
-  memberJoinedAt?: Record<string, string>;
 };
 
 type GroupScreenProps = {
@@ -79,9 +92,8 @@ type GroupScreenProps = {
   onOpenTickets: () => void;
   onOpenMy: () => void;
   groups: DemoGroup[];
-  onGroupsChange: Dispatch<SetStateAction<DemoGroup[]>>;
-  // 로그인한 사용자. 그룹 멤버 목록에서 나를 구분하는 데 쓴다
   currentUserId: number;
+  onGroupsChange: Dispatch<SetStateAction<DemoGroup[]>>;
 };
 
 type Page =
@@ -89,9 +101,10 @@ type Page =
   | "group"
   | "join"
   | "newGroup"
+  | "inviteLink"
+  | "renameGroup"
   | "newJoint"
   | "jointDone"
-  | "personalTicket"
   | "ticketMembers"
   | "ticketDetail"
   | "duplicate"
@@ -116,55 +129,292 @@ type Popup =
   | "kickSuccess";
 type RecordChoice = "keep" | "remove";
 const recordChoices: RecordChoice[] = ["keep", "remove"];
+const GROUP_COVER_IMAGES_KEY = "@memore/group_cover_images_v1";
 
 const C = {
-  canvas: "#FFF8EF",
-  surface: "#FFFDF8",
-  primary: "#352722",
-  text: "#654C40",
-  muted: "#987966",
-  detailMuted: "#76635B",
-  border: "#E8DFD6",
-  pink: "#F4D9D0",
-  nav: "#F0C8BE",
-  button: "#60493E",
-  accent: "#A25C51",
-  input: "#F9F0EB",
+  canvas: "#FFFFFF",
+  surface: "#FFFFFF",
+  primary: "#2E3DB5",
+  text: "#252B45",
+  muted: "#7C8292",
+  detailMuted: "#7C8292",
+  border: "#DDE3ED",
+  pink: "#F4E5DF",
+  nav: "#FFFFFF",
+  button: "#2E3DB5",
+  accent: "#EC806F",
+  input: "#F5F7FB",
 };
 
+type BottomTab = "home" | "group" | "store" | "my";
+function BottomNavigation({
+  activeTab,
+  onSelect,
+}: {
+  activeTab: BottomTab;
+  onSelect: (tab: BottomTab) => void;
+}) {
+  return (
+    <View style={bottomNavStyles.outer}>
+      <View style={bottomNavStyles.bar}>
+        {(
+          [
+            { key: "home", label: "홈" },
+            { key: "group", label: "그룹" },
+            { key: "store", label: "스토어" },
+            { key: "my", label: "마이" },
+          ] as const
+        ).map((tab) => (
+          <Pressable
+            key={tab.key}
+            accessibilityRole="button"
+            accessibilityLabel={tab.label}
+            accessibilityState={{ selected: activeTab === tab.key }}
+            onPress={() => onSelect(tab.key)}
+            style={({ pressed }) => [
+              bottomNavStyles.item,
+              pressed && bottomNavStyles.pressed,
+            ]}
+          >
+            <BottomNavIcon tab={tab.key} />
+            <Text
+              style={[
+                bottomNavStyles.label,
+                activeTab === tab.key && bottomNavStyles.activeLabel,
+              ]}
+            >
+              {tab.label}
+            </Text>
+            {activeTab === tab.key && (
+              <View style={bottomNavStyles.activeMark} />
+            )}
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+function BottomNavIcon({ tab }: { tab: BottomTab }) {
+  return (
+    <View style={bottomNavStyles.icon}>
+      {tab === "home" && (
+        <>
+          <View style={bottomNavStyles.homeRoof} />
+          <View style={bottomNavStyles.homeBody}>
+            <View style={bottomNavStyles.homeDoor} />
+          </View>
+        </>
+      )}
+      {tab === "group" && (
+        <View style={bottomNavStyles.ticketIcon}>
+          <View style={bottomNavStyles.ticketHoleLeft} />
+          <View style={bottomNavStyles.ticketLine} />
+          <View style={bottomNavStyles.ticketHoleRight} />
+        </View>
+      )}
+      {tab === "store" && (
+        <>
+          <View style={bottomNavStyles.storeRoof}>
+            <View style={bottomNavStyles.storeStripe} />
+            <View style={bottomNavStyles.storeStripe} />
+          </View>
+          <View style={bottomNavStyles.storeBody}>
+            <View style={bottomNavStyles.storeDoor} />
+          </View>
+        </>
+      )}
+      {tab === "my" && (
+        <>
+          <View style={bottomNavStyles.personHead} />
+          <View style={bottomNavStyles.personBody} />
+        </>
+      )}
+    </View>
+  );
+}
+const bottomNavStyles = StyleSheet.create({
+  outer: {
+    paddingHorizontal: 12,
+    paddingTop: 4,
+    paddingBottom: 4,
+    backgroundColor: "#FFFFFF",
+  },
+  bar: {
+    height: 68,
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#303CB5",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  item: {
+    flex: 1,
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+    borderRadius: 18,
+  },
+  pressed: { opacity: 0.65 },
+  label: { color: "#7C8292", fontSize: 11, lineHeight: 14, fontWeight: "500" },
+  activeLabel: { color: "#2E3DB5", fontWeight: "700" },
+  activeMark: {
+    position: "absolute",
+    bottom: 4,
+    width: 18,
+    height: 2,
+    borderRadius: 2,
+    backgroundColor: "#EC806F",
+  },
+  icon: {
+    width: 30,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  homeRoof: {
+    position: "absolute",
+    top: 3,
+    width: 11,
+    height: 11,
+    borderTopWidth: 1.8,
+    borderLeftWidth: 1.8,
+    borderColor: "#29211E",
+    transform: [{ rotate: "45deg" }],
+  },
+  homeBody: {
+    position: "absolute",
+    bottom: 3,
+    width: 14,
+    height: 11,
+    borderWidth: 1.8,
+    borderTopWidth: 0,
+    borderColor: "#29211E",
+    borderBottomLeftRadius: 2,
+    borderBottomRightRadius: 2,
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  homeDoor: {
+    width: 3,
+    height: 6,
+    borderWidth: 1.3,
+    borderBottomWidth: 0,
+    borderColor: "#29211E",
+  },
+  ticketIcon: {
+    width: 28,
+    height: 18,
+    borderWidth: 2,
+    borderColor: "#29211E",
+    borderRadius: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ticketLine: {
+    width: 0,
+    height: 11,
+    borderLeftWidth: 1.4,
+    borderStyle: "dashed",
+    borderColor: "#29211E",
+  },
+  ticketHoleLeft: {
+    position: "absolute",
+    left: -3,
+    top: 5,
+    width: 6,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#FFFFFF",
+  },
+  ticketHoleRight: {
+    position: "absolute",
+    right: -3,
+    top: 5,
+    width: 6,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#FFFFFF",
+  },
+  storeRoof: {
+    position: "absolute",
+    top: 3,
+    width: 17,
+    height: 6,
+    borderWidth: 1.7,
+    borderColor: "#29211E",
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    flexDirection: "row",
+    justifyContent: "space-evenly",
+  },
+  storeStripe: { width: 1, height: 5, backgroundColor: "#29211E" },
+  storeBody: {
+    position: "absolute",
+    bottom: 3,
+    width: 15,
+    height: 10,
+    borderWidth: 1.7,
+    borderTopWidth: 0,
+    borderColor: "#29211E",
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  storeDoor: {
+    width: 4,
+    height: 6,
+    borderWidth: 1.3,
+    borderBottomWidth: 0,
+    borderColor: "#29211E",
+  },
+  personHead: {
+    position: "absolute",
+    top: 2,
+    width: 7,
+    height: 7,
+    borderWidth: 1.7,
+    borderColor: "#29211E",
+    borderRadius: 4,
+  },
+  personBody: {
+    position: "absolute",
+    bottom: 2,
+    width: 15,
+    height: 9,
+    borderWidth: 1.7,
+    borderBottomWidth: 0,
+    borderColor: "#29211E",
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+  },
+});
+
 const avatarColors = [
-  "#F1DFD8",
-  "#EADCD4",
-  "#E9E2D6",
-  "#E9DFE8",
-  "#DEE7DA",
-  "#DADDE7",
+  "#F2F3F6",
+  "#F2F3F6",
+  "#F2F3F6",
+  "#F2F3F6",
+  "#F2F3F6",
+  "#F2F3F6",
 ];
 const avatarTextColors = [
-  "#936458",
-  "#946A5C",
-  "#746856",
-  "#806579",
-  "#617354",
-  "#555473",
+  "#303CB5",
+  "#303CB5",
+  "#303CB5",
+  "#303CB5",
+  "#303CB5",
+  "#303CB5",
 ];
 const avatarLetters = ["나", "A", "B", "C", "D", "E"];
-
-const DEMO_INVITE_URL = "memo.re/invite/weekend";
 
 function dateToday(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
-// 멤버 표시. 서버 멤버는 userId로 닉네임을 찾고, 화면 시연용 글자(A~E)는 "멤버 A"
-function memberLabel(member: string, names?: Record<string, string>) {
-  return names?.[member] ?? `멤버 ${member}`;
-}
-function memberInitial(member: string, names?: Record<string, string>) {
-  return (names?.[member] ?? member).slice(0, 1);
-}
-
-// 서버 시각(UTC ISO)을 한국시간 날짜(YYYY-MM-DD)로. en-CA 형식이 YYYY-MM-DD
 export function kstDate(iso: string) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
@@ -173,6 +423,7 @@ export function kstDate(iso: string) {
     day: "2-digit",
   }).format(new Date(iso));
 }
+
 function fmtDate(date: string) {
   return date.replace(/-/g, ".");
 }
@@ -223,26 +474,40 @@ function FormInput({
   onChangeText,
   placeholder,
   maxLength,
+  onPress,
 }: {
   label: string;
   value: string;
   onChangeText: (v: string) => void;
   placeholder: string;
   maxLength?: number;
+  onPress?: () => void;
 }) {
   return (
     <View style={{ gap: 8 }}>
       <Text style={styles.formLabel}>{label}</Text>
-      <TextInput
-        accessibilityLabel={label}
-        value={value}
-        onChangeText={onChangeText}
-        maxLength={maxLength}
-        autoCorrect={false}
-        placeholder={placeholder}
-        placeholderTextColor={C.muted}
-        style={styles.formInput}
-      />
+      {onPress ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${label} 달력에서 선택`}
+          onPress={onPress}
+          style={[styles.formInput, styles.dateInput]}
+        >
+          <Text style={styles.dateInputText}>{value || placeholder}</Text>
+          <Text style={styles.dateInputIcon}>▦</Text>
+        </Pressable>
+      ) : (
+        <TextInput
+          accessibilityLabel={label}
+          value={value}
+          onChangeText={onChangeText}
+          maxLength={maxLength}
+          autoCorrect={false}
+          placeholder={placeholder}
+          placeholderTextColor={C.muted}
+          style={styles.formInput}
+        />
+      )}
     </View>
   );
 }
@@ -250,39 +515,43 @@ function FormInput({
 function TicketStub({
   ticket,
   groupName,
+  index,
   onPress,
 }: {
   ticket: JointTicket;
   groupName: string;
+  index: number;
   onPress: () => void;
 }) {
-  const mmdd = fmtDate(ticket.date).slice(5);
-  const day = mmdd;
+  const [, month = "", day = ""] = ticket.date.split(/[.-]/);
+  const colors = ["#E98270", "#9FD4BB", "#B39FE3"];
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${ticket.title || "제목 없음"} 공동 티켓 전체 보기`}
       onPress={onPress}
-      style={({ pressed }) => [styles.ticketRow, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.ticketCard, pressed && styles.pressed]}
     >
-      <View style={styles.ticketStub}>
-        <Text style={styles.ticketBrand}>MEMO:RE</Text>
-        <Text style={styles.ticketDay}>{day}</Text>
+      <View
+        style={[
+          styles.ticketCardFace,
+          { backgroundColor: colors[index % colors.length] },
+        ]}
+      >
+        <Text style={styles.ticketCardDate}>
+          {String(Number(month)).padStart(2, "0")}.
+          {String(Number(day)).padStart(2, "0")}
+        </Text>
         <Text numberOfLines={1} style={styles.ticketGroupName}>
           {groupName}
         </Text>
-        <View style={styles.ticketCutLine} />
       </View>
-      <View style={styles.ticketInfo}>
-        <Text style={styles.ticketDate}>{fmtDate(ticket.date)}</Text>
-        <Text numberOfLines={1} style={styles.ticketDateGroup}>
-          {groupName}
-        </Text>
-        <Text numberOfLines={2} style={styles.ticketTitle}>
-          {ticket.title || "제목 없음"}
-        </Text>
-        <Text style={styles.ticketMore}>전체 보기 ›</Text>
-      </View>
+      <Text numberOfLines={1} style={styles.ticketCardTitle}>
+        {ticket.title || "제목 없음"}
+      </Text>
+      <Text style={styles.ticketCardParticipants}>
+        참여 {ticket.invitees}명
+      </Text>
     </Pressable>
   );
 }
@@ -292,13 +561,11 @@ function MemberProfiles({
   maxMembers,
   onInvite,
   letters,
-  names,
 }: {
   members: number;
   maxMembers: number;
   onInvite: () => void;
   letters?: string[];
-  names?: Record<string, string>;
 }) {
   const currentLetters =
     letters ?? avatarLetters.slice(1, Math.min(members, maxMembers));
@@ -307,14 +574,13 @@ function MemberProfiles({
   return (
     <View style={styles.membersWrap}>
       {visibleLetters.map((letter, i) => {
-        const colorIndex = i % avatarColors.length;
+        const colorIndex = Math.max(0, avatarLetters.indexOf(letter));
         return (
           <View key={`member-${letter}`} style={styles.memberCell}>
             <View
               style={[
                 styles.avatar,
                 { backgroundColor: avatarColors[colorIndex] },
-                i === 0 && count < maxMembers && styles.myAvatar,
               ]}
             >
               <Text
@@ -323,11 +589,11 @@ function MemberProfiles({
                   { color: avatarTextColors[colorIndex] },
                 ]}
               >
-                {i === 0 ? "나" : memberInitial(letter, names)}
+                {letter}
               </Text>
             </View>
-            <Text numberOfLines={1} style={styles.avatarCaption}>
-              {i === 0 ? "나" : memberLabel(letter, names)}
+            <Text style={styles.avatarCaption}>
+              {i === 0 ? "나" : `멤버 ${letter}`}
             </Text>
           </View>
         );
@@ -363,30 +629,47 @@ export default function GroupScreen({
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [popup, setPopup] = useState<Popup>("none");
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
+  const [monthPickerVisible, setMonthPickerVisible] = useState(false);
+  const [expandedMonthYear, setExpandedMonthYear] = useState<string | null>(
+    null,
+  );
+  const [datePickerTarget, setDatePickerTarget] = useState<
+    "first" | "joint" | null
+  >(null);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
   const [groupName, setGroupName] = useState("");
+  const [inviteLink, setInviteLink] = useState("");
   const [firstDate, setFirstDate] = useState(fmtDate(dateToday()));
   const [firstTitle, setFirstTitle] = useState("");
   const [createdGroup, setCreatedGroup] = useState<DemoGroup | null>(null);
   const [jointDate, setJointDate] = useState(fmtDate(dateToday()));
   const [jointTitle, setJointTitle] = useState("");
-  const [personalTicketReturnPage, setPersonalTicketReturnPage] = useState<
-    "jointDone" | "ticketMembers"
-  >("jointDone");
-  const [serverTicketDetail, setServerTicketDetail] =
-    useState<SharedTicketDetailResponse | null>(null);
-  const [selectedTicketKey, setSelectedTicketKey] = useState<string | null>(
+  const [selectedSlotUserId, setSelectedSlotUserId] = useState<number | null>(
     null,
   );
-  const [selectedMemberTicket, setSelectedMemberTicket] = useState<{
-    memberName: string;
-    ticket: IssuedTicket;
-  } | null>(null);
+  const [ticketDetailShowingBack, setTicketDetailShowingBack] = useState(false);
   const [selectedJointMembers, setSelectedJointMembers] = useState<string[]>(
     [],
   );
   const [pendingJointMembers, setPendingJointMembers] = useState<string[]>([]);
   const [duplicateDate, setDuplicateDate] = useState("");
-  const [joinedIds, setJoinedIds] = useState<string[]>([]);
+  const [invite, setInvite] = useState<{
+    token: string;
+    info: InviteInfoResponse;
+  } | null>(null);
+  const [ticketDetail, setTicketDetail] =
+    useState<SharedTicketDetailResponse | null>(null);
+  const requestVersion = useRef(0);
+  const submitting = useRef(false);
+  useEffect(
+    () => () => {
+      requestVersion.current += 1;
+    },
+    [],
+  );
   const [leaveRecordChoice, setLeaveRecordChoice] =
     useState<RecordChoice>("keep");
   const [kickRecordChoice, setKickRecordChoice] =
@@ -398,6 +681,10 @@ export default function GroupScreen({
   const [groupLeaders, setGroupLeaders] = useState<Record<string, string>>(() =>
     Object.fromEntries(groups.map((group) => [group.id, "나"])),
   );
+  const [groupCoverImages, setGroupCoverImages] = useState<
+    Record<string, string>
+  >({});
+  const [newGroupCoverUri, setNewGroupCoverUri] = useState<string | null>(null);
   const [selectedSuccessor, setSelectedSuccessor] = useState<string | null>(
     null,
   );
@@ -415,127 +702,237 @@ export default function GroupScreen({
     Record<string, string[]>
   >({});
 
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(GROUP_COVER_IMAGES_KEY)
+      .then((raw) => {
+        if (!active || !raw) return;
+        const parsed: unknown = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+          return;
+        const images = Object.fromEntries(
+          Object.entries(parsed).filter(
+            ([id, uri]) => typeof id === "string" && typeof uri === "string",
+          ),
+        ) as Record<string, string>;
+        setGroupCoverImages(images);
+      })
+      .catch(() => {
+        // 이미지 캐시를 읽지 못해도 기본 마스코트로 그룹 목록을 표시합니다.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const selectedGroup =
     groups.find((g) => g.id === selectedGroupId) ?? groups[0];
   const regularGroups = groups.filter((group) => !group.isDefault);
   const defaultGroup = groups.find((group) => group.isDefault);
   const regularGroupCount = regularGroups.length;
+
+  async function pickGroupCoverImage(): Promise<string | null> {
+    try {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          "사진 권한 필요",
+          "그룹 이미지를 바꾸려면 사진 접근을 허용해 주세요.",
+        );
+        return null;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+      });
+      if (result.canceled) return null;
+      return result.assets[0]?.uri ?? null;
+    } catch {
+      Alert.alert(
+        "그룹 이미지 오류",
+        "이미지를 불러오지 못했어요. 다시 시도해 주세요.",
+      );
+      return null;
+    }
+  }
+  async function saveGroupCoverImage(groupId: string, uri: string) {
+    let storedImages: Record<string, string> = {};
+    try {
+      const raw = await AsyncStorage.getItem(GROUP_COVER_IMAGES_KEY);
+      if (raw) {
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          storedImages = Object.fromEntries(
+            Object.entries(parsed).filter(
+              ([, value]) => typeof value === "string",
+            ),
+          ) as Record<string, string>;
+        }
+      }
+    } catch {
+      // 현재 메모리 값으로 저장을 계속합니다.
+    }
+    const nextImages = { ...storedImages, ...groupCoverImages, [groupId]: uri };
+    setGroupCoverImages(nextImages);
+    await AsyncStorage.setItem(
+      GROUP_COVER_IMAGES_KEY,
+      JSON.stringify(nextImages),
+    );
+  }
+  async function changeGroupCover(group: DemoGroup) {
+    // 고정 그룹은 그룹 목록에서 편집 가능한 이미지 카드로 표시하지 않습니다.
+    if (group.isDefault) return;
+    const uri = await pickGroupCoverImage();
+    if (!uri) return;
+    try {
+      await saveGroupCoverImage(group.id, uri);
+    } catch {
+      Alert.alert(
+        "그룹 이미지 저장 오류",
+        "이미지를 저장하지 못했어요. 다시 시도해 주세요.",
+      );
+    }
+  }
+  async function chooseNewGroupCover() {
+    const uri = await pickGroupCoverImage();
+    if (uri) setNewGroupCoverUri(uri);
+  }
+  useEffect(() => {
+    const hasUnsortedTickets = groups.some((group) => {
+      const sorted = sortJointTicketsByDate(group.tickets);
+      return group.tickets.some((ticket, index) => ticket !== sorted[index]);
+    });
+    if (!hasUnsortedTickets) return;
+    setGroups((current) =>
+      current.map((group) => ({
+        ...group,
+        tickets: sortJointTicketsByDate(group.tickets),
+      })),
+    );
+  }, [groups, setGroups]);
+
   const currentMemberLetters = useMemo(() => {
     if (!selectedGroup) return [];
     const removed = removedMembersByGroup[selectedGroup.id] ?? [];
-    if (selectedGroup.memberIds) {
-      return selectedGroup.memberIds.filter((id) => !removed.includes(id));
-    }
-    const availableBeforeRemoval = Math.min(
-      selectedGroup.maxMembers - 1,
-      Math.max(0, selectedGroup.members - 1 + removed.length),
+    return Object.keys(selectedGroup.memberNames ?? {}).filter(
+      (id) => !removed.includes(id),
     );
-    return avatarLetters
-      .slice(1, availableBeforeRemoval + 1)
-      .filter((letter) => !removed.includes(letter));
   }, [selectedGroup, removedMembersByGroup]);
-  const groupTicketsForDisplay = useMemo(() => {
-    const tickets = selectedGroup?.tickets ?? [];
-    const sharedTickets = tickets.filter(
-      (ticket) => ticket.kind !== "personal",
-    );
-    const personalTickets = tickets.filter(
-      (ticket) => ticket.kind === "personal",
-    );
-    const mergedSharedTickets = sharedTickets.map((shared) => {
-      const sameDayTickets = personalTickets
-        .filter((personal) => personal.date === shared.date)
-        .flatMap((personal) => personal.memberTickets ?? []);
-      const byMember = new Map<string, (typeof sameDayTickets)[number]>();
-      [...(shared.memberTickets ?? []), ...sameDayTickets].forEach((entry) =>
-        byMember.set(entry.memberId, entry),
-      );
-      return byMember.size
-        ? { ...shared, memberTickets: Array.from(byMember.values()) }
-        : shared;
-    });
-    const personalWithoutSharedDate = personalTickets.filter(
-      (personal) =>
-        !sharedTickets.some((shared) => shared.date === personal.date),
-    );
-    return [...mergedSharedTickets, ...personalWithoutSharedDate];
-  }, [selectedGroup]);
-  const ticketKey = (ticket: JointTicket) =>
-    `${ticket.date}-${ticket.kind ?? "joint"}-${ticket.title}`;
-  const selectedGroupTicket = selectedGroup?.tickets.find(
-    (ticket) => ticketKey(ticket) === selectedTicketKey,
+  const groupTicketsForDisplay = useMemo(
+    () =>
+      (selectedGroup?.tickets ?? []).filter(
+        (ticket) => ticket.kind !== "personal",
+      ),
+    [selectedGroup],
   );
   const sortedTickets = useMemo(() => {
-    return [...groupTicketsForDisplay]
-      .filter((t) => !monthFilter || t.date.startsWith(monthFilter))
-      .sort((a, b) => b.date.localeCompare(a.date));
+    return sortJointTicketsByDate(
+      groupTicketsForDisplay.filter(
+        (ticket) => !monthFilter || ticket.date.startsWith(monthFilter),
+      ),
+    );
   }, [groupTicketsForDisplay, monthFilter]);
   const availableMonths = useMemo(
     () =>
       Array.from(
-        new Set((selectedGroup?.tickets || []).map((t) => t.date.slice(0, 7))),
+        new Set(groupTicketsForDisplay.map((t) => t.date.slice(0, 7))),
       ).sort((a, b) => b.localeCompare(a)),
-    [selectedGroup],
+    [groupTicketsForDisplay],
   );
+  const monthsByYear = useMemo(() => {
+    const grouped: Record<string, string[]> = {};
+    availableMonths.forEach((month) => {
+      const year = month.slice(0, 4);
+      (grouped[year] ??= []).push(month);
+    });
+    return grouped;
+  }, [availableMonths]);
+  const availableYears = Object.keys(monthsByYear).sort((a, b) =>
+    b.localeCompare(a),
+  );
+  const calendarYear = calendarMonth.getFullYear();
+  const calendarMonthIndex = calendarMonth.getMonth();
+  const calendarDaysInMonth = new Date(
+    calendarYear,
+    calendarMonthIndex + 1,
+    0,
+  ).getDate();
+  const calendarFirstWeekday = new Date(
+    calendarYear,
+    calendarMonthIndex,
+    1,
+  ).getDay();
+  const calendarCells: (number | null)[] = [
+    ...Array.from({ length: calendarFirstWeekday }, () => null),
+    ...Array.from({ length: calendarDaysInMonth }, (_, index) => index + 1),
+  ];
+  while (calendarCells.length % 7 !== 0) calendarCells.push(null);
+  const currentMonthStart = new Date(
+    new Date().getFullYear(),
+    new Date().getMonth(),
+    1,
+  );
+  const canAdvanceCalendar =
+    calendarMonth.getTime() < currentMonthStart.getTime();
 
-  function openGroup(id: string) {
-    setSelectedGroupId(id);
-    setMonthFilter(null);
-    setPopup("none");
-    setPage("group");
-    void loadGroup(id);
+  async function loadGroup(id: number) {
+    const [detail, list] = await Promise.all([
+      getGroupDetail(id),
+      getGroupSharedTickets(id),
+    ]);
+    const group: DemoGroup = {
+      id: String(id),
+      name: detail.name,
+      isDefault: detail.isDefault,
+      members: detail.memberCount,
+      maxMembers: detail.maxMembers,
+      createdAt: kstDate(detail.createdAt),
+      memberNames: Object.fromEntries(
+        detail.members
+          .filter((member) => member.userId !== currentUserId)
+          .map((member) => [String(member.userId), member.name]),
+      ),
+      tickets: list.sharedTickets.map((ticket) => ({
+        date: ticket.ticketDate,
+        title: ticket.title ?? "",
+        completed: ticket.completedCount,
+        invitees: ticket.slotCount,
+        sharedTicketId: ticket.sharedTicketId,
+        myStatus: ticket.myStatus,
+      })),
+    };
+    return group;
   }
 
-  // 그룹을 열 때 서버에서 멤버 목록(그룹 상세)과 공동 티켓 목록을 받아 온다.
-  // 화면 안에서만 만든 그룹(id가 숫자가 아님)은 서버에 없으므로 건너뛴다
-  async function loadGroup(id: string) {
-    const groupId = Number(id);
-    if (!Number.isSafeInteger(groupId)) return;
+  function updateGroup(group: DemoGroup) {
+    setGroups((previous) =>
+      previous.some((entry) => entry.id === group.id)
+        ? previous.map((entry) => (entry.id === group.id ? group : entry))
+        : [...previous, group],
+    );
+  }
+
+  async function openGroup(id: string) {
+    const version = ++requestVersion.current;
     try {
-      const [detail, list] = await Promise.all([
-        getGroupDetail(groupId),
-        getGroupSharedTickets(groupId),
-      ]);
-      const others = detail.members.filter(
-        (member) => member.userId !== currentUserId,
-      );
-      setGroups((previous) =>
-        previous.map((group) =>
-          group.id === id
-            ? {
-                ...group,
-                members: detail.memberCount,
-                maxMembers: detail.maxMembers,
-                memberIds: others.map((member) => String(member.userId)),
-                memberNames: Object.fromEntries(
-                  others.map((member) => [String(member.userId), member.name]),
-                ),
-                memberJoinedAt: Object.fromEntries(
-                  others.map((member) => [
-                    String(member.userId),
-                    kstDate(member.joinedAt),
-                  ]),
-                ),
-                tickets: list.sharedTickets.map((ticket) => ({
-                  date: ticket.ticketDate,
-                  title: ticket.title ?? "",
-                  completed: ticket.completedCount,
-                  invitees: ticket.slotCount,
-                  sharedTicketId: ticket.sharedTicketId,
-                  myStatus: ticket.myStatus,
-                })),
-              }
-            : group,
-        ),
-      );
+      const group = await loadGroup(Number(id));
+      if (version !== requestVersion.current) return;
+      updateGroup(group);
+      setSelectedGroupId(id);
+      setMonthFilter(null);
+      setPopup("none");
+      setPage("group");
     } catch {
-      Alert.alert(
-        "그룹 불러오기 오류",
-        "그룹 정보를 불러오지 못했어요. 다시 시도해 주세요.",
-      );
+      if (version === requestVersion.current) {
+        Alert.alert("그룹 불러오기 오류", "그룹 정보를 불러오지 못했어요.");
+      }
     }
   }
   function back() {
+    requestVersion.current += 1;
     if (popup !== "none") {
       setPopup("none");
       return;
@@ -544,8 +941,12 @@ export default function GroupScreen({
       onOpenHome();
       return;
     }
-    if (page === "newGroup" || page === "group") {
+    if (page === "newGroup" || page === "inviteLink" || page === "group") {
       setPage("groups");
+      return;
+    }
+    if (page === "renameGroup") {
+      setPage("group");
       return;
     }
     if (page === "firstTicket") {
@@ -603,50 +1004,113 @@ export default function GroupScreen({
       return;
     }
     setGroupName("");
+    setNewGroupCoverUri(null);
     setFirstDate(fmtDate(dateToday()));
     setFirstTitle("");
     setCreatedGroup(null);
     setPage("newGroup");
   }
-  function startFirstTicket() {
-    const name = groupName.trim();
-    if (!groupNameSchema.safeParse(name).success) {
+  function openInviteLink() {
+    setInviteLink("");
+    setPage("inviteLink");
+  }
+  async function confirmInviteLink() {
+    if (submitting.current) return;
+    const version = requestVersion.current;
+    submitting.current = true;
+    try {
+      const link = new URL(inviteLink.trim());
+      const match = /^\/invite\/([^/]+)\/?$/.exec(link.pathname);
+      if (link.protocol !== "https:" || !match) {
+        Alert.alert("초대 링크를 확인해 주세요");
+        return;
+      }
+      const token = decodeURIComponent(match[1]);
+      const info = await getInvite(token);
+      if (version !== requestVersion.current) return;
+      setInvite({ token, info });
+      setPage("join");
+    } catch {
+      if (version === requestVersion.current)
+        Alert.alert("유효한 초대 링크를 확인해 주세요");
+    } finally {
+      submitting.current = false;
+    }
+  }
+  function startRenameGroup() {
+    if (!selectedGroup || selectedGroup.isDefault) return;
+    setGroupName(selectedGroup.name);
+    setPopup("none");
+    setPage("renameGroup");
+  }
+  function saveGroupName() {
+    if (!selectedGroup) return;
+    const nextName = groupNameSchema.safeParse(groupName.trim());
+    if (!nextName.success) {
       Alert.alert(
         "그룹 이름을 확인해 주세요",
         `그룹 이름은 1~${GROUP_NAME_MAX}자까지 입력할 수 있어요.`,
       );
       return;
     }
-    setPage("firstTicket");
+    setGroups((old) =>
+      old.map((group) =>
+        group.id === selectedGroup.id
+          ? { ...group, name: nextName.data }
+          : group,
+      ),
+    );
+    setPage("group");
   }
-  function createGroup() {
-    const date = getDate(firstDate);
-    if (!date || createdGroup) return;
+  async function createGroup() {
+    if (createdGroup || submitting.current) return;
     const name = groupNameSchema.safeParse(groupName);
-    const title = jointTitleSchema.safeParse(firstTitle);
-    if (!name.success || !title.success) {
-      Alert.alert("입력 확인", "그룹 이름과 제목을 확인해 주세요.");
+    if (!name.success) {
+      Alert.alert(
+        "그룹 이름을 확인해 주세요",
+        `그룹 이름은 1~${GROUP_NAME_MAX}자까지 입력할 수 있어요.`,
+      );
       return;
     }
     if (regularGroupCount >= USER_GROUP_MAX) {
       setPage("groupFail");
       return;
     }
-    const item: DemoGroup = {
-      id: `local-${Date.now()}`,
-      name: name.data,
-      createdAt: dateToday(),
-      isDefault: false,
-      members: 1,
-      maxMembers: GROUP_MAX_MEMBERS,
-      tickets: [{ date, title: title.data, completed: 0, invitees: 1 }],
-    };
+    submitting.current = true;
+    let item: DemoGroup;
+    try {
+      const group = await createServerGroup({ name: name.data });
+      item = {
+        id: String(group.groupId),
+        name: group.name,
+        createdAt: kstDate(group.createdAt),
+        isDefault: group.isDefault,
+        members: group.memberCount,
+        maxMembers: group.maxMembers,
+        tickets: [],
+      };
+    } catch {
+      Alert.alert("그룹 만들기 오류", "그룹을 만들지 못했어요.");
+      return;
+    } finally {
+      submitting.current = false;
+    }
+    if (newGroupCoverUri) {
+      try {
+        await saveGroupCoverImage(item.id, newGroupCoverUri);
+      } catch {
+        Alert.alert(
+          "그룹 이미지 저장 오류",
+          "그룹은 만들지만 이미지는 저장하지 못했어요.",
+        );
+      }
+    }
     setGroups((old) => [...old, item]);
     setCreatedGroup(item);
     setPage("groupCreated");
   }
-  function createJoint() {
-    if (!selectedGroup) return;
+  async function createJoint() {
+    if (!selectedGroup || submitting.current) return;
     const date = getDate(jointDate);
     if (!date) return;
     const title = jointTitleSchema.safeParse(jointTitle);
@@ -662,20 +1126,35 @@ export default function GroupScreen({
       setPage("duplicate");
       return;
     }
-    const item: JointTicket = {
-      date,
-      title: title.data,
-      completed: 0,
-      invitees: selectedJointMembers.length + 1,
-      invitedMemberIds: ["me", ...selectedJointMembers],
-    };
-    setGroups((old) =>
-      old.map((g) =>
-        g.id === selectedGroup.id ? { ...g, tickets: [item, ...g.tickets] } : g,
-      ),
-    );
-    setMonthFilter(null);
-    setPage("jointDone");
+    submitting.current = true;
+    try {
+      const groupId = Number(selectedGroup.id);
+      const result = await createSharedTicket(groupId, {
+        ticketDate: date,
+        title: title.data || null,
+        inviteeIds: [currentUserId, ...selectedJointMembers.map(Number)],
+      });
+      const group = await loadGroup(groupId);
+      updateGroup(group);
+      setTicketDetail(result);
+      setMonthFilter(null);
+      setPage("jointDone");
+    } catch (error: unknown) {
+      if (
+        error instanceof ApiError &&
+        error.code === ErrorCode.SHARED_TICKET_DATE_TAKEN
+      ) {
+        setDuplicateDate(date);
+        setPage("duplicate");
+      } else {
+        Alert.alert(
+          "공동 티켓 만들기 오류",
+          "공동 티켓을 만들거나 목록을 갱신하지 못했어요.",
+        );
+      }
+    } finally {
+      submitting.current = false;
+    }
   }
   function startNewJoint() {
     setJointDate(fmtDate(dateToday()));
@@ -695,74 +1174,76 @@ export default function GroupScreen({
     );
   }
   function pickMonth() {
-    Alert.alert("월별 보기", "표시할 월을 선택해 주세요.", [
-      { text: "전체", onPress: () => setMonthFilter(null) },
-      ...availableMonths.slice(0, 5).map((month) => ({
-        text: fmtDate(month),
-        onPress: () => setMonthFilter(month),
-      })),
-      { text: "취소", style: "cancel" as const },
-    ]);
-  }
-  function joinDemo() {
-    if (!selectedGroup || selectedGroup.isDefault) return;
-    if (selectedGroup.members >= selectedGroup.maxMembers) {
-      Alert.alert(
-        "참여할 수 없어요",
-        `그룹 정원은 최대 ${selectedGroup.maxMembers}명이에요.`,
-      );
+    if (availableMonths.length === 0) {
+      Alert.alert("월별 보기", "아직 표시할 티켓이 없어요.");
       return;
     }
-    if (joinedIds.includes(selectedGroup.id)) {
-      Alert.alert("이미 참여한 그룹이에요");
-      setPage("group");
-      return;
-    }
-    setGroups((old) =>
-      old.map((g) =>
-        g.id === selectedGroup.id
-          ? { ...g, members: Math.min(selectedGroup.maxMembers, g.members + 1) }
-          : g,
-      ),
-    );
-    setJoinedIds((old) => [...old, selectedGroup.id]);
-    setPopup("none");
-    setPage("group");
-    Alert.alert(
-      "참여 시연 완료",
-      "그룹 인원이 화면에서만 1명 늘어났어요. 실제 계정 초대는 진행되지 않았습니다.",
-    );
+    setExpandedMonthYear(availableMonths[0]?.slice(0, 4) ?? null);
+    setMonthPickerVisible(true);
   }
-  async function shareInvite() {
-    if (!selectedGroup || selectedGroup.isDefault) return;
-    // Figma의 memo.re/invite/weekend는 예시 주소. 실제 초대 URL로 오인하지 않도록 명시.
+  function openDatePicker(target: "first" | "joint") {
+    const currentValue = target === "first" ? firstDate : jointDate;
+    const parsed = validDate(currentValue);
+    const base = parsed ? new Date(`${parsed}T00:00:00`) : new Date();
+    setCalendarMonth(new Date(base.getFullYear(), base.getMonth(), 1));
+    setDatePickerTarget(target);
+  }
+  function chooseCalendarDay(day: number) {
+    const chosenIso = calendarDateIso(day);
+    if (chosenIso > dateToday()) return;
+    const formatted = fmtDate(chosenIso);
+    if (datePickerTarget === "first") setFirstDate(formatted);
+    if (datePickerTarget === "joint") setJointDate(formatted);
+    setDatePickerTarget(null);
+  }
+  function calendarDateIso(day: number) {
+    return `${calendarYear}-${String(calendarMonthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+  function isSelectedCalendarDay(day: number) {
+    const date = datePickerTarget === "first" ? firstDate : jointDate;
+    return validDate(date) === calendarDateIso(day);
+  }
+  async function joinInvite() {
+    if (!invite?.info.canJoin || submitting.current) return;
+    submitting.current = true;
     try {
-      await Share.share({
-        message: `[MEMO:RE 화면 시연] ${selectedGroup?.name || "그룹"} 초대 화면입니다.\n예시 주소: ${DEMO_INVITE_URL}\n※ 서버에서 실제 발급된 링크가 아닙니다.`,
-      });
+      const result = await joinGroupByInvite(invite.token);
+      await openGroup(String(result.groupId));
+      setInvite(null);
     } catch {
-      Alert.alert("공유하기 오류", "기기의 공유 기능을 실행하지 못했어요.");
+      Alert.alert("그룹 참여 오류", "그룹에 참여하지 못했어요.");
+    } finally {
+      submitting.current = false;
     }
   }
-  function openTicketMembers(ticket: JointTicket) {
-    if (ticket.sharedTicketId) {
-      setServerTicketDetail(null);
-      void getSharedTicketDetail(ticket.sharedTicketId)
-        .then((detail) => {
-          setServerTicketDetail(detail);
-          setPage("ticketMembers");
-        })
-        .catch(() =>
-          Alert.alert("티켓 조회 오류", "티켓을 불러오지 못했어요."),
-        );
-      setSelectedTicketKey(ticketKey(ticket));
-      return;
+
+  async function shareInvite() {
+    if (!selectedGroup || selectedGroup.isDefault || submitting.current) return;
+    submitting.current = true;
+    try {
+      const { inviteUrl } = await createGroupInvite(Number(selectedGroup.id));
+      await Share.share({ message: inviteUrl });
+    } catch {
+      Alert.alert("공유하기 오류", "그룹 초대 링크를 공유하지 못했어요.");
+    } finally {
+      submitting.current = false;
     }
-    setServerTicketDetail(null);
-    setSelectedTicketKey(ticketKey(ticket));
-    setJointDate(fmtDate(ticket.date));
-    setJointTitle(ticket.title);
-    setPage("ticketMembers");
+  }
+
+  async function openTicketMembers(ticket: JointTicket) {
+    if (!ticket.sharedTicketId) return;
+    const version = ++requestVersion.current;
+    try {
+      const detail = await getSharedTicketDetail(ticket.sharedTicketId);
+      if (version !== requestVersion.current) return;
+      setTicketDetail(detail);
+      setJointDate(fmtDate(detail.ticketDate));
+      setJointTitle(detail.title ?? "");
+      setPage("ticketMembers");
+    } catch {
+      if (version === requestVersion.current)
+        Alert.alert("티켓 조회 오류", "티켓을 불러오지 못했어요.");
+    }
   }
   function startLeave() {
     if (selectedGroup?.isDefault) return;
@@ -843,158 +1324,55 @@ export default function GroupScreen({
     setPopup("kickSuccess");
   }
 
-  const countText = `(${regularGroupCount}/${USER_GROUP_MAX})`;
+  const countText = `${regularGroupCount}/${USER_GROUP_MAX}`;
   const isDetail = page === "group";
   const isForm =
     page === "newGroup" ||
+    page === "inviteLink" ||
+    page === "renameGroup" ||
     page === "firstTicket" ||
     page === "newJoint" ||
     page === "duplicate";
 
-  // 그룹 공동 티켓 완료 뒤에는 공동 티켓 날짜를 이어받아 개인 티켓을 만듭니다.
-  if (page === "personalTicket") {
-    return (
-      <TicketCreationScreen
-        selectedVisitDate={validDate(jointDate) ?? undefined}
-        originGroupName={selectedGroup?.name}
-        originGroupId={selectedGroup?.id}
-        originJointTitle={jointTitle.trim()}
-        onBackHome={() => setPage(personalTicketReturnPage)}
-        onCreateNew={() => {}}
-        onTicketIssued={(ticket) => {
-          const groupId = selectedGroup?.id;
-          if (!groupId) return;
-          const personalEntry: JointTicket = {
-            date: ticket.visitDate,
-            title: ticket.title,
-            completed: 0,
-            invitees: 1,
-            kind: "personal",
-            memberTickets: [{ memberId: "me", memberName: "나", ticket }],
-          };
-          setGroups((old) =>
-            old.map((group) => {
-              if (group.id !== groupId) return group;
-              const shared = group.tickets.find(
-                (item) =>
-                  item.date === ticket.visitDate && item.kind !== "personal",
-              );
-              if (!shared) {
-                return {
-                  ...group,
-                  tickets: [
-                    personalEntry,
-                    ...group.tickets.filter(
-                      (item) =>
-                        item.kind !== "personal" ||
-                        item.date !== ticket.visitDate,
-                    ),
-                  ],
-                };
-              }
-              return {
-                ...group,
-                tickets: group.tickets
-                  .filter(
-                    (item) =>
-                      item.kind !== "personal" ||
-                      item.date !== ticket.visitDate,
-                  )
-                  .map((item) =>
-                    item === shared
-                      ? {
-                          ...item,
-                          memberTickets: [
-                            ...(item.memberTickets ?? []).filter(
-                              (entry) => entry.memberId !== "me",
-                            ),
-                            ...(personalEntry.memberTickets ?? []),
-                          ],
-                        }
-                      : item,
-                  ),
-              };
-            }),
-          );
-        }}
-        onOpenGroupTickets={() =>
-          setPage(
-            personalTicketReturnPage === "ticketMembers"
-              ? "ticketMembers"
-              : "group",
-          )
-        }
+  function renderTicket(
+    slot: SharedTicketDetailResponse["slots"][number],
+    width: number,
+  ) {
+    if (!ticketDetail || !slot.ticket) return null;
+    const { ticket } = slot;
+    const photoUris = ticket.photos.map((photo) => photo.url);
+    if (ticket.design) {
+      return (
+        <TicketRenderer
+          designId={ticket.design.designId}
+          photoUris={photoUris}
+          width={width}
+          lieDown
+          values={{
+            title: ticketDetail.title,
+            date: ticketDetail.ticketDate,
+            groupName: ticketDetail.groupName,
+            participants: ticketDetail.slots.map((entry) => entry.name),
+          }}
+        />
+      );
+    }
+    return photoUris.map((uri, index) => (
+      <Image
+        key={index}
+        source={{ uri }}
+        style={{ width, aspectRatio: 2.5 }}
+        resizeMode="contain"
       />
-    );
+    ));
   }
 
-  if (page === "ticketMembers" && serverTicketDetail) {
-    return (
-      <SafeAreaView style={styles.safe} edges={["top"]}>
-        <View style={styles.detailHeader}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="그룹으로 돌아가기"
-            onPress={() => {
-              setServerTicketDetail(null);
-              setPage("group");
-            }}
-            style={styles.backBox}
-          >
-            <Text style={styles.backLabel}>‹</Text>
-          </Pressable>
-          <Text style={styles.detailHeaderTitle}>
-            {serverTicketDetail.groupName} 티켓
-          </Text>
-        </View>
-        <ScrollView contentContainerStyle={styles.memberTicketContent}>
-          {serverTicketDetail.slots.map((slot) => (
-            <View key={slot.userId} style={styles.memberTicketRow}>
-              <Text style={styles.memberTicketName}>
-                {slot.userId === currentUserId ? "나" : slot.name}
-              </Text>
-              {slot.ticket ? (
-                <>
-                  {slot.ticket.photos.map((photo) => (
-                    <Image
-                      key={photo.sortOrder}
-                      source={{ uri: photo.url }}
-                      style={{
-                        width: Math.min(300, windowWidth - 64),
-                        height: 120,
-                      }}
-                      resizeMode="cover"
-                    />
-                  ))}
-                  <Text style={styles.hintText}>{slot.ticket.memo}</Text>
-                </>
-              ) : (
-                <Text style={styles.emptyMemberTicketText}>
-                  아직 티켓을 만들지 않았어요
-                </Text>
-              )}
-            </View>
-          ))}
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
+  const selectedSlot = ticketDetail?.slots.find(
+    (slot) => slot.userId === selectedSlotUserId,
+  );
 
-  if (page === "ticketMembers" && selectedGroup && selectedGroupTicket) {
-    const ticketWidth = Math.min(300, windowWidth - 64);
-    const roster = [
-      { memberId: "me", memberName: "나" },
-      ...(selectedGroupTicket.invitedMemberIds ?? [])
-        .filter((id) => id !== "me")
-        .map((letter) => ({
-          memberId: letter,
-          memberName: memberLabel(letter, selectedGroup.memberNames),
-        })),
-    ];
-    const ticketsForDate = selectedGroup.tickets
-      .filter((ticket) => ticket.date === selectedGroupTicket.date)
-      .flatMap((ticket) => ticket.memberTickets ?? []);
-
+  if (page === "ticketMembers" && ticketDetail) {
+    const ticketWidth = Math.min(360, windowWidth - 24);
     return (
       <SafeAreaView style={styles.safe} edges={["top"]}>
         <View style={styles.detailHeader}>
@@ -1007,7 +1385,7 @@ export default function GroupScreen({
             <Text style={styles.backLabel}>‹</Text>
           </Pressable>
           <Text numberOfLines={1} style={styles.detailHeaderTitle}>
-            {selectedGroup.name} 티켓
+            {ticketDetail.groupName} 티켓
           </Text>
           <View style={styles.ellipsisBox} />
         </View>
@@ -1019,82 +1397,48 @@ export default function GroupScreen({
           <View>
             <Text style={styles.detailSectionTitle}>멤버별 티켓</Text>
             <Text style={styles.memberTicketSubtitle}>
-              {fmtDate(selectedGroupTicket.date)} · {selectedGroupTicket.title}
+              {fmtDate(ticketDetail.ticketDate)} · {ticketDetail.title}
             </Text>
           </View>
-          {roster.map((member) => {
-            const issued = ticketsForDate.find(
-              (entry) => entry.memberId === member.memberId,
-            );
-            return (
-              <View key={member.memberId} style={styles.memberTicketRow}>
-                <Text style={styles.memberTicketName}>{member.memberName}</Text>
-                {issued ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`${member.memberName} 티켓 앞면 보기`}
-                    onPress={() => {
-                      setSelectedMemberTicket({
-                        memberName: member.memberName,
-                        ticket: issued.ticket,
-                      });
-                      setPage("ticketDetail");
-                    }}
-                    style={styles.memberTicketPreviewButton}
-                  >
-                    <IssuedTicketFlipPreview
-                      ticket={issued.ticket}
-                      showingBack={false}
-                      ticketWidth={ticketWidth}
-                      onMore={() =>
-                        Alert.alert(
-                          "뒷면 문구",
-                          issued.ticket.memo || "문구가 없어요.",
-                        )
-                      }
-                    />
-                    <Text style={styles.memberTicketTapHint}>
-                      앞면 · 눌러서 앞·뒷면 보기
-                    </Text>
-                  </Pressable>
-                ) : member.memberId === "me" ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="내 티켓 만들기"
-                    onPress={() => {
-                      setJointDate(fmtDate(selectedGroupTicket.date));
-                      setJointTitle(selectedGroupTicket.title);
-                      setPersonalTicketReturnPage("ticketMembers");
-                      setPage("personalTicket");
-                    }}
-                    style={styles.emptyMemberTicketSlot}
-                  >
-                    <Text style={styles.emptyMemberTicketPlus}>＋</Text>
-                    <Text style={styles.emptyMemberTicketText}>
-                      아직 티켓을 만들지 않았어요
-                    </Text>
-                  </Pressable>
-                ) : (
-                  <View style={styles.emptyMemberTicketSlot}>
-                    <Text style={styles.emptyMemberTicketPlus}>＋</Text>
-                    <Text style={styles.emptyMemberTicketText}>
-                      아직 티켓을 만들지 않았어요
-                    </Text>
-                  </View>
-                )}
-              </View>
-            );
-          })}
+          {ticketDetail.slots.map((slot) => (
+            <View key={slot.userId} style={styles.memberTicketRow}>
+              <Text>{slot.userId === currentUserId ? "나" : slot.name}</Text>
+              {slot.ticket ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${slot.name} 티켓 보기`}
+                  style={styles.memberTicketPreviewButton}
+                  onPress={() => {
+                    setSelectedSlotUserId(slot.userId);
+                    setTicketDetailShowingBack(false);
+                    setPage("ticketDetail");
+                  }}
+                >
+                  {renderTicket(slot, ticketWidth)}
+                </Pressable>
+              ) : (
+                <View
+                  style={[
+                    styles.emptyMemberTicketSlot,
+                    { width: ticketWidth, aspectRatio: 2.5 },
+                  ]}
+                >
+                  <Text style={styles.emptyMemberTicketText}>
+                    아직 티켓을 만들지 않았어요
+                  </Text>
+                </View>
+              )}
+            </View>
+          ))}
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  if (page === "ticketDetail" && selectedMemberTicket) {
-    const ticketWidth = Math.min(320, windowWidth - 40);
-    const ticket = selectedMemberTicket.ticket;
-    const onMore = () =>
-      Alert.alert("뒷면 문구", ticket.memo || "문구가 없어요.");
+  if (page === "ticketDetail" && selectedSlot?.ticket && ticketDetail) {
+    const ticketCardWidth = Math.min(390, windowWidth - 40);
+    const ticket = selectedSlot.ticket;
+    const ticketDate = fmtDate(ticketDetail.ticketDate);
     return (
       <SafeAreaView style={styles.safe} edges={["top"]}>
         <View style={styles.detailHeader}>
@@ -1107,36 +1451,64 @@ export default function GroupScreen({
             <Text style={styles.backLabel}>‹</Text>
           </Pressable>
           <Text numberOfLines={1} style={styles.detailHeaderTitle}>
-            {selectedMemberTicket.memberName}의 티켓
+            티켓 미리보기
           </Text>
           <View style={styles.ellipsisBox} />
         </View>
         <ScrollView
           style={styles.flex}
-          contentContainerStyle={styles.ticketSidesContent}
+          contentContainerStyle={styles.ticketDetailContent}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.ticketSideLabel}>앞면</Text>
-          <IssuedTicketFlipPreview
-            ticket={ticket}
-            showingBack={false}
-            ticketWidth={ticketWidth}
-            onMore={onMore}
-          />
-          <Text style={styles.ticketSideLabel}>뒷면</Text>
-          <IssuedTicketFlipPreview
-            ticket={ticket}
-            showingBack
-            ticketWidth={ticketWidth}
-            onMore={onMore}
-          />
+          <View style={styles.ticketCreator}>
+            <Text style={styles.ticketCreatorLabel}>생성자</Text>
+            <Text style={styles.ticketCreatorName}>{selectedSlot.name}</Text>
+          </View>
+          <View style={styles.ticketDetailStage}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                ticketDetailShowingBack
+                  ? "티켓 앞면으로 뒤집기"
+                  : "티켓 뒷면으로 뒤집기"
+              }
+              onPress={() => setTicketDetailShowingBack((showing) => !showing)}
+              style={[
+                ticketDetailShowingBack
+                  ? styles.ticketBackNoteCard
+                  : styles.ticketPreviewCard,
+                { width: ticketCardWidth },
+              ]}
+            >
+              {ticketDetailShowingBack ? (
+                <>
+                  <View style={styles.ticketBackNoteHeader}>
+                    <Text style={styles.ticketBackNoteLabel}>MEMORY NOTE</Text>
+                    <Text style={styles.ticketBackNoteDate}>{ticketDate}</Text>
+                  </View>
+                  {!!ticket.memo?.trim() && (
+                    <Text style={styles.ticketBackNoteText}>{ticket.memo}</Text>
+                  )}
+                </>
+              ) : (
+                renderTicket(selectedSlot, ticketCardWidth - 12)
+              )}
+            </Pressable>
+          </View>
+          <Text style={styles.ticketFlipHint}>
+            티켓을 누르면 {ticketDetailShowingBack ? "앞면" : "뒷면"}을 볼 수
+            있어요
+          </Text>
         </ScrollView>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
+    <SafeAreaView
+      style={[styles.safe, page === "groups" && styles.groupsSafe]}
+      edges={["top"]}
+    >
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -1155,7 +1527,17 @@ export default function GroupScreen({
                   resizeMode="contain"
                   accessibilityLabel="MEMO:RE 로고"
                 />
+                <View
+                  accessible
+                  accessibilityLabel="알림"
+                  style={styles.notificationButton}
+                >
+                  <View style={styles.bellBody} />
+                  <View style={styles.bellBase} />
+                  <View style={styles.bellClapper} />
+                </View>
               </View>
+              <Text style={styles.groupPageTitle}>그룹</Text>
               {defaultGroup && (
                 <Pressable
                   accessibilityRole="button"
@@ -1163,46 +1545,93 @@ export default function GroupScreen({
                   onPress={() => openGroup(defaultGroup.id)}
                   style={styles.personalCard}
                 >
-                  <Text style={styles.personalTitle}>{defaultGroup?.name}</Text>
-                  <Text style={styles.personalSub}>
-                    멤버 {defaultGroup?.members} / {defaultGroup?.maxMembers}명
-                  </Text>
+                  <View style={styles.personalAvatar}>
+                    <Text style={styles.personalAvatarText}>
+                      {defaultGroup.name.trim().slice(0, 1) || "나"}
+                    </Text>
+                  </View>
+                  <View style={styles.personalCopy}>
+                    <Text style={styles.personalTitle}>
+                      {defaultGroup.name}
+                    </Text>
+                    <Text style={styles.personalSub}>나만의 티켓 보관함</Text>
+                  </View>
                 </Pressable>
               )}
               <View style={styles.groupSectionHeader}>
-                <Text style={styles.sectionHeading}>나의 그룹</Text>
-                <Text style={styles.sectionHeading}>{countText}</Text>
-              </View>
-              <View style={styles.groupCards}>
-                {regularGroups.map((group) => (
+                <Text style={styles.myGroupsHeading}>
+                  나의 그룹 {countText}
+                </Text>
+                <View style={styles.groupHeaderActions}>
                   <Pressable
-                    key={group.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`${group.name} 그룹 상세`}
-                    onPress={() => openGroup(group.id)}
+                    accessibilityLabel="초대 링크로 참여"
+                    onPress={openInviteLink}
                     style={({ pressed }) => [
-                      styles.groupCard,
+                      styles.inviteLinkEntryButton,
                       pressed && styles.pressed,
                     ]}
                   >
-                    <Text numberOfLines={1} style={styles.groupCardTitle}>
-                      {group.name}
+                    <Text style={styles.inviteLinkEntryText}>
+                      초대 링크 참여
                     </Text>
-                    <View style={styles.groupCardMeta}>
-                      <Text style={styles.groupCardDate}>
-                        {fmtDate(
-                          group.createdAt ||
-                            group.tickets[0]?.date ||
-                            dateToday(),
-                        )}
-                      </Text>
-                      <Text style={styles.groupCardDate}>
-                        ({Math.min(group.members, group.maxMembers)}/
-                        {group.maxMembers})
-                      </Text>
-                    </View>
                   </Pressable>
-                ))}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="새 그룹 만들기"
+                    onPress={newGroup}
+                    disabled={regularGroupCount >= USER_GROUP_MAX}
+                    style={({ pressed }) => [
+                      styles.newGroupButton,
+                      pressed && styles.pressed,
+                      regularGroupCount >= USER_GROUP_MAX && styles.disabled,
+                    ]}
+                  >
+                    <Text style={styles.newGroupButtonText}>＋ 새 그룹</Text>
+                  </Pressable>
+                </View>
+              </View>
+              <View style={styles.groupCards}>
+                {regularGroups.map((group) => {
+                  const imageUri = groupCoverImages[group.id];
+                  return (
+                    <View key={group.id} style={styles.groupCard}>
+                      <View style={styles.groupCoverButton}>
+                        <Image
+                          source={
+                            imageUri ? { uri: imageUri } : groupDefaultMascot
+                          }
+                          style={styles.groupCoverImage}
+                          resizeMode={imageUri ? "cover" : "contain"}
+                        />
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`${group.name} 그룹 상세`}
+                        onPress={() => openGroup(group.id)}
+                        style={({ pressed }) => [
+                          styles.groupCardInfo,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text numberOfLines={1} style={styles.groupCardTitle}>
+                          {group.name}
+                        </Text>
+                        <Text style={styles.groupCardMembers}>
+                          멤버 {Math.min(group.members, group.maxMembers)}/
+                          {group.maxMembers}
+                        </Text>
+                        <Text style={styles.groupCardDate}>
+                          {fmtDate(
+                            group.createdAt ||
+                              group.tickets[0]?.date ||
+                              dateToday(),
+                          )}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  );
+                })}
                 {regularGroupCount === 0 && (
                   <Text style={styles.hintText}>
                     아직 그룹이 없어요. 새 그룹을 만들어 보세요.
@@ -1210,232 +1639,330 @@ export default function GroupScreen({
                 )}
               </View>
             </ScrollView>
-            <View style={styles.homeAction}>
-              <TextButton
-                text="새 그룹 만들기"
-                onPress={newGroup}
-                disabled={regularGroupCount >= USER_GROUP_MAX}
-              />
-            </View>
-            <View style={styles.bottomNav}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="홈"
-                onPress={onOpenHome}
-                style={styles.tab}
-              >
-                <Text style={styles.tabText}>Home</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="그룹"
-                accessibilityState={{ selected: true }}
-                style={styles.tab}
-              >
-                <Text style={styles.tabActive}>Group</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="스토어"
-                onPress={() =>
+            <BottomNavigation
+              activeTab="group"
+              onSelect={(tab) => {
+                if (tab === "home") onOpenHome();
+                else if (tab === "my") onOpenMy();
+                else if (tab === "store") {
                   Alert.alert(
                     "스토어",
                     "스토어 화면은 이번 05 구현 범위에 포함되지 않았어요.",
-                  )
+                  );
                 }
-                style={styles.tab}
-              >
-                <Text style={styles.tabText}>Store</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="마이"
-                onPress={onOpenMy}
-                style={styles.tab}
-              >
-                <Text style={styles.tabText}>My</Text>
-              </Pressable>
-            </View>
+              }}
+            />
           </>
         ) : (
           <>
-            <View style={styles.detailHeader}>
+            <View
+              style={[
+                styles.detailHeader,
+                isDetail && styles.groupDetailHeader,
+                (page === "newGroup" || page === "inviteLink") &&
+                  styles.newGroupHeader,
+                page === "kickSelect" && styles.memberManagementHeader,
+              ]}
+            >
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="뒤로가기"
                 onPress={back}
-                style={styles.backBox}
+                style={[
+                  styles.backBox,
+                  (isDetail || page === "newGroup" || page === "inviteLink") &&
+                    styles.groupDetailBackBox,
+                ]}
               >
                 <Text style={styles.backLabel}>‹</Text>
               </Pressable>
-              <Text numberOfLines={1} style={styles.detailHeaderTitle}>
-                {isDetail || page === "newJoint" || page === "jointDone"
-                  ? selectedGroup?.name || "그룹"
-                  : page === "kickSelect"
-                    ? "멤버 관리"
-                    : page === "handoffSelect"
-                      ? "그룹장 권한 넘기기"
-                      : ""}
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.detailHeaderTitle,
+                  (isDetail || page === "newGroup" || page === "inviteLink") &&
+                    styles.groupDetailHeaderTitle,
+                  (page === "newGroup" || page === "inviteLink") &&
+                    styles.newGroupHeaderTitle,
+                  (page === "kickSelect" ||
+                    page === "renameGroup" ||
+                    page === "handoffSelect") &&
+                    styles.memberManagementHeaderTitle,
+                ]}
+              >
+                {page === "newGroup"
+                  ? "새 그룹 만들기"
+                  : page === "inviteLink"
+                    ? "그룹 초대"
+                    : page === "renameGroup"
+                      ? "그룹 이름 변경"
+                      : page === "newJoint" || page === "jointDone"
+                        ? selectedGroup?.name || "그룹"
+                        : page === "kickSelect"
+                          ? "멤버 관리"
+                          : page === "handoffSelect"
+                            ? "그룹장 권한 넘기기"
+                            : ""}
               </Text>
-              {isDetail ? (
+              {isDetail && selectedGroup?.isDefault ? (
+                <View style={styles.ellipsisBox} />
+              ) : isDetail ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="그룹 더보기"
                   onPress={() => {
-                    if (selectedGroup?.isDefault) return;
                     setPopup(popup === "more" ? "none" : "more");
                   }}
-                  style={styles.ellipsisBox}
+                  style={[styles.ellipsisBox, styles.groupDetailEllipsisBox]}
                 >
-                  <Text style={styles.ellipsis}>•••</Text>
+                  <Text style={[styles.ellipsis, styles.groupDetailEllipsis]}>
+                    •••
+                  </Text>
                 </Pressable>
               ) : (
-                <View style={styles.ellipsisBox} />
+                <View
+                  style={[
+                    styles.ellipsisBox,
+                    (page === "newGroup" || page === "inviteLink") &&
+                      styles.newGroupHeaderSpacer,
+                  ]}
+                />
               )}
             </View>
 
             {isDetail && selectedGroup ? (
-              <ScrollView
-                style={styles.flex}
-                contentContainerStyle={styles.detailContent}
-                showsVerticalScrollIndicator={false}
-              >
-                <View style={styles.memberSection}>
-                  <View style={styles.inlineTitle}>
-                    <Text style={styles.detailSectionTitle}>그룹 참여자</Text>
-                    <Text style={styles.sectionCount}>
-                      {Math.min(
-                        selectedGroup.members,
-                        selectedGroup.maxMembers,
-                      )}
-                      /{selectedGroup.maxMembers}
-                    </Text>
-                  </View>
-                  <MemberProfiles
-                    members={selectedGroup.members}
-                    maxMembers={selectedGroup.maxMembers}
-                    letters={currentMemberLetters}
-                    names={selectedGroup.memberNames}
-                    onInvite={() =>
-                      selectedGroup.isDefault ? newGroup() : setPopup("invite")
-                    }
-                  />
-                </View>
-                <View style={styles.ticketSection}>
-                  <Text style={styles.detailSectionTitle}>공동 티켓</Text>
-                  <View style={styles.filterRow}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="전체"
-                      onPress={() => setMonthFilter(null)}
-                      style={[
-                        styles.filterButton,
-                        !monthFilter && styles.filterActive,
-                      ]}
-                    >
-                      <Text style={styles.filterText}>전체</Text>
-                    </Pressable>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="월별 보기"
-                      onPress={pickMonth}
-                      style={[
-                        styles.filterButton,
-                        styles.monthButton,
-                        monthFilter !== null && styles.filterActive,
-                      ]}
-                    >
-                      <Text style={styles.filterText}>
-                        {monthFilter ? fmtDate(monthFilter) : "월별 보기"} ▾
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-                <View style={styles.ticketList}>
+              <>
+                <ScrollView
+                  style={styles.flex}
+                  contentContainerStyle={styles.detailContent}
+                  showsVerticalScrollIndicator={false}
+                >
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="새 공동 티켓 만들기"
-                    onPress={startNewJoint}
+                    accessibilityLabel={`${selectedGroup.name} 그룹 이미지 변경`}
+                    accessibilityHint="사진 보관함에서 그룹 대표 이미지를 선택합니다"
+                    onPress={() => void changeGroupCover(selectedGroup)}
                     style={({ pressed }) => [
-                      styles.createTicketRow,
+                      styles.groupRoomCover,
                       pressed && styles.pressed,
                     ]}
                   >
-                    <Text style={styles.ticketPlus}>＋</Text>
-                    <Text style={styles.createTicketLabel}>
-                      새 공동 티켓 만들기
-                    </Text>
-                  </Pressable>
-                  {sortedTickets.map((ticket) => (
-                    <TicketStub
-                      key={`${ticket.date}-${ticket.kind ?? "joint"}-${ticket.title}`}
-                      ticket={ticket}
-                      groupName={selectedGroup.name}
-                      onPress={() => openTicketMembers(ticket)}
+                    <Image
+                      source={
+                        groupCoverImages[selectedGroup.id]
+                          ? { uri: groupCoverImages[selectedGroup.id] }
+                          : groupDefaultMascot
+                      }
+                      style={styles.groupRoomCoverImage}
+                      resizeMode={
+                        groupCoverImages[selectedGroup.id] ? "cover" : "contain"
+                      }
                     />
-                  ))}
-                  {sortedTickets.length === 0 && (
-                    <Text style={styles.noTicketText}>
-                      표시할 공동 티켓이 없어요.
-                    </Text>
+                  </Pressable>
+                  <Text style={styles.groupRoomName}>{selectedGroup.name}</Text>
+                  {!selectedGroup.isDefault && (
+                    <View style={styles.memberSection}>
+                      <View style={styles.inlineTitle}>
+                        <Text
+                          style={[
+                            styles.detailSectionTitle,
+                            styles.groupDetailSectionTitle,
+                          ]}
+                        >
+                          참여자
+                        </Text>
+                        <Text style={styles.sectionCount}>
+                          {Math.min(
+                            selectedGroup.members,
+                            selectedGroup.maxMembers,
+                          )}
+                          /{selectedGroup.maxMembers}
+                        </Text>
+                      </View>
+                      <MemberProfiles
+                        members={selectedGroup.members}
+                        maxMembers={selectedGroup.maxMembers}
+                        letters={currentMemberLetters}
+                        onInvite={() =>
+                          selectedGroup.isDefault
+                            ? newGroup()
+                            : setPopup("invite")
+                        }
+                      />
+                    </View>
                   )}
-                </View>
-              </ScrollView>
+                  <View style={styles.ticketSection}>
+                    <View style={styles.ticketSectionHeader}>
+                      <Text
+                        style={[
+                          styles.detailSectionTitle,
+                          styles.groupDetailSectionTitle,
+                        ]}
+                      >
+                        공동 티켓
+                      </Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="새 티켓"
+                        onPress={startNewJoint}
+                        style={({ pressed }) => [
+                          styles.newTicketButton,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.newTicketButtonText}>
+                          ＋ 새 티켓
+                        </Text>
+                      </Pressable>
+                    </View>
+                    <View style={styles.filterRow}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="전체 티켓"
+                        onPress={() => setMonthFilter(null)}
+                        style={[
+                          styles.filterButton,
+                          !monthFilter && styles.filterActive,
+                        ]}
+                      >
+                        <Text style={styles.filterText}>전체 티켓</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="월별 보기"
+                        onPress={pickMonth}
+                        style={[
+                          styles.filterButton,
+                          styles.monthButton,
+                          monthFilter && styles.filterActive,
+                        ]}
+                      >
+                        <Text style={styles.filterText}>
+                          {monthFilter ? fmtDate(monthFilter) : "월별 보기"} ▾
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                  <View style={styles.ticketListHeading}>
+                    <Text style={styles.ticketPeriodLabel}>
+                      {monthFilter
+                        ? `${fmtDate(monthFilter)} 기간`
+                        : "전체 기간"}
+                    </Text>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    nestedScrollEnabled
+                    contentContainerStyle={styles.ticketGrid}
+                  >
+                    {sortedTickets.map((ticket, index) => (
+                      <TicketStub
+                        key={`${ticket.date}-${ticket.kind ?? "joint"}-${ticket.title}`}
+                        ticket={ticket}
+                        groupName={selectedGroup.name}
+                        index={index}
+                        onPress={() => openTicketMembers(ticket)}
+                      />
+                    ))}
+                    {sortedTickets.length === 0 && (
+                      <Text style={styles.noTicketText}>
+                        표시할 공동 티켓이 없어요.
+                      </Text>
+                    )}
+                  </ScrollView>
+                </ScrollView>
+                <BottomNavigation
+                  activeTab="group"
+                  onSelect={(tab) => {
+                    if (tab === "home") onOpenHome();
+                    else if (tab === "my") onOpenMy();
+                    else if (tab === "store") {
+                      Alert.alert(
+                        "스토어",
+                        "스토어 화면은 이번 05 구현 범위에 포함되지 않았어요.",
+                      );
+                    }
+                  }}
+                />
+              </>
             ) : page === "join" ? (
               <>
                 <View style={styles.joinBody}>
                   <Text style={styles.joinHeading}>
-                    {selectedGroup?.name ?? "그룹"}에 초대받았어요
+                    {invite?.info.groupName}에 초대받았어요
                   </Text>
                   <Text style={styles.joinSubtitle}>
-                    비공개 그룹 · 멤버 {selectedGroup?.members ?? 0}명
+                    비공개 그룹 · 멤버 {invite?.info.memberCount}명
                   </Text>
                 </View>
                 <View style={styles.formBottom}>
-                  <TextButton text="그룹 참여하기" onPress={joinDemo} />
+                  {invite?.info.canJoin ? (
+                    <TextButton text="그룹 참여하기" onPress={joinInvite} />
+                  ) : (
+                    <Text style={styles.joinSubtitle}>
+                      이 그룹에 참여할 수 없어요.
+                    </Text>
+                  )}
                 </View>
               </>
             ) : page === "kickSelect" ? (
               <>
                 <ScrollView
                   style={styles.flex}
-                  contentContainerStyle={styles.memberManageContent}
+                  contentContainerStyle={styles.memberManagementContent}
                   showsVerticalScrollIndicator={false}
                 >
-                  <View style={styles.memberTabs}>
+                  <View
+                    style={[styles.memberTabs, styles.memberManagementTabs]}
+                  >
                     <Pressable
                       onPress={() => setMemberTab("active")}
                       style={[
                         styles.memberTab,
-                        memberTab === "active" && styles.memberTabActive,
+                        styles.memberManagementTab,
+                        memberTab === "active" &&
+                          styles.memberManagementTabSelected,
                       ]}
                     >
                       <Text
                         style={[
                           styles.memberTabText,
-                          memberTab === "active" && styles.memberTabTextActive,
+                          styles.memberManagementTabText,
+                          memberTab === "active" &&
+                            styles.memberManagementTabTextActive,
                         ]}
                       >
-                        참여자 · {currentMemberLetters.length + 1}
+                        참여 중 · {currentMemberLetters.length + 1}
                       </Text>
+                      {memberTab === "active" && (
+                        <View style={styles.memberManagementTabIndicator} />
+                      )}
                     </Pressable>
                     <Pressable
                       onPress={() => setMemberTab("removed")}
                       style={[
                         styles.memberTab,
-                        memberTab === "removed" && styles.memberTabActive,
+                        styles.memberManagementTab,
+                        memberTab === "removed" &&
+                          styles.memberManagementTabSelected,
                       ]}
                     >
                       <Text
                         style={[
                           styles.memberTabText,
-                          memberTab === "removed" && styles.memberTabTextActive,
+                          styles.memberManagementTabText,
+                          memberTab === "removed" &&
+                            styles.memberManagementTabTextActive,
                         ]}
                       >
                         탈퇴 멤버 ·{" "}
                         {removedMembersByGroup[selectedGroup?.id ?? ""]
                           ?.length ?? 0}
                       </Text>
+                      {memberTab === "removed" && (
+                        <View style={styles.memberManagementTabIndicator} />
+                      )}
                     </Pressable>
                   </View>
                   <View style={styles.memberManageList}>
@@ -1443,29 +1970,43 @@ export default function GroupScreen({
                       ? currentMemberLetters.map((letter) => (
                           <View
                             key={`member-${letter}`}
-                            style={styles.managedMemberRow}
+                            style={[
+                              styles.managedMemberRow,
+                              styles.memberManagementCard,
+                            ]}
                           >
                             <View
-                              style={[styles.jointAvatar, styles.managedAvatar]}
+                              style={[
+                                styles.jointAvatar,
+                                styles.managedAvatar,
+                                styles.memberManagementAvatar,
+                              ]}
                             >
-                              <Text style={styles.jointAvatarText}>
-                                {memberInitial(
-                                  letter,
-                                  selectedGroup?.memberNames,
-                                )}
+                              <Text
+                                style={[
+                                  styles.jointAvatarText,
+                                  styles.memberManagementAvatarText,
+                                ]}
+                              >
+                                {letter}
                               </Text>
                             </View>
                             <View style={styles.managedMemberInfo}>
-                              <Text style={styles.memberManageText}>
-                                {memberLabel(
-                                  letter,
-                                  selectedGroup?.memberNames,
-                                )}
+                              <Text
+                                style={[
+                                  styles.memberManageText,
+                                  styles.memberManagementName,
+                                ]}
+                              >
+                                멤버 {letter}
                               </Text>
-                              <Text style={styles.managedMemberDate}>
-                                {fmtDate(
-                                  selectedGroup?.memberJoinedAt?.[letter] ?? "",
-                                )}
+                              <Text
+                                style={[
+                                  styles.managedMemberDate,
+                                  styles.memberManagementDate,
+                                ]}
+                              >
+                                2026.11.09
                               </Text>
                             </View>
                             <Pressable
@@ -1473,7 +2014,7 @@ export default function GroupScreen({
                                 memberMenuAnchors.current[letter] = node;
                               }}
                               accessibilityRole="button"
-                              accessibilityLabel={`${memberLabel(letter, selectedGroup?.memberNames)} 관리`}
+                              accessibilityLabel={`멤버 ${letter} 관리`}
                               onPress={() => {
                                 setSelectedKickMember(letter);
                                 memberMenuAnchors.current[
@@ -1493,9 +2034,19 @@ export default function GroupScreen({
                                   setPopup("memberAction");
                                 });
                               }}
-                              style={styles.managedMemberMenu}
+                              style={[
+                                styles.managedMemberMenu,
+                                styles.memberManagementMenu,
+                              ]}
                             >
-                              <Text style={styles.memberManageDots}>⋮</Text>
+                              <Text
+                                style={[
+                                  styles.memberManageDots,
+                                  styles.memberManagementDots,
+                                ]}
+                              >
+                                ⋮
+                              </Text>
                             </Pressable>
                           </View>
                         ))
@@ -1504,26 +2055,42 @@ export default function GroupScreen({
                         ).map((letter) => (
                           <View
                             key={`removed-${letter}`}
-                            style={styles.managedMemberRow}
+                            style={[
+                              styles.managedMemberRow,
+                              styles.memberManagementCard,
+                            ]}
                           >
                             <View
-                              style={[styles.jointAvatar, styles.managedAvatar]}
+                              style={[
+                                styles.jointAvatar,
+                                styles.managedAvatar,
+                                styles.memberManagementAvatar,
+                              ]}
                             >
-                              <Text style={styles.jointAvatarText}>
-                                {memberInitial(
-                                  letter,
-                                  selectedGroup?.memberNames,
-                                )}
+                              <Text
+                                style={[
+                                  styles.jointAvatarText,
+                                  styles.memberManagementAvatarText,
+                                ]}
+                              >
+                                {letter}
                               </Text>
                             </View>
                             <View style={styles.managedMemberInfo}>
-                              <Text style={styles.memberManageText}>
-                                {memberLabel(
-                                  letter,
-                                  selectedGroup?.memberNames,
-                                )}
+                              <Text
+                                style={[
+                                  styles.memberManageText,
+                                  styles.memberManagementName,
+                                ]}
+                              >
+                                멤버 {letter}
                               </Text>
-                              <Text style={styles.managedMemberDate}>
+                              <Text
+                                style={[
+                                  styles.managedMemberDate,
+                                  styles.memberManagementDate,
+                                ]}
+                              >
                                 탈퇴한 멤버
                               </Text>
                             </View>
@@ -1553,27 +2120,32 @@ export default function GroupScreen({
                           onPress={() => setSelectedSuccessor(letter)}
                           style={[
                             styles.managedMemberRow,
+                            styles.memberManagementCard,
                             selected && styles.memberManageSelected,
                           ]}
                         >
                           <View
-                            style={[styles.jointAvatar, styles.managedAvatar]}
+                            style={[
+                              styles.jointAvatar,
+                              styles.managedAvatar,
+                              styles.memberManagementAvatar,
+                            ]}
                           >
-                            <Text style={styles.jointAvatarText}>
-                              {memberInitial(
-                                letter,
-                                selectedGroup?.memberNames,
-                              )}
+                            <Text
+                              style={[
+                                styles.jointAvatarText,
+                                styles.memberManagementAvatarText,
+                              ]}
+                            >
+                              {letter}
                             </Text>
                           </View>
                           <View style={styles.managedMemberInfo}>
-                            <Text style={styles.memberManageText}>
-                              {memberLabel(letter, selectedGroup?.memberNames)}
+                            <Text style={styles.memberManagementName}>
+                              멤버 {letter}
                             </Text>
-                            <Text style={styles.managedMemberDate}>
-                              {fmtDate(
-                                selectedGroup?.memberJoinedAt?.[letter] ?? "",
-                              )}
+                            <Text style={styles.memberManagementDate}>
+                              2026.11.09
                             </Text>
                           </View>
                         </Pressable>
@@ -1698,17 +2270,15 @@ export default function GroupScreen({
             ) : page === "jointDone" && selectedGroup ? (
               <>
                 <View style={[styles.formContent, styles.createdContent]}>
-                  <Text style={styles.formHeading}>{selectedGroup.name}</Text>
+                  <Text style={[styles.formHeading, styles.jointDoneGroupName]}>
+                    {selectedGroup.name}
+                  </Text>
                   <View style={styles.createdCenter}>
                     <Text style={styles.jointDoneHeading}>
                       공동 티켓 발권 완료
                     </Text>
                     <View style={styles.createdPreview}>
-                      <Text
-                        style={[styles.ticketBrand, styles.createdTicketBrand]}
-                      >
-                        MEMO:RE
-                      </Text>
+                      <Text style={styles.createdTicketBrand}>MEMO:RE</Text>
                       <Text style={styles.createdTicketDate}>
                         {fmtDate(validDate(jointDate) || dateToday()).slice(5)}
                       </Text>
@@ -1724,10 +2294,13 @@ export default function GroupScreen({
                 </View>
                 <View style={[styles.formBottom, styles.createdActions]}>
                   <TextButton
-                    text="나의 티켓 만들기"
+                    text="공동 티켓 보기"
                     onPress={() => {
-                      setPersonalTicketReturnPage("jointDone");
-                      setPage("personalTicket");
+                      const date = validDate(jointDate);
+                      const ticket = selectedGroup.tickets.find(
+                        (entry) => entry.date === date,
+                      );
+                      if (ticket) void openTicketMembers(ticket);
                     }}
                   />
                   <TextButton
@@ -1740,30 +2313,30 @@ export default function GroupScreen({
             ) : page === "groupCreated" && createdGroup ? (
               <>
                 <View style={[styles.formContent, styles.createdContent]}>
-                  <Text style={styles.formHeading}>첫 공동 티켓 만들기</Text>
+                  <Text style={styles.formHeading}>그룹을 만들었어요</Text>
                   <View style={styles.createdCenter}>
-                    <View style={styles.createdPreview}>
-                      <Text
-                        style={[styles.ticketBrand, styles.createdTicketBrand]}
-                      >
-                        MEMO:RE
-                      </Text>
-                      <Text style={styles.createdTicketDate}>
-                        {fmtDate(createdGroup.tickets[0].date).slice(5)}
-                      </Text>
-                      <Text numberOfLines={2} style={styles.createdTicketTitle}>
-                        {createdGroup.tickets[0].title}
-                      </Text>
-                      <View style={styles.createdTicketPerforation} />
-                    </View>
+                    <Image
+                      source={
+                        groupCoverImages[createdGroup.id]
+                          ? { uri: groupCoverImages[createdGroup.id] }
+                          : groupDefaultMascot
+                      }
+                      style={styles.createdGroupCover}
+                      resizeMode={
+                        groupCoverImages[createdGroup.id] ? "cover" : "contain"
+                      }
+                    />
+                    <Text style={styles.createdGroupName}>
+                      {createdGroup.name}
+                    </Text>
                     <Text style={styles.createdCaption}>
-                      그룹의 첫 공동 티켓을 만들었어요!
+                      그룹방에서 새로운 기록을 시작해 보세요.
                     </Text>
                   </View>
                 </View>
                 <View style={[styles.formBottom, styles.createdActions]}>
                   <TextButton
-                    text="나의 그룹 살펴보기"
+                    text="그룹방 열기"
                     onPress={() => openGroup(createdGroup.id)}
                   />
                   <TextButton
@@ -1794,19 +2367,119 @@ export default function GroupScreen({
               <>
                 <ScrollView
                   style={styles.flex}
-                  contentContainerStyle={styles.formContent}
+                  contentContainerStyle={[
+                    styles.formContent,
+                    page === "newGroup" && styles.newGroupContent,
+                    page === "inviteLink" && styles.inviteLinkContent,
+                  ]}
                   keyboardShouldPersistTaps="handled"
                 >
-                  {page !== "newJoint" && (
+                  {(page === "firstTicket" || page === "duplicate") && (
                     <Text style={styles.formHeading}>
-                      {page === "newGroup"
-                        ? "새 그룹 만들기"
-                        : page === "firstTicket"
-                          ? "첫 공동 티켓 만들기"
-                          : "이미 기록이 있는 날짜예요"}
+                      {page === "firstTicket"
+                        ? "첫 공동 티켓 만들기"
+                        : "이미 기록이 있는 날짜예요"}
                     </Text>
                   )}
                   {page === "newGroup" && (
+                    <View style={styles.newGroupForm}>
+                      <View style={styles.newGroupNameBlock}>
+                        <Text style={styles.newGroupLabel}>그룹 이름</Text>
+                        <TextInput
+                          accessibilityLabel="그룹 이름"
+                          value={groupName}
+                          onChangeText={setGroupName}
+                          maxLength={GROUP_NAME_MAX}
+                          autoCorrect={false}
+                          placeholder="그룹 이름을 입력해 주세요"
+                          placeholderTextColor="#A0A4AD"
+                          style={styles.newGroupNameInput}
+                        />
+                        <Text style={styles.newGroupCounter}>
+                          {groupName.length}/{GROUP_NAME_MAX}
+                        </Text>
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="그룹 이미지 선택"
+                        accessibilityHint="사진 보관함에서 그룹방 이미지를 선택합니다"
+                        onPress={() => void chooseNewGroupCover()}
+                        style={({ pressed }) => [
+                          styles.newGroupCoverPicker,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        {newGroupCoverUri ? (
+                          <Image
+                            source={{ uri: newGroupCoverUri }}
+                            style={styles.newGroupCoverPreview}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <Image
+                            source={groupDefaultMascot}
+                            style={styles.newGroupMascot}
+                            resizeMode="contain"
+                          />
+                        )}
+                        <Text
+                          style={[
+                            styles.newGroupCoverLabel,
+                            newGroupCoverUri &&
+                              styles.newGroupCoverLabelOnImage,
+                          ]}
+                        >
+                          {newGroupCoverUri
+                            ? "이미지를 눌러 변경"
+                            : "새로운 기록의 시작"}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="그룹 만들기"
+                        onPress={() => void createGroup()}
+                        disabled={!groupName.trim()}
+                        style={({ pressed }) => [
+                          styles.newGroupCreateButton,
+                          !groupName.trim() &&
+                            styles.newGroupCreateButtonDisabled,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.newGroupCreateButtonText}>
+                          그룹 만들기
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+                  {page === "inviteLink" && (
+                    <View style={styles.inviteLinkForm}>
+                      <Text style={styles.inviteLinkLabel}>초대 링크</Text>
+                      <TextInput
+                        accessibilityLabel="초대 링크"
+                        value={inviteLink}
+                        onChangeText={setInviteLink}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="url"
+                        placeholder="초대 링크를 입력해 주세요"
+                        placeholderTextColor="#8A8E99"
+                        style={styles.inviteLinkInput}
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="초대 링크 확인"
+                        onPress={confirmInviteLink}
+                        style={({ pressed }) => [
+                          styles.inviteLinkConfirmButton,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.inviteLinkConfirmText}>확인</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                  {page === "renameGroup" && (
                     <View style={styles.formStack}>
                       <FormInput
                         label={`그룹 이름 · 최대 ${GROUP_NAME_MAX}자`}
@@ -1824,6 +2497,7 @@ export default function GroupScreen({
                         value={firstDate}
                         onChangeText={setFirstDate}
                         placeholder="YYYY.MM.DD"
+                        onPress={() => openDatePicker("first")}
                       />
                       <FormInput
                         label={`제목 · 선택 · 최대 ${JOINT_TITLE_MAX}자`}
@@ -1841,6 +2515,7 @@ export default function GroupScreen({
                         value={jointDate}
                         onChangeText={setJointDate}
                         placeholder="YYYY.MM.DD"
+                        onPress={() => openDatePicker("joint")}
                       />
                       <FormInput
                         label={`제목 · 선택 · 최대 ${JOINT_TITLE_MAX}자`}
@@ -1849,32 +2524,33 @@ export default function GroupScreen({
                         placeholder="제목"
                         maxLength={JOINT_TITLE_MAX}
                       />
-                      <Text style={styles.formLabel}>참여 멤버</Text>
-                      <View style={styles.jointMemberSummary}>
-                        <View style={styles.jointAvatar}>
-                          <Text style={styles.jointAvatarText}>나</Text>
-                        </View>
-                        {selectedJointMembers.map((letter) => (
-                          <View key={letter} style={styles.jointAvatar}>
-                            <Text style={styles.jointAvatarText}>
-                              {memberInitial(
-                                letter,
-                                selectedGroup?.memberNames,
-                              )}
-                            </Text>
+                      {!selectedGroup?.isDefault && (
+                        <>
+                          <Text style={styles.formLabel}>참여 멤버</Text>
+                          <View style={styles.jointMemberSummary}>
+                            <View style={styles.jointAvatar}>
+                              <Text style={styles.jointAvatarText}>나</Text>
+                            </View>
+                            {selectedJointMembers.map((letter) => (
+                              <View key={letter} style={styles.jointAvatar}>
+                                <Text style={styles.jointAvatarText}>
+                                  {letter}
+                                </Text>
+                              </View>
+                            ))}
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel="티켓 참여 멤버 추가"
+                              onPress={openParticipants}
+                              style={styles.addJointMember}
+                            >
+                              <Text style={styles.addJointMemberText}>
+                                ＋ 멤버 추가하기
+                              </Text>
+                            </Pressable>
                           </View>
-                        ))}
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="티켓 참여 멤버 추가"
-                          onPress={openParticipants}
-                          style={styles.addJointMember}
-                        >
-                          <Text style={styles.addJointMemberText}>
-                            ＋ 멤버 추가하기
-                          </Text>
-                        </Pressable>
-                      </View>
+                        </>
+                      )}
                     </View>
                   )}
                   {page === "duplicate" && (
@@ -1884,27 +2560,28 @@ export default function GroupScreen({
                     </Text>
                   )}
                 </ScrollView>
-                <View style={styles.formBottom}>
-                  {page === "newGroup" && (
-                    <TextButton
-                      text="다음"
-                      onPress={startFirstTicket}
-                      disabled={!groupName.trim()}
-                    />
-                  )}
-                  {page === "firstTicket" && (
-                    <TextButton text="공동 티켓 만들기" onPress={createGroup} />
-                  )}
-                  {page === "newJoint" && (
-                    <TextButton text="다음으로" onPress={createJoint} />
-                  )}
-                  {page === "duplicate" && (
-                    <TextButton
-                      text="날짜 다시 선택"
-                      onPress={() => setPage("newJoint")}
-                    />
-                  )}
-                </View>
+                {page !== "newGroup" && page !== "inviteLink" && (
+                  <View style={styles.formBottom}>
+                    {page === "firstTicket" && (
+                      <TextButton
+                        text="공동 티켓 만들기"
+                        onPress={createGroup}
+                      />
+                    )}
+                    {page === "newJoint" && (
+                      <TextButton text="다음으로" onPress={createJoint} />
+                    )}
+                    {page === "renameGroup" && (
+                      <TextButton text="변경 완료" onPress={saveGroupName} />
+                    )}
+                    {page === "duplicate" && (
+                      <TextButton
+                        text="날짜 다시 선택"
+                        onPress={() => setPage("newJoint")}
+                      />
+                    )}
+                  </View>
+                )}
               </>
             ) : (
               <View style={styles.flex} />
@@ -1912,34 +2589,64 @@ export default function GroupScreen({
           </>
         )}
 
-        {(popup === "more" || popup === "leaveConfirm") && isDetail && (
-          <View style={styles.popLayer} pointerEvents="box-none">
+        {popup === "more" && isDetail && selectedGroup && (
+          <View style={styles.moreMenuOverlay}>
             <Pressable
               style={StyleSheet.absoluteFill}
               onPress={() => setPopup("none")}
               accessibilityLabel="더보기 메뉴 닫기"
             />
             <View style={styles.moreMenu}>
+              <View style={styles.moreMenuHeader}>
+                <Text numberOfLines={1} style={styles.moreMenuGroupName}>
+                  {selectedGroup.name}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="메뉴 닫기"
+                  onPress={() => setPopup("none")}
+                  style={styles.moreMenuClose}
+                >
+                  <Text style={styles.moreMenuCloseText}>×</Text>
+                </Pressable>
+              </View>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="그룹 멤버 관리"
-                onPress={() => {
-                  startKick();
-                }}
-                style={styles.moreMenuItem}
+                onPress={startKick}
+                style={({ pressed }) => [
+                  styles.moreMenuItem,
+                  pressed && styles.pressed,
+                ]}
               >
-                <Text style={styles.moreMenuText}>그룹 멤버 관리</Text>
+                <Text style={styles.moreMenuText}>멤버 관리</Text>
+                <Text style={styles.moreMenuChevron}>›</Text>
+              </Pressable>
+              <View style={styles.moreDivider} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="그룹 이름 변경"
+                onPress={startRenameGroup}
+                style={({ pressed }) => [
+                  styles.moreMenuItem,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.moreMenuText}>그룹 이름 변경</Text>
+                <Text style={styles.moreMenuChevron}>›</Text>
               </Pressable>
               <View style={styles.moreDivider} />
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="그룹에서 나가기"
-                onPress={() => {
-                  setPopup("leaveConfirm");
-                }}
-                style={styles.moreMenuItem}
+                onPress={() => setPopup("leaveConfirm")}
+                style={({ pressed }) => [
+                  styles.moreMenuItem,
+                  pressed && styles.pressed,
+                ]}
               >
-                <Text style={styles.leaveText}>그룹에서 나가기</Text>
+                <Text style={styles.leaveText}>그룹 나가기</Text>
+                <Text style={styles.moreMenuLeaveChevron}>›</Text>
               </Pressable>
             </View>
           </View>
@@ -1947,7 +2654,7 @@ export default function GroupScreen({
         {popup === "leaveConfirm" && isDetail && (
           <View style={styles.inviteOverlay}>
             <Pressable
-              onPress={() => setPopup("more")}
+              onPress={() => setPopup("none")}
               style={StyleSheet.absoluteFill}
               accessibilityLabel="그룹 나가기 확인 닫기"
             />
@@ -2024,17 +2731,7 @@ export default function GroupScreen({
               accessibilityLabel="초대 링크 팝업 닫기"
             />
             <View style={styles.inviteDialog}>
-              <Text style={styles.inviteHeading}>초대 링크 생성 완료!</Text>
-              <Pressable
-                accessibilityRole="link"
-                accessibilityLabel="초대받은 화면 미리보기"
-                onPress={() => {
-                  setPopup("none");
-                  setPage("join");
-                }}
-              >
-                <Text style={styles.inviteUrl}>{DEMO_INVITE_URL}</Text>
-              </Pressable>
+              <Text style={styles.inviteHeading}>초대 링크 만들기</Text>
               <TextButton text="공유하기" onPress={shareInvite} />
               <Pressable
                 accessibilityRole="button"
@@ -2055,8 +2752,10 @@ export default function GroupScreen({
               accessibilityLabel="참여 멤버 선택 닫기"
             />
             <View style={styles.participantDialog}>
-              <Text style={styles.inviteHeading}>티켓 참여 멤버 추가</Text>
-              <Text style={styles.inviteUrl}>
+              <Text style={styles.participantDialogHeading}>
+                티켓 참여 멤버 추가
+              </Text>
+              <Text style={styles.participantDialogDescription}>
                 이 티켓에 함께할 멤버를 선택해 주세요.
               </Text>
               <View style={styles.participantList}>
@@ -2076,12 +2775,17 @@ export default function GroupScreen({
                       <View
                         style={[styles.jointAvatar, styles.participantAvatar]}
                       >
-                        <Text style={styles.jointAvatarText}>
-                          {memberInitial(letter, selectedGroup?.memberNames)}
+                        <Text
+                          style={[
+                            styles.jointAvatarText,
+                            styles.participantAvatarText,
+                          ]}
+                        >
+                          {letter}
                         </Text>
                       </View>
-                      <Text style={styles.memberManageText}>
-                        {memberLabel(letter, selectedGroup?.memberNames)}
+                      <Text style={styles.participantMemberText}>
+                        멤버 {letter}
                       </Text>
                       <Text style={styles.participantCheck}>
                         {selected ? "✓" : ""}
@@ -2213,13 +2917,211 @@ export default function GroupScreen({
           </View>
         )}
       </KeyboardAvoidingView>
+      <Modal
+        visible={monthPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMonthPickerVisible(false)}
+      >
+        <View style={styles.calendarBackdrop}>
+          <Pressable
+            accessibilityLabel="월 선택 닫기"
+            onPress={() => setMonthPickerVisible(false)}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.calendarDialog}>
+            <Text style={styles.calendarTitle}>월별 보기</Text>
+            <Text style={styles.calendarSubtitle}>
+              연도를 펼쳐 원하는 월을 선택해 주세요.
+            </Text>
+            <ScrollView
+              style={styles.monthOptionsScroll}
+              contentContainerStyle={styles.monthOptions}
+              showsVerticalScrollIndicator={false}
+            >
+              {availableYears.map((year) => {
+                const expanded = expandedMonthYear === year;
+                const yearMonths = monthsByYear[year] ?? [];
+                return (
+                  <View key={year} style={styles.yearSection}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded }}
+                      onPress={() =>
+                        setExpandedMonthYear(expanded ? null : year)
+                      }
+                      style={styles.yearOption}
+                    >
+                      <Text style={styles.yearOptionText}>{year}년</Text>
+                      <Text style={styles.yearOptionCount}>
+                        {yearMonths.length}개월 {expanded ? "⌃" : "⌄"}
+                      </Text>
+                    </Pressable>
+                    {expanded && (
+                      <View style={styles.yearMonths}>
+                        {yearMonths.map((month) => {
+                          const count = groupTicketsForDisplay.filter(
+                            (ticket) => ticket.date.startsWith(month),
+                          ).length;
+                          const selected = monthFilter === month;
+                          return (
+                            <Pressable
+                              key={month}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected }}
+                              onPress={() => {
+                                setMonthFilter(month);
+                                setMonthPickerVisible(false);
+                              }}
+                              style={[
+                                styles.monthOption,
+                                selected && styles.monthOptionSelected,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.monthOptionText,
+                                  selected && styles.monthOptionTextSelected,
+                                ]}
+                              >
+                                {Number(month.slice(5, 7))}월
+                              </Text>
+                              <Text style={styles.monthOptionCount}>
+                                {count}장 ›
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setMonthPickerVisible(false)}
+              style={styles.calendarCancel}
+            >
+              <Text style={styles.calendarCancelText}>취소</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={datePickerTarget !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDatePickerTarget(null)}
+      >
+        <View style={styles.calendarBackdrop}>
+          <Pressable
+            accessibilityLabel="달력 닫기"
+            onPress={() => setDatePickerTarget(null)}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.calendarDialog}>
+            <View style={styles.calendarHeader}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="이전 달"
+                onPress={() =>
+                  setCalendarMonth(
+                    new Date(calendarYear, calendarMonthIndex - 1, 1),
+                  )
+                }
+                style={styles.calendarArrow}
+              >
+                <Text style={styles.calendarArrowText}>‹</Text>
+              </Pressable>
+              <Text style={styles.calendarTitle}>
+                {calendarYear}년 {calendarMonthIndex + 1}월
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="다음 달"
+                accessibilityState={{ disabled: !canAdvanceCalendar }}
+                disabled={!canAdvanceCalendar}
+                onPress={() =>
+                  setCalendarMonth(
+                    new Date(calendarYear, calendarMonthIndex + 1, 1),
+                  )
+                }
+                style={[
+                  styles.calendarArrow,
+                  !canAdvanceCalendar && styles.calendarArrowDisabled,
+                ]}
+              >
+                <Text style={styles.calendarArrowText}>›</Text>
+              </Pressable>
+            </View>
+            <View style={styles.calendarWeekdays}>
+              {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
+                <Text key={day} style={styles.calendarWeekday}>
+                  {day}
+                </Text>
+              ))}
+            </View>
+            <View style={styles.calendarGrid}>
+              {calendarCells.map((day, index) => {
+                if (day === null) {
+                  return (
+                    <View
+                      key={`empty-${index}`}
+                      style={styles.calendarDayCell}
+                    />
+                  );
+                }
+                const disabled = calendarDateIso(day) > dateToday();
+                const selected = isSelectedCalendarDay(day);
+                return (
+                  <Pressable
+                    key={day}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${calendarYear}년 ${calendarMonthIndex + 1}월 ${day}일`}
+                    accessibilityState={{ selected, disabled }}
+                    disabled={disabled}
+                    onPress={() => chooseCalendarDay(day)}
+                    style={styles.calendarDayCell}
+                  >
+                    <View
+                      style={[
+                        styles.calendarDay,
+                        selected && styles.calendarDaySelected,
+                        disabled && styles.calendarDayDisabled,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.calendarDayText,
+                          selected && styles.calendarDayTextSelected,
+                          disabled && styles.calendarDayTextDisabled,
+                        ]}
+                      >
+                        {day}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setDatePickerTarget(null)}
+              style={styles.calendarCancel}
+            >
+              <Text style={styles.calendarCancelText}>취소</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   handoffDescription: {
-    color: C.detailMuted,
+    color: C.text,
     fontSize: 12,
     lineHeight: 18,
     marginBottom: 4,
@@ -2268,9 +3170,9 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: C.pink,
+    backgroundColor: "#F2F3F6",
   },
-  jointAvatarText: { color: C.text, fontSize: 11, fontWeight: "600" },
+  jointAvatarText: { color: "#303CB5", fontSize: 11, fontWeight: "600" },
   addJointMember: {
     minHeight: 36,
     flex: 1,
@@ -2308,15 +3210,46 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: C.surface,
   },
-  participantSelected: { borderColor: C.button, backgroundColor: "#F9E9E2" },
-  participantAvatar: { width: 28, height: 28 },
-  participantCheck: { marginLeft: "auto", color: C.button, fontWeight: "700" },
+  participantSelected: { borderColor: C.button, backgroundColor: "#FFFFFF" },
+  participantAvatar: {
+    width: 28,
+    height: 28,
+    backgroundColor: "#F2F3F6",
+  },
+  participantAvatarText: { color: "#2E3DB5" },
+  participantDialogHeading: {
+    color: "#000000",
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+  },
+  participantDialogDescription: {
+    color: "#000000",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  participantMemberText: {
+    color: "#000000",
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: "500",
+  },
+  participantCheck: { marginLeft: "auto", color: "#000000", fontWeight: "700" },
   memberTabs: {
     flexDirection: "row",
     height: 38,
     borderRadius: 12,
     padding: 3,
     backgroundColor: C.pink,
+  },
+  memberManagementTabs: {
+    height: 38,
+    flexDirection: "row",
+    borderRadius: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E7E8ED",
+    backgroundColor: "#FFFFFF",
+    padding: 0,
   },
   memberTab: {
     flex: 1,
@@ -2326,6 +3259,19 @@ const styles = StyleSheet.create({
   },
   memberTabActive: { backgroundColor: C.button },
   memberTabText: { color: C.text, fontSize: 11, fontWeight: "500" },
+  memberManagementTab: { position: "relative", borderRadius: 0 },
+  memberManagementTabSelected: { backgroundColor: "transparent" },
+  memberManagementTabText: { fontSize: 11, color: "#7C8292" },
+  memberManagementTabTextActive: { color: "#252B45", fontWeight: "700" },
+  memberManagementTabIndicator: {
+    position: "absolute",
+    left: "20%",
+    right: "20%",
+    bottom: 0,
+    height: 2,
+    borderRadius: 2,
+    backgroundColor: "#EC806F",
+  },
   memberTabTextActive: { color: C.surface },
   managedMemberRow: {
     minHeight: 68,
@@ -2338,9 +3284,24 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface,
     borderRadius: 13,
   },
+  memberManagementCard: {
+    minHeight: 66,
+    borderRadius: 14,
+    borderColor: "#E7E8ED",
+    borderWidth: 1,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    gap: 12,
+  },
+  memberManagementAvatar: { backgroundColor: "#F2F3F6" },
+  memberManagementAvatarText: { color: "#303CB5" },
   managedAvatar: { width: 32, height: 32, borderRadius: 16 },
   managedMemberInfo: { flex: 1, gap: 3 },
   managedMemberDate: { color: C.muted, fontSize: 10 },
+  memberManagementName: { color: "#252B45", fontSize: 14, fontWeight: "600" },
+  memberManagementDate: { color: "#7C8292", fontSize: 10, lineHeight: 14 },
+  memberManagementMenu: { width: 30 },
+  memberManagementDots: { color: "#7C8292", fontSize: 20 },
   managedMemberMenu: {
     width: 32,
     height: 40,
@@ -2390,10 +3351,11 @@ const styles = StyleSheet.create({
   createdTicketBrand: { fontSize: 10, lineHeight: 14, letterSpacing: 0.8 },
   createdTicketDate: {
     marginTop: 16,
-    color: C.primary,
+    color: C.text,
     fontSize: 31,
     lineHeight: 40,
   },
+  jointDoneGroupName: { color: C.text },
   createdTicketTitle: { color: C.detailMuted, fontSize: 16, lineHeight: 22 },
   createdTicketPerforation: {
     position: "absolute",
@@ -2410,6 +3372,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 38,
   },
+  createdGroupCover: {
+    width: 220,
+    height: 140,
+    borderRadius: 16,
+    backgroundColor: "#F2F3F6",
+  },
+  createdGroupName: {
+    color: C.text,
+    fontSize: 20,
+    fontWeight: "700",
+    marginTop: 12,
+  },
   createdActions: {
     marginTop: "auto",
     gap: 8,
@@ -2417,73 +3391,174 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   flex: { flex: 1 },
-  safe: { flex: 1, backgroundColor: C.canvas },
+  safe: {
+    flex: 1,
+    width: "100%",
+    maxWidth: 420,
+    alignSelf: "center",
+    backgroundColor: C.canvas,
+  },
+  groupsSafe: { backgroundColor: "#FFFFFF" },
   pressed: { opacity: 0.75 },
   disabled: { opacity: 0.4 },
   homeTop: {
-    height: 61,
-    justifyContent: "flex-start",
-    alignItems: "center",
+    height: 59,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     paddingTop: 9,
   },
-  logo: { width: 100, height: 50 },
+  notificationButton: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bellBody: {
+    width: 14,
+    height: 15,
+    borderWidth: 1.8,
+    borderColor: "#252B45",
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
+  },
+  bellBase: {
+    position: "absolute",
+    bottom: 8,
+    width: 18,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "#252B45",
+  },
+  bellClapper: {
+    position: "absolute",
+    bottom: 5,
+    width: 4,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: "#252B45",
+  },
+  logo: { width: 132, height: 46 },
   homeContent: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingHorizontal: 16,
+    paddingTop: 4,
     paddingBottom: 26,
+    backgroundColor: "#FFFFFF",
+  },
+  groupPageTitle: {
+    marginTop: 10,
+    marginBottom: 14,
+    color: "#252B45",
+    fontSize: 23,
+    lineHeight: 30,
+    fontWeight: "500",
   },
   personalCard: {
     width: "100%",
-    minHeight: 74,
-    backgroundColor: C.surface,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    gap: 6,
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 4,
+    gap: 14,
   },
+  personalAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F2F3F6",
+  },
+  personalAvatarText: {
+    color: "#2E3DB5",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  personalCopy: { flex: 1, gap: 2 },
   personalTitle: {
     fontSize: 14,
-    fontWeight: "500",
+    fontWeight: "600",
     lineHeight: 20,
-    color: C.text,
+    color: "#252B45",
   },
-  personalSub: { fontSize: 12, lineHeight: 16, color: C.muted },
+  personalSub: { fontSize: 11, lineHeight: 16, color: "#78819A" },
   groupSectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 18,
-    marginBottom: 16,
+    marginTop: 23,
+    marginBottom: 20,
   },
+  groupHeaderActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  myGroupsHeading: {
+    color: "#252B45",
+    fontSize: 14,
+    fontWeight: "500",
+    lineHeight: 22,
+  },
+  newGroupButton: {
+    minWidth: 102,
+    height: 36,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 15,
+    backgroundColor: "#2E3DB5",
+  },
+  newGroupButtonText: { color: "#FFFFFF", fontSize: 12, fontWeight: "500" },
+  inviteLinkEntryButton: {
+    minWidth: 100,
+    height: 36,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#DDE3ED",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    backgroundColor: "#FFFFFF",
+  },
+  inviteLinkEntryText: { color: C.primary, fontSize: 11, fontWeight: "500" },
   sectionHeading: {
     color: C.text,
     fontSize: 16,
     fontWeight: "700",
     lineHeight: 24,
   },
-  groupCards: { gap: 16 },
+  groupCards: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    columnGap: 14,
+    rowGap: 36,
+  },
   groupCard: {
+    width: "47.5%",
+  },
+  groupCoverButton: {
     width: "100%",
-    minHeight: 74,
-    borderRadius: 12,
-    backgroundColor: C.pink,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    gap: 6,
+    height: 120,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F2F3F6",
+    borderRadius: 13,
+    overflow: "hidden",
+  },
+  groupCoverImage: { width: "100%", height: "100%" },
+  groupCardInfo: {
+    minHeight: 58,
+    paddingTop: 8,
+    gap: 2,
   },
   groupCardTitle: {
-    color: C.text,
+    color: "#252B45",
     fontSize: 14,
-    fontWeight: "500",
-    lineHeight: 20,
+    fontWeight: "600",
+    lineHeight: 19,
   },
-  groupCardMeta: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  groupCardDate: { color: C.muted, fontSize: 12, lineHeight: 16 },
+  groupCardMembers: { color: "#78819A", fontSize: 10, lineHeight: 14 },
+  groupCardDate: { color: "#2E3DB5", fontSize: 9, lineHeight: 13 },
   homeAction: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },
   primaryButton: {
     height: 52,
@@ -2507,34 +3582,64 @@ const styles = StyleSheet.create({
   },
   outlinedLabel: { color: C.text },
   bottomNav: {
-    height: 60,
+    height: 80,
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
     backgroundColor: C.nav,
-    paddingHorizontal: 27,
   },
-  tab: { flex: 1, alignItems: "center", justifyContent: "center", height: 60 },
-  tabText: { fontSize: 14, color: "#080808", lineHeight: 20 },
+  tab: {
+    flex: 1,
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#352722",
+    fontWeight: "400",
+    textAlign: "center",
+  },
   tabActive: {
     fontSize: 14,
-    color: "#FFFFFF",
-    fontWeight: "500",
     lineHeight: 20,
-    textShadowColor: "rgba(0,0,0,0.22)",
-    textShadowOffset: { width: 0, height: 3 },
-    textShadowRadius: 3,
+    color: "#FFFDF8",
+    fontWeight: "700",
+    textAlign: "center",
   },
   detailHeader: {
     height: 56,
     marginBottom: 10,
-    paddingHorizontal: 20,
+    paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
   },
+  groupDetailHeader: {
+    height: 48,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    gap: 5,
+  },
+  memberManagementHeader: {
+    height: 48,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    gap: 10,
+  },
+  newGroupHeader: {
+    height: 48,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    gap: 5,
+  },
+  newGroupHeaderSpacer: { width: 22 },
   backBox: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderWidth: 1,
     borderColor: C.border,
     backgroundColor: C.surface,
@@ -2543,16 +3648,30 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   backLabel: { fontSize: 27, color: C.primary, lineHeight: 32, marginTop: -3 },
+  groupDetailBackBox: {
+    width: 22,
+    height: 38,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    borderRadius: 0,
+  },
   detailHeaderTitle: {
     flex: 1,
     fontSize: 16,
     fontWeight: "500",
     lineHeight: 24,
-    color: C.primary,
+    color: C.text,
   },
+  groupDetailHeaderTitle: { color: C.text, fontSize: 16, fontWeight: "600" },
+  memberManagementHeaderTitle: {
+    color: "#252B45",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  newGroupHeaderTitle: { textAlign: "center" },
   ellipsisBox: {
-    width: 44,
-    height: 44,
+    width: 38,
+    height: 38,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
@@ -2563,11 +3682,30 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     color: C.detailMuted,
   },
+  groupDetailEllipsisBox: { width: 30 },
+  groupDetailEllipsis: { color: C.text, letterSpacing: 0.6 },
   detailContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 13,
     paddingTop: 16,
     paddingBottom: 28,
     gap: 14,
+  },
+  groupRoomCover: {
+    width: "100%",
+    height: 150,
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: "#F2F3F6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  groupRoomCoverImage: { width: "100%", height: "100%" },
+  groupRoomName: {
+    marginTop: -4,
+    color: C.text,
+    fontSize: 22,
+    lineHeight: 29,
+    fontWeight: "700",
   },
   memberSection: { gap: 10 },
   inlineTitle: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -2575,8 +3713,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     lineHeight: 22,
-    color: C.primary,
+    color: C.text,
   },
+  groupDetailSectionTitle: { color: C.text },
   sectionCount: { fontSize: 12, color: C.detailMuted },
   membersWrap: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
   memberCell: { width: 40, alignItems: "center", gap: 4 },
@@ -2608,101 +3747,81 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   plusText: { fontSize: 23, color: C.detailMuted, lineHeight: 28 },
-  ticketSection: { gap: 8 },
+  ticketSection: { gap: 12 },
+  ticketSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  newTicketButton: {
+    height: 36,
+    minWidth: 104,
+    borderRadius: 20,
+    backgroundColor: C.button,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  newTicketButtonText: { color: C.surface, fontSize: 12, fontWeight: "600" },
   filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   filterButton: {
     height: 34,
-    minWidth: 65,
+    minWidth: 84,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: C.border,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 15,
-    backgroundColor: C.surface,
-  },
-  filterActive: { backgroundColor: "#F4E5DF" },
-  monthButton: { minWidth: 100 },
-  filterText: { color: "#533832", fontSize: 12, fontWeight: "700" },
-  ticketList: { gap: 12 },
-  createTicketRow: {
-    height: 55,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: C.border,
-    backgroundColor: C.surface,
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "center",
     paddingHorizontal: 14,
-  },
-  ticketPlus: { fontSize: 25, color: C.detailMuted, lineHeight: 30 },
-  createTicketLabel: { color: C.primary, fontWeight: "700", fontSize: 14 },
-  ticketRow: {
-    minHeight: 130,
     backgroundColor: C.surface,
-    borderRadius: 14,
-    borderColor: C.border,
-    borderWidth: 1,
-    paddingLeft: 10,
-    paddingRight: 12,
-    paddingVertical: 10,
+  },
+  filterActive: { backgroundColor: "#F4E5DF", borderColor: "#F4E5DF" },
+  monthButton: { minWidth: 100 },
+  filterText: { color: C.text, fontSize: 12, fontWeight: "600" },
+  ticketListHeading: { marginTop: -2 },
+  ticketPeriodLabel: { color: C.detailMuted, fontSize: 11, lineHeight: 16 },
+  ticketGrid: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 14,
+    paddingRight: 16,
   },
-  ticketStub: {
-    width: 54,
-    height: 108,
-    borderRadius: 8,
-    backgroundColor: "#F4E5DF",
-    overflow: "hidden",
-    paddingLeft: 5,
-    paddingTop: 10,
-    position: "relative",
+  ticketCard: { width: 92, alignItems: "center" },
+  ticketCardFace: {
+    width: "100%",
+    height: 144,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingTop: 12,
+    paddingBottom: 10,
     justifyContent: "space-between",
-    paddingBottom: 14,
   },
-  ticketBrand: {
-    color: C.accent,
-    fontSize: 7,
-    letterSpacing: 0.5,
-    lineHeight: 10,
+  ticketCardDate: {
+    color: "#252B45",
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: "500",
   },
-  ticketDay: { color: C.primary, fontSize: 13, lineHeight: 20 },
-  ticketGroupName: {
+  ticketGroupName: { color: "#252B45", fontSize: 11, lineHeight: 15 },
+  ticketCardTitle: {
+    width: "100%",
+    marginTop: 6,
+    color: C.text,
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: "center",
+  },
+  ticketCardParticipants: {
+    marginTop: 3,
     color: C.detailMuted,
-    fontSize: 8,
-    lineHeight: 12,
-    width: 44,
+    fontSize: 9,
+    lineHeight: 13,
   },
-  ticketCutLine: {
-    position: "absolute",
-    right: 2,
-    top: 10,
-    height: 92,
-    width: 1,
-    borderStyle: "dashed",
-    borderColor: C.accent,
-    borderRightWidth: 1,
-    opacity: 0.5,
-  },
-  ticketInfo: { flex: 1, gap: 3, justifyContent: "center" },
-  ticketDate: { fontSize: 12, lineHeight: 16, color: C.text },
-  ticketDateGroup: { fontSize: 12, lineHeight: 16, color: C.text },
-  ticketTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    lineHeight: 24,
-    color: C.primary,
-  },
-  ticketMore: { fontSize: 12, lineHeight: 16, color: C.accent },
   memberTicketContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
     paddingTop: 20,
     paddingBottom: 30,
-    gap: 14,
+    gap: 16,
   },
   memberTicketSubtitle: {
     marginTop: 4,
@@ -2710,35 +3829,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
   },
-  memberTicketRow: {
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-    gap: 10,
-    alignItems: "flex-start",
-  },
-  memberTicketName: {
-    color: C.text,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "700",
-  },
-  memberTicketPreviewButton: {
-    alignSelf: "center",
-    alignItems: "center",
-    gap: 6,
-  },
-  memberTicketTapHint: { color: C.detailMuted, fontSize: 11, lineHeight: 16 },
+  memberTicketRow: { width: "100%", alignItems: "center" },
+  memberTicketPreviewButton: { width: "100%", alignItems: "center" },
   emptyMemberTicketSlot: {
-    width: "100%",
-    minHeight: 112,
     borderRadius: 12,
     borderWidth: 1,
     borderStyle: "dashed",
     borderColor: C.border,
-    backgroundColor: C.canvas,
+    backgroundColor: C.surface,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -2746,6 +3844,77 @@ const styles = StyleSheet.create({
   },
   emptyMemberTicketPlus: { color: C.muted, fontSize: 23, lineHeight: 28 },
   emptyMemberTicketText: { color: C.detailMuted, fontSize: 12 },
+  ticketDetailContent: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 28,
+  },
+  ticketCreator: { alignSelf: "flex-start", gap: 3, marginBottom: 10 },
+  ticketCreatorLabel: { color: C.detailMuted, fontSize: 11, lineHeight: 16 },
+  ticketCreatorName: {
+    color: C.primary,
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: "700",
+  },
+  ticketDetailStage: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "flex-start",
+  },
+  ticketPreviewCard: {
+    padding: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#D9DDE4",
+    backgroundColor: "#F1F2F5",
+    overflow: "hidden",
+    shadowColor: "#202431",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  ticketBackNoteCard: {
+    minHeight: 180,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#C9CCD2",
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#202431",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  ticketBackNoteHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  ticketBackNoteLabel: {
+    color: "#0750ED",
+    fontSize: 8,
+    lineHeight: 12,
+    fontWeight: "600",
+  },
+  ticketBackNoteDate: { color: "#767A85", fontSize: 9, lineHeight: 12 },
+  ticketBackNoteText: {
+    color: "#282B33",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 17,
+  },
+  ticketFlipHint: {
+    color: C.detailMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+    paddingTop: 10,
+  },
   ticketSidesContent: {
     flexGrow: 1,
     alignItems: "center",
@@ -2779,6 +3948,118 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
     gap: 25,
   },
+  newGroupContent: {
+    paddingHorizontal: 13,
+    paddingTop: 6,
+    paddingBottom: 28,
+    gap: 0,
+  },
+  inviteLinkContent: {
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 30,
+    gap: 0,
+  },
+  inviteLinkForm: { width: "100%" },
+  inviteLinkLabel: {
+    color: C.text,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+  inviteLinkInput: {
+    height: 42,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8E9ED",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    color: C.text,
+    fontSize: 14,
+  },
+  inviteLinkConfirmButton: {
+    alignSelf: "flex-end",
+    width: 100,
+    height: 44,
+    marginTop: 16,
+    borderRadius: 22,
+    backgroundColor: C.button,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inviteLinkConfirmText: { color: C.surface, fontSize: 13, fontWeight: "600" },
+  newGroupForm: { width: "100%" },
+  newGroupNameBlock: { gap: 3 },
+  newGroupLabel: {
+    color: C.text,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+  newGroupNameInput: {
+    height: 38,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8E9ED",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    color: C.text,
+    fontSize: 14,
+  },
+  newGroupCounter: {
+    marginTop: 6,
+    color: C.detailMuted,
+    fontSize: 10,
+    lineHeight: 14,
+  },
+  newGroupCoverPicker: {
+    height: 150,
+    marginTop: 66,
+    borderRadius: 22,
+    backgroundColor: "#F2F3F6",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  newGroupMascot: { width: 116, height: 64 },
+  newGroupCoverPreview: {
+    ...StyleSheet.absoluteFill,
+    width: "100%",
+    height: "100%",
+  },
+  newGroupCoverLabel: {
+    marginTop: 4,
+    color: C.primary,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "500",
+  },
+  newGroupCoverLabelOnImage: {
+    position: "absolute",
+    bottom: 8,
+    alignSelf: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    overflow: "hidden",
+    color: C.surface,
+    backgroundColor: "rgba(37,43,69,0.65)",
+  },
+  newGroupCreateButton: {
+    alignSelf: "flex-end",
+    minWidth: 126,
+    height: 48,
+    marginTop: 54,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+    backgroundColor: C.button,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  newGroupCreateButtonDisabled: { opacity: 0.45 },
+  newGroupCreateButtonText: {
+    color: C.surface,
+    fontSize: 12,
+    fontWeight: "600",
+  },
   formHeading: {
     fontSize: 24,
     color: C.primary,
@@ -2786,49 +4067,198 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   formStack: { gap: 18 },
-  formLabel: { fontSize: 14, color: C.primary, fontWeight: "500" },
+  formLabel: { fontSize: 14, color: C.text, fontWeight: "500" },
   formInput: {
     height: 51,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: C.border,
     backgroundColor: C.surface,
-    color: C.primary,
+    color: C.text,
     paddingHorizontal: 15,
     fontSize: 14,
   },
-  formBottom: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },
-  popLayer: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 20,
+  dateInput: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  moreMenu: {
-    position: "absolute",
-    top: 36,
-    right: 22,
-    width: 160,
-    minHeight: 96,
-    borderRadius: 16,
-    backgroundColor: C.surface,
-    borderColor: C.border,
-    borderWidth: 1,
+  dateInputText: { color: C.text, fontSize: 14 },
+  dateInputIcon: { color: C.muted, fontSize: 17 },
+  calendarBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(40, 32, 27, 0.36)",
+    alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    elevation: 8,
-    shadowColor: "#4A342B",
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.18,
+    paddingHorizontal: 20,
+  },
+  calendarDialog: {
+    width: "100%",
+    maxWidth: 350,
+    borderRadius: 20,
+    backgroundColor: C.surface,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 10,
+    elevation: 12,
+    shadowColor: "#44322A",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
     shadowRadius: 12,
   },
-  moreMenuItem: { height: 35, alignItems: "center", justifyContent: "center" },
-  moreMenuText: { color: C.text, fontSize: 12, fontWeight: "500" },
-  leaveText: { color: "#C87968", fontSize: 12, fontWeight: "500" },
-  moreDivider: { backgroundColor: C.border, height: 1, marginHorizontal: 18 },
+  calendarHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  calendarTitle: {
+    color: C.text,
+    fontSize: 16,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  calendarSubtitle: {
+    color: C.muted,
+    fontSize: 12,
+    textAlign: "center",
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  calendarArrow: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: C.canvas,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  calendarArrowDisabled: { opacity: 0.35 },
+  calendarArrowText: { color: C.text, fontSize: 24, lineHeight: 28 },
+  calendarWeekdays: { flexDirection: "row", marginBottom: 4 },
+  calendarWeekday: {
+    width: "14.2857%",
+    textAlign: "center",
+    color: C.detailMuted,
+    fontSize: 11,
+    lineHeight: 28,
+  },
+  calendarGrid: { flexDirection: "row", flexWrap: "wrap" },
+  calendarDayCell: {
+    width: "14.2857%",
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  calendarDay: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  calendarDaySelected: { backgroundColor: C.button },
+  calendarDayDisabled: { opacity: 0.36 },
+  calendarDayText: { color: C.text, fontSize: 12 },
+  calendarDayTextSelected: { color: C.surface, fontWeight: "700" },
+  calendarDayTextDisabled: { color: C.muted },
+  calendarCancel: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+  },
+  calendarCancelText: { color: C.detailMuted, fontSize: 13 },
+  monthOptionsScroll: { maxHeight: 300 },
+  monthOptions: { gap: 8, paddingVertical: 4 },
+  yearSection: { gap: 6 },
+  yearOption: {
+    minHeight: 46,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    backgroundColor: "#F4E5DF",
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  yearOptionText: { color: C.text, fontSize: 14, fontWeight: "700" },
+  yearOptionCount: { color: C.muted, fontSize: 12 },
+  yearMonths: { gap: 6, paddingLeft: 12 },
+  monthOption: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    backgroundColor: C.canvas,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  monthOptionSelected: {
+    borderColor: C.accent,
+    backgroundColor: "#F4E5DF",
+  },
+  monthOptionText: { color: C.text, fontSize: 14, fontWeight: "600" },
+  monthOptionTextSelected: { color: C.primary },
+  monthOptionCount: { color: C.muted, fontSize: 12 },
+  formBottom: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },
+  moreMenuOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 20,
+    alignItems: "flex-end",
+    backgroundColor: "rgba(238,241,248,0.82)",
+  },
+  moreMenu: {
+    width: "80%",
+    maxWidth: 280,
+    marginHorizontal: 16,
+    marginTop: 16,
+    paddingHorizontal: 12,
+    paddingTop: 6,
+    paddingBottom: 6,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    elevation: 10,
+    shadowColor: "#252B45",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+  },
+  moreMenuHeader: {
+    height: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
+  },
+  moreMenuGroupName: {
+    flex: 1,
+    color: C.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  moreMenuClose: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moreMenuCloseText: { color: C.detailMuted, fontSize: 24, lineHeight: 28 },
+  moreMenuItem: {
+    minHeight: 42,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 8,
+  },
+  moreMenuText: { color: C.text, fontSize: 13, fontWeight: "500" },
+  moreMenuChevron: { color: C.detailMuted, fontSize: 22, lineHeight: 26 },
+  moreMenuLeaveChevron: { color: C.accent, fontSize: 22, lineHeight: 26 },
+  leaveText: { color: C.accent, fontSize: 13, fontWeight: "500" },
+  moreDivider: { backgroundColor: "#E7E8ED", height: 1, marginHorizontal: 8 },
   inviteOverlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 25,
@@ -2863,6 +4293,12 @@ const styles = StyleSheet.create({
   // 05. GROUP / 나가기 · 멤버 내보내기
   memberManageContent: {
     paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 26,
+    gap: 14,
+  },
+  memberManagementContent: {
+    paddingHorizontal: 8,
     paddingTop: 16,
     paddingBottom: 26,
     gap: 14,

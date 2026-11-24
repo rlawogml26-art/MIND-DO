@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Alert,
   Animated,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -20,15 +22,21 @@ import { SafeAreaView } from "react-native-safe-area-context";
 // 이 파일은 기존 화면 시연용이며, 문의 접수·로그아웃·회원 탈퇴 API는 아직 연결되지 않았습니다.
 
 const C = {
-  background: "#FFF8EF",
-  surface: "#FFFDF8",
-  primary: "#654C40",
-  secondary: "#987966",
-  accent: "#CF897C",
-  soft: "#F0C8BE",
-  line: "#E8D8CA",
+  background: "#FFFFFF",
+  surface: "#FFFFFF",
+  primary: "#282B33",
+  secondary: "#767A85",
+  accent: "#0750ED",
+  soft: "#EAF0FF",
+  line: "#DFE5F0",
   white: "#FFFFFF",
 };
+const menuBackIcon = {
+  uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAOdEVYdFNvZnR3YXJlAEZpZ21hnrGWYwAAAM9JREFUeAHtlaEOwjAQhq9oAgaBmOMxEAyCIRlheiS4EQxiGBQvQMJj8AA8BALJm6zdpo+1EnO9bs3M/qSpufu/u+baCqwFHjUAz+oBfgCqqCDeX+B8vZOxbIA23yUZvD9fULKkE5AhqUoMoxQnsxWG2xRzWZA51gAXc2uAq7kVoIm5FeBwujmba5FTlKvK7EIvAXxRFeiqF9HRdLGsu5Cq5SNqCrEeU1cI66K5QFiAf0icZGQ8+y0aj4bwej5gs55DEEzJeGHa8Kj+R+se8AOqMJSwLSNYTAAAAABJRU5ErkJggg==",
+} as const;
+const menuChevronIcon = {
+  uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAOdEVYdFNvZnR3YXJlAEZpZ21hnrGWYwAAAKJJREFUeAHd1D0OgjAAhuGvDOqgCV5FZ+PC6BHcPZOrjq5ushhn3SQwwQ3K3wBTKYxAoYWy8B7gSdqvKWE8aMiApqaHHC9AGCUYBdEwwe3xwvX+lMZaoa25gXXcczCVxoRHsw47JazzslWw3tXqWJbnw6BmZBhkf36w318+wBqX8wmr5UIdqiMmX1OUoQMRQuWDVEGqmKC/6zNKYyYbme83UgDo1ZoztcP63wAAAABJRU5ErkJggg==",
+} as const;
 
 function MenuHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (
@@ -39,7 +47,11 @@ function MenuHeader({ title, onBack }: { title: string; onBack: () => void }) {
         onPress={onBack}
         style={uiStyles.backButton}
       >
-        <Text style={uiStyles.backArrow}>‹</Text>
+        <Image
+          source={menuBackIcon}
+          style={uiStyles.backIcon}
+          resizeMode="contain"
+        />
       </Pressable>
       <Text accessibilityRole="header" style={uiStyles.title}>
         {title}
@@ -86,28 +98,33 @@ function MenuCompleteState({
 
 const uiStyles = StyleSheet.create({
   header: {
-    height: 74,
-    flexDirection: "row",
-    alignItems: "center",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: C.line,
-    paddingHorizontal: 20,
-  },
-  backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: C.surface,
+    height: 54,
+    marginTop: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 11,
+    paddingHorizontal: 24,
+    position: "relative",
   },
-  backArrow: { fontSize: 26, color: C.secondary, marginTop: -3 },
-  title: { fontSize: 16, color: C.primary, fontWeight: "600" },
+  backButton: {
+    position: "absolute",
+    left: 24,
+    top: 15,
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  backIcon: { width: 24, height: 24 },
+  title: {
+    fontSize: 16,
+    color: C.primary,
+    fontWeight: "500",
+    textAlign: "center",
+  },
   actionButton: {
     minHeight: 48,
-    backgroundColor: C.primary,
-    borderRadius: 7,
+    backgroundColor: C.accent,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -123,7 +140,7 @@ const uiStyles = StyleSheet.create({
     width: 106,
     height: 106,
     borderRadius: 53,
-    backgroundColor: "#F1E4D7",
+    backgroundColor: C.soft,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 26,
@@ -452,7 +469,7 @@ function MenuSupportScreen({
               accessibilityLabel="문의 제목 입력"
               style={supportStyles.titleInput}
               placeholder="제목을 입력해주세요."
-              placeholderTextColor="#B59A89"
+              placeholderTextColor={C.secondary}
               value={title}
               onChangeText={setTitle}
               autoCorrect={false}
@@ -462,7 +479,7 @@ function MenuSupportScreen({
               accessibilityLabel="문의 내용 입력"
               style={supportStyles.contentInput}
               placeholder="내용을 입력해주세요."
-              placeholderTextColor="#B59A89"
+              placeholderTextColor={C.secondary}
               value={content}
               onChangeText={setContent}
               textAlignVertical="top"
@@ -564,7 +581,7 @@ const supportStyles = StyleSheet.create({
   },
   tabButton: { width: "50%", alignItems: "center", justifyContent: "center" },
   tabButtonSelected: { borderBottomWidth: 2, borderBottomColor: C.primary },
-  tabText: { fontSize: 13, color: "#D7BFB2" },
+  tabText: { fontSize: 13, color: C.secondary },
   tabTextSelected: { color: C.primary, fontWeight: "600" },
   formScroll: { flexGrow: 1 },
   fieldTitle: {
@@ -648,22 +665,104 @@ const supportStyles = StyleSheet.create({
   },
 });
 
-type MenuPage =
-  | "menu"
+export type MenuRoute =
   | "settings"
   | "imageSettings"
+  | "subscription"
   | "faq"
   | "inquiry"
   | "notice"
   | "withdraw"
+  | "logout";
+
+type MenuPage =
+  | "menu"
+  | MenuRoute
+  | "paymentHistory"
+  | "purchasedDesigns"
   | "withdrawComplete";
 
 type Confirmation = "logout" | "withdraw" | null;
+type InfoDialog = { title: string; message: string };
+type FaqCategory = "전체" | "티켓" | "그룹" | "결제";
+type HistoryCategory = "전체" | "구독" | "디자인";
+type PurchaseRecord = {
+  title: string;
+  category: "구독" | "디자인";
+  detail: string;
+  date: string;
+};
+type NotificationSettingKey =
+  "groupTicketInvites" | "inquiryReplies" | "marketing";
+type NotificationSettings = Record<NotificationSettingKey, boolean>;
+
+const NOTIFICATION_SETTINGS_KEY = "@memore/notification_settings_v1";
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  groupTicketInvites: true,
+  inquiryReplies: true,
+  marketing: true,
+};
+const FAQ_ENTRIES: {
+  category: Exclude<FaqCategory, "전체">;
+  question: string;
+  answer: string;
+}[] = [
+  {
+    category: "티켓",
+    question: "티켓은 어떻게 만드나요?",
+    answer:
+      "날짜를 선택한 뒤 사진과 제목, 참여 멤버를 입력하고 티켓을 발권해 주세요.",
+  },
+  {
+    category: "그룹",
+    question: "그룹은 몇 개까지 참여할 수 있나요?",
+    answer: "그룹 정원은 6명이며, 최대 4개 그룹에 참여할 수 있어요.",
+  },
+  {
+    category: "그룹",
+    question: "탈퇴한 그룹의 티켓도 볼 수 있나요?",
+    answer:
+      "탈퇴한 그룹의 티켓은 개인 보관함에서 볼 수 있지만, 탈퇴한 그룹으로 이동할 수는 없어요.",
+  },
+  {
+    category: "결제",
+    question: "VIP에서 어떤 디자인을 사용할 수 있나요?",
+    answer:
+      "VIP 구독 중에는 VIP 디자인에 포함된 스티커와 폰트를 사용할 수 있어요.",
+  },
+  {
+    category: "결제",
+    question: "구매한 디자인이 보이지 않아요.",
+    answer:
+      "구독 및 구매 화면에서 구매 복원을 눌러 주세요. 결제에 사용한 스토어 계정도 확인해 주세요.",
+  },
+];
+const PURCHASE_HISTORY: PurchaseRecord[] = [
+  {
+    title: "MEMO:RE VIP",
+    category: "구독",
+    detail: "구독 갱신",
+    date: "2026.10.20",
+  },
+  {
+    title: "소프트 리본",
+    category: "디자인",
+    detail: "₩2,900",
+    date: "2026.10.20",
+  },
+  {
+    title: "로즈 스티커",
+    category: "디자인",
+    detail: "₩1,900",
+    date: "2026.10.18",
+  },
+];
 
 type MenuExperienceProps = {
   visible: boolean;
   onClose: () => void;
   onLogout?: () => void;
+  initialPage?: MenuRoute | "menu";
 };
 
 // 기존 HomeScreen에서 쓸 수 있는 메뉴 화면입니다. 서버 API를 임의로 만들지 않습니다.
@@ -671,14 +770,59 @@ export default function MenuExperience({
   visible,
   onClose,
   onLogout,
+  initialPage = "menu",
 }: MenuExperienceProps) {
   const [page, setPage] = useState<MenuPage>("menu");
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
+  const [infoDialog, setInfoDialog] = useState<InfoDialog | null>(null);
+  const [faqCategory, setFaqCategory] = useState<FaqCategory>("전체");
+  const [historyCategory, setHistoryCategory] =
+    useState<HistoryCategory>("전체");
   const [inquiries, setInquiries] =
     useState<PreviewInquiry[]>(exampleInquiries);
+  const [notificationSettings, setNotificationSettings] =
+    useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
   const { width: screenWidth } = useWindowDimensions();
   const [rendered, setRendered] = useState(false);
   const slideX = useRef(new Animated.Value(-screenWidth)).current;
+
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(NOTIFICATION_SETTINGS_KEY)
+      .then((raw) => {
+        if (!active || !raw) return;
+        const saved: unknown = JSON.parse(raw);
+        if (typeof saved !== "object" || saved === null) return;
+        const values = saved as Partial<NotificationSettings>;
+        setNotificationSettings({
+          groupTicketInvites:
+            typeof values.groupTicketInvites === "boolean"
+              ? values.groupTicketInvites
+              : true,
+          inquiryReplies:
+            typeof values.inquiryReplies === "boolean"
+              ? values.inquiryReplies
+              : true,
+          marketing:
+            typeof values.marketing === "boolean" ? values.marketing : true,
+        });
+      })
+      .catch(() => {
+        // 저장 설정을 읽지 못하면 화면 기본값을 사용합니다.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+    setConfirmation(initialPage === "logout" ? "logout" : null);
+    setInfoDialog(null);
+    setFaqCategory("전체");
+    setHistoryCategory("전체");
+    setPage(initialPage === "logout" ? "logout" : initialPage);
+  }, [visible, initialPage]);
 
   // 모달을 즉시 닫지 않고, 왼쪽으로 빠지는 애니메이션 후 화면에서 내립니다.
   useEffect(() => {
@@ -708,19 +852,25 @@ export default function MenuExperience({
 
   function closeMenu() {
     setConfirmation(null);
+    setInfoDialog(null);
     setPage("menu");
     onClose();
   }
 
   function back() {
+    if (infoDialog) {
+      setInfoDialog(null);
+      return;
+    }
     if (confirmation) {
       setConfirmation(null);
-    } else if (page === "withdrawComplete") {
-      setPage("menu");
-    } else if (page === "menu") {
+      if (page === "logout") closeMenu();
+    } else if (page === "paymentHistory" || page === "purchasedDesigns") {
+      setPage("subscription");
+    } else if (page === "withdrawComplete" || page === "menu") {
       closeMenu();
     } else {
-      setPage("menu");
+      closeMenu();
     }
   }
 
@@ -787,21 +937,353 @@ export default function MenuExperience({
     );
   }
 
+  function toggleNotificationSetting(key: NotificationSettingKey) {
+    const nextSettings = {
+      ...notificationSettings,
+      [key]: !notificationSettings[key],
+    };
+    setNotificationSettings(nextSettings);
+    void AsyncStorage.setItem(
+      NOTIFICATION_SETTINGS_KEY,
+      JSON.stringify(nextSettings),
+    ).catch(() => {
+      Alert.alert("저장 실패", "알림 설정을 저장하지 못했어요.");
+    });
+  }
+
+  function settingsPage() {
+    const rows: { key: NotificationSettingKey; label: string }[] = [
+      { key: "groupTicketInvites", label: "그룹·티켓 초대 알림" },
+      { key: "inquiryReplies", label: "문의 답변 알림" },
+      { key: "marketing", label: "마케팅 알림" },
+    ];
+    return (
+      <View style={menuStyles.fill}>
+        <MenuHeader title="환경 설정" onBack={back} />
+        <View style={menuStyles.settingsList}>
+          <Text style={menuStyles.settingsSectionTitle}>알림</Text>
+          {rows.map(({ key, label }) => {
+            const enabled = notificationSettings[key];
+            return (
+              <View key={key} style={menuStyles.settingsRow}>
+                <Text style={menuStyles.settingsLabel}>{label}</Text>
+                <Pressable
+                  accessibilityRole="switch"
+                  accessibilityLabel={label}
+                  accessibilityState={{ checked: enabled }}
+                  onPress={() => toggleNotificationSetting(key)}
+                  style={[
+                    menuStyles.settingsToggle,
+                    !enabled && menuStyles.settingsToggleOff,
+                  ]}
+                >
+                  <View
+                    style={[
+                      menuStyles.settingsToggleKnob,
+                      enabled && menuStyles.settingsToggleKnobOn,
+                    ]}
+                  />
+                </Pressable>
+              </View>
+            );
+          })}
+          <View style={menuStyles.settingsVersionRow}>
+            <View style={menuStyles.settingsVersionText}>
+              <Text style={menuStyles.settingsLabel}>앱 버전</Text>
+              <Text style={menuStyles.settingsVersionValue}>1.0.0</Text>
+            </View>
+            <Image
+              source={menuChevronIcon}
+              style={menuStyles.settingsChevron}
+              resizeMode="contain"
+            />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  function showInfoDialog(title: string, message: string) {
+    setInfoDialog({ title, message });
+  }
+
+  function subscriptionPage() {
+    return (
+      <View style={menuStyles.fill}>
+        <MenuHeader title="구독 및 구매" onBack={back} />
+        <ScrollView
+          style={menuStyles.fill}
+          contentContainerStyle={menuStyles.subscriptionContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={menuStyles.subscriptionStatus}>
+            <Text style={menuStyles.subscriptionBrand}>MEMO:RE VIP</Text>
+            <Text style={menuStyles.subscriptionTitle}>구독 중</Text>
+            <Text style={menuStyles.subscriptionNextDate}>
+              다음 결제일 2026.12.20
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                showInfoDialog(
+                  "구독 관리",
+                  "구독 변경 및 해지는 App Store 또는 Google Play의 구독 관리에서 진행해요.",
+                )
+              }
+              style={menuStyles.subscriptionManage}
+            >
+              <Text style={menuStyles.subscriptionManageText}>구독 관리 →</Text>
+            </Pressable>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setPage("purchasedDesigns")}
+            style={menuStyles.subscriptionRow}
+          >
+            <View style={menuStyles.subscriptionRowText}>
+              <Text style={menuStyles.settingsLabel}>구매한 디자인</Text>
+              <Text style={menuStyles.settingsVersionValue}>
+                스티커 · 프레임 · 폰트
+              </Text>
+            </View>
+            <Image
+              source={menuChevronIcon}
+              style={menuStyles.settingsChevron}
+              resizeMode="contain"
+            />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setHistoryCategory("전체");
+              setPage("paymentHistory");
+            }}
+            style={menuStyles.subscriptionRow}
+          >
+            <Text style={menuStyles.settingsLabel}>결제 내역</Text>
+            <Image
+              source={menuChevronIcon}
+              style={menuStyles.settingsChevron}
+              resizeMode="contain"
+            />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() =>
+              showInfoDialog(
+                "구매 복원",
+                "이전에 구매한 디자인을 확인하려면 결제에 사용한 스토어 계정으로 구매 복원을 진행해 주세요.",
+              )
+            }
+            style={menuStyles.subscriptionRow}
+          >
+            <Text style={menuStyles.settingsLabel}>구매 복원</Text>
+            <Image
+              source={menuChevronIcon}
+              style={menuStyles.settingsChevron}
+              resizeMode="contain"
+            />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() =>
+              showInfoDialog(
+                "환불 안내",
+                "환불은 결제한 App Store 또는 Google Play의 구매 내역에서 신청해 주세요.",
+              )
+            }
+            style={menuStyles.refundButton}
+          >
+            <Text style={menuStyles.refundButtonText}>환불 안내</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  function paymentHistoryPage() {
+    const categories: HistoryCategory[] = ["전체", "구독", "디자인"];
+    const records = PURCHASE_HISTORY.filter(
+      (record) =>
+        historyCategory === "전체" || record.category === historyCategory,
+    );
+    return (
+      <View style={menuStyles.fill}>
+        <MenuHeader title="결제 내역" onBack={back} />
+        <ScrollView
+          style={menuStyles.fill}
+          contentContainerStyle={menuStyles.historyContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={menuStyles.filterTabs}>
+            {categories.map((category) => {
+              const selected = category === historyCategory;
+              return (
+                <Pressable
+                  key={category}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
+                  onPress={() => setHistoryCategory(category)}
+                  style={menuStyles.filterTab}
+                >
+                  <Text
+                    style={[
+                      menuStyles.filterTabText,
+                      selected && menuStyles.filterTabTextSelected,
+                    ]}
+                  >
+                    {category}
+                  </Text>
+                  {selected && <View style={menuStyles.filterIndicator} />}
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={menuStyles.historyRows}>
+            {records.map((record) => (
+              <Pressable
+                key={`${record.title}-${record.date}`}
+                accessibilityRole="button"
+                onPress={() =>
+                  showInfoDialog(
+                    record.title,
+                    `${record.date} · ${record.detail}`,
+                  )
+                }
+                style={menuStyles.historyRow}
+              >
+                <View style={menuStyles.subscriptionRowText}>
+                  <Text style={menuStyles.settingsLabel}>{record.title}</Text>
+                  <Text style={menuStyles.settingsVersionValue}>
+                    {record.date} · {record.detail}
+                  </Text>
+                </View>
+                <Image
+                  source={menuChevronIcon}
+                  style={menuStyles.settingsChevron}
+                  resizeMode="contain"
+                />
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  function purchasedDesignsPage() {
+    const designs = PURCHASE_HISTORY.filter(
+      (record) => record.category === "디자인",
+    );
+    return (
+      <View style={menuStyles.fill}>
+        <MenuHeader title="구매한 디자인" onBack={back} />
+        <ScrollView
+          style={menuStyles.fill}
+          contentContainerStyle={menuStyles.historyContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={menuStyles.historyRows}>
+            {designs.map((record) => (
+              <View key={record.title} style={menuStyles.historyRow}>
+                <View style={menuStyles.subscriptionRowText}>
+                  <Text style={menuStyles.settingsLabel}>{record.title}</Text>
+                  <Text style={menuStyles.settingsVersionValue}>
+                    {record.date} · {record.detail}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  function faqPage() {
+    const categories: FaqCategory[] = ["전체", "티켓", "그룹", "결제"];
+    const entries = FAQ_ENTRIES.filter(
+      (entry) => faqCategory === "전체" || entry.category === faqCategory,
+    );
+    return (
+      <View style={menuStyles.fill}>
+        <MenuHeader title="자주 묻는 질문" onBack={back} />
+        <ScrollView
+          style={menuStyles.fill}
+          contentContainerStyle={menuStyles.faqContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={menuStyles.filterTabs}>
+            {categories.map((category) => {
+              const selected = category === faqCategory;
+              return (
+                <Pressable
+                  key={category}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
+                  onPress={() => setFaqCategory(category)}
+                  style={menuStyles.filterTab}
+                >
+                  <Text
+                    style={[
+                      menuStyles.filterTabText,
+                      selected && menuStyles.filterTabTextSelected,
+                    ]}
+                  >
+                    {category}
+                  </Text>
+                  {selected && <View style={menuStyles.filterIndicator} />}
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={menuStyles.faqRows}>
+            {entries.map((entry) => (
+              <Pressable
+                key={entry.question}
+                accessibilityRole="button"
+                onPress={() => showInfoDialog("자주 묻는 질문", entry.answer)}
+                style={menuStyles.faqRow}
+              >
+                <Text numberOfLines={1} style={menuStyles.faqQuestion}>
+                  {entry.question}
+                </Text>
+                <Image
+                  source={menuChevronIcon}
+                  style={menuStyles.settingsChevron}
+                  resizeMode="contain"
+                />
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
   function currentPage() {
     switch (page) {
       case "menu":
         return menuRoot();
       case "settings":
-        return simplePage("환경 설정");
+        return settingsPage();
+      case "subscription":
+        return subscriptionPage();
+      case "paymentHistory":
+        return paymentHistoryPage();
+      case "purchasedDesigns":
+        return purchasedDesignsPage();
       case "imageSettings":
         return simplePage(
           "이미지 저장 설정",
           "이미지 저장 설정 화면은 상세 기획 확정 후 연결할 예정이에요.",
         );
       case "faq":
-        return simplePage("자주 묻는 질문", "아직 등록된 질문이 없습니다.");
+        return faqPage();
       case "notice":
         return simplePage("공지사항", "아직 등록된 공지사항이 없습니다.");
+      case "logout":
+        return simplePage("로그아웃");
       case "inquiry":
         return (
           <MenuSupportScreen
@@ -867,39 +1349,69 @@ export default function MenuExperience({
         >
           <SafeAreaView style={menuStyles.safeArea}>
             <View style={menuStyles.page}>{currentPage()}</View>
-            {confirmation !== null && (
+            {(confirmation !== null || infoDialog !== null) && (
               <View style={menuStyles.overlay}>
-                <View style={menuStyles.dialog}>
-                  <Text style={menuStyles.dialogText}>
-                    {confirmation === "logout"
-                      ? "로그아웃 하시겠습니까?"
-                      : "탈퇴 후에는 소중한 추억과 회원 정보가 복구되지 않을 수 있습니다.\n\n정말로 탈퇴하시겠습니까?"}
-                  </Text>
-                  {confirmation === "withdraw" && (
-                    <Text style={menuStyles.dialogNotice}>
-                      화면 시연용으로 실제 계정은 삭제되지 않습니다.
+                {infoDialog ? (
+                  <View style={menuStyles.infoDialog}>
+                    <Text style={menuStyles.infoDialogTitle}>
+                      {infoDialog.title}
                     </Text>
-                  )}
-                  <View style={menuStyles.dialogButtons}>
+                    <Text style={menuStyles.infoDialogMessage}>
+                      {infoDialog.message}
+                    </Text>
                     <Pressable
                       accessibilityRole="button"
-                      onPress={() => setConfirmation(null)}
-                      style={[menuStyles.dialogButton, menuStyles.cancelButton]}
+                      onPress={() => setInfoDialog(null)}
+                      style={menuStyles.infoDialogPrimary}
                     >
-                      <Text style={menuStyles.dialogButtonText}>아니요</Text>
+                      <Text style={menuStyles.infoDialogPrimaryText}>확인</Text>
                     </Pressable>
                     <Pressable
                       accessibilityRole="button"
-                      onPress={confirm}
-                      style={[
-                        menuStyles.dialogButton,
-                        menuStyles.confirmButton,
-                      ]}
+                      onPress={() => setInfoDialog(null)}
+                      style={menuStyles.infoDialogSecondary}
                     >
-                      <Text style={menuStyles.dialogButtonText}>예</Text>
+                      <Text style={menuStyles.infoDialogSecondaryText}>
+                        닫기
+                      </Text>
                     </Pressable>
                   </View>
-                </View>
+                ) : (
+                  <View style={menuStyles.dialog}>
+                    <Text style={menuStyles.dialogText}>
+                      {confirmation === "logout"
+                        ? "로그아웃 하시겠습니까?"
+                        : "탈퇴 후에는 소중한 추억과 회원 정보가 복구되지 않을 수 있습니다.\n\n정말로 탈퇴하시겠습니까?"}
+                    </Text>
+                    {confirmation === "withdraw" && (
+                      <Text style={menuStyles.dialogNotice}>
+                        화면 시연용으로 실제 계정은 삭제되지 않습니다.
+                      </Text>
+                    )}
+                    <View style={menuStyles.dialogButtons}>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => setConfirmation(null)}
+                        style={[
+                          menuStyles.dialogButton,
+                          menuStyles.cancelButton,
+                        ]}
+                      >
+                        <Text style={menuStyles.dialogButtonText}>아니요</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={confirm}
+                        style={[
+                          menuStyles.dialogButton,
+                          menuStyles.confirmButton,
+                        ]}
+                      >
+                        <Text style={menuStyles.dialogButtonText}>예</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
               </View>
             )}
           </SafeAreaView>
@@ -911,9 +1423,17 @@ export default function MenuExperience({
 
 const menuStyles = StyleSheet.create({
   modalRoot: { flex: 1, overflow: "hidden" },
-  slidePanel: { flex: 1, width: "100%", backgroundColor: C.background },
-  safeArea: { flex: 1, backgroundColor: C.background },
-  page: { flex: 1, width: "100%", maxWidth: 420, alignSelf: "center" },
+  slidePanel: { flex: 1, width: "100%", backgroundColor: C.soft },
+  safeArea: { flex: 1, backgroundColor: C.soft },
+  page: {
+    flex: 1,
+    width: "100%",
+    maxWidth: 420,
+    alignSelf: "center",
+    backgroundColor: C.background,
+    borderRadius: 28,
+    overflow: "hidden",
+  },
   fill: { flex: 1, backgroundColor: C.background },
   closeButton: {
     marginTop: 32,
@@ -923,7 +1443,7 @@ const menuStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  closeText: { fontSize: 27, color: C.secondary, fontWeight: "500" },
+  closeText: { fontSize: 27, color: C.primary, fontWeight: "500" },
   menuContents: { marginTop: 72, marginLeft: 74, marginRight: 24, gap: 76 },
   menuGroup: { gap: 2 },
   menuGroupTitle: { color: C.secondary, fontSize: 12, marginBottom: 8 },
@@ -942,17 +1462,203 @@ const menuStyles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingTop: 32,
   },
+  subscriptionContent: {
+    paddingHorizontal: 24,
+    paddingTop: 14,
+    paddingBottom: 32,
+    gap: 16,
+  },
+  subscriptionStatus: {
+    width: "100%",
+    paddingVertical: 12,
+    gap: 8,
+  },
+  subscriptionBrand: { color: "#A13B32", fontSize: 11, lineHeight: 16 },
+  subscriptionTitle: {
+    color: C.primary,
+    fontSize: 20,
+    lineHeight: 29,
+    fontWeight: "500",
+  },
+  subscriptionNextDate: { color: "#A13B32", fontSize: 11, lineHeight: 16 },
+  subscriptionManage: { alignSelf: "flex-start", paddingVertical: 1 },
+  subscriptionManageText: { color: C.primary, fontSize: 14, lineHeight: 20 },
+  subscriptionRow: {
+    height: 64,
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  subscriptionRowText: { gap: 4 },
+  refundButton: {
+    height: 44,
+    width: 150,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#C6D6FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  refundButtonText: { color: C.accent, fontSize: 14, lineHeight: 20 },
+  historyContent: {
+    paddingHorizontal: 24,
+    paddingTop: 14,
+    paddingBottom: 32,
+  },
+  filterTabs: {
+    height: 36,
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  filterTab: {
+    position: "relative",
+    width: 56,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterTabText: { color: C.secondary, fontSize: 11, lineHeight: 16 },
+  filterTabTextSelected: { color: C.primary },
+  filterIndicator: {
+    position: "absolute",
+    bottom: 0,
+    width: 32,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: "#FF7868",
+  },
+  historyRows: { gap: 16 },
+  historyRow: {
+    width: "100%",
+    height: 64,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  faqContent: {
+    paddingHorizontal: 24,
+    paddingTop: 14,
+    paddingBottom: 32,
+  },
+  faqRows: { gap: 16 },
+  faqRow: {
+    width: "100%",
+    height: 64,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  faqQuestion: {
+    flex: 1,
+    marginRight: 12,
+    color: C.primary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  settingsList: { paddingHorizontal: 24, paddingTop: 14 },
+  settingsSectionTitle: {
+    color: C.primary,
+    fontSize: 16,
+    lineHeight: 23,
+    fontWeight: "500",
+    marginBottom: 16,
+  },
+  settingsRow: {
+    height: 66,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  settingsLabel: {
+    color: C.primary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  settingsToggle: {
+    width: 46,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: C.accent,
+    justifyContent: "center",
+  },
+  settingsToggleOff: { backgroundColor: C.line },
+  settingsToggleKnob: {
+    position: "absolute",
+    left: 3,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: C.white,
+  },
+  settingsToggleKnobOn: { left: 21 },
+  settingsVersionRow: {
+    height: 64,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  settingsVersionText: { gap: 4 },
+  settingsVersionValue: { color: C.secondary, fontSize: 11, lineHeight: 16 },
+  settingsChevron: { width: 18, height: 18 },
   overlay: {
     position: "absolute",
     top: 0,
     right: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: C.soft,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 24,
   },
+  infoDialog: {
+    width: "100%",
+    maxWidth: 360,
+    borderRadius: 22,
+    padding: 22,
+    backgroundColor: C.white,
+    gap: 14,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  infoDialogTitle: {
+    color: C.primary,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: "500",
+  },
+  infoDialogMessage: {
+    color: C.secondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  infoDialogPrimary: {
+    width: 118,
+    height: 44,
+    alignSelf: "flex-end",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 22,
+    backgroundColor: C.accent,
+    marginTop: 2,
+  },
+  infoDialogPrimaryText: { color: C.white, fontSize: 13, lineHeight: 19 },
+  infoDialogSecondary: {
+    width: 118,
+    height: 44,
+    alignSelf: "flex-end",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoDialogSecondaryText: { color: C.accent, fontSize: 13, lineHeight: 19 },
   dialog: {
     width: "100%",
     maxWidth: 300,
@@ -990,7 +1696,7 @@ const menuStyles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  cancelButton: { backgroundColor: "#E6E4E3" },
-  confirmButton: { backgroundColor: "#E8C9C0" },
+  cancelButton: { backgroundColor: C.line },
+  confirmButton: { backgroundColor: C.accent },
   dialogButtonText: { color: C.primary, fontSize: 12, fontWeight: "600" },
 });
