@@ -1,4 +1,5 @@
 import {
+  ErrorCode,
   MOOD_PROMPT_MAX,
   PERSONAL_TICKET_MEMO_MAX,
   PHOTO_UPLOAD_MAX_COUNT,
@@ -19,8 +20,17 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { createAiDrafts, issueTicket } from "../lib/api";
-import { uploadTicketPhotos } from "../lib/photo-upload";
+import {
+  ApiError,
+  createAiDrafts,
+  issueTicket,
+  NETWORK_ERROR,
+} from "../lib/api";
+import {
+  PHOTO_TOO_LARGE,
+  PHOTO_UPLOAD_FAILED,
+  uploadTicketPhotos,
+} from "../lib/photo-upload";
 import TicketRenderer from "./TicketRenderer";
 
 type Props = {
@@ -42,16 +52,61 @@ export default function SharedTicketEditor({
   const [mood, setMood] = useState("");
   const [memo, setMemo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [draftLimitReached, setDraftLimitReached] = useState(false);
+  const [editingUnavailable, setEditingUnavailable] = useState(false);
   const operation = useRef(false);
 
   async function run(action: () => Promise<void>, failure: string) {
-    if (operation.current) return;
+    if (operation.current || editingUnavailable) return;
     operation.current = true;
     setBusy(true);
     try {
       await action();
-    } catch {
-      Alert.alert(failure, "잠시 뒤 다시 시도해 주세요.");
+    } catch (error: unknown) {
+      if (!(error instanceof ApiError)) {
+        Alert.alert(failure, "선택한 사진이나 기기 권한을 확인해 주세요.");
+        return;
+      }
+      const { code, status } = error;
+      let message: string;
+      if (code === ErrorCode.AI_DRAFT_ALREADY_GENERATED) {
+        setDraftLimitReached(true);
+        message = "이 티켓의 AI 초안은 이미 만들었어요. 다시 만들 수 없어요.";
+      } else if (code === ErrorCode.TICKET_ALREADY_COMPLETED) {
+        setEditingUnavailable(true);
+        message = "이미 저장된 티켓이에요. 공동 티켓에서 확인해 주세요.";
+      } else if (status === 401) {
+        setEditingUnavailable(true);
+        message = "로그인이 만료됐어요. 다시 로그인해 주세요.";
+      } else if (
+        code === ErrorCode.NOT_INVITED ||
+        status === 403 ||
+        status === 404
+      ) {
+        setEditingUnavailable(true);
+        message = "이 공동 티켓에서는 내 티켓을 만들 수 없어요.";
+      } else if (
+        code === PHOTO_TOO_LARGE ||
+        code === ErrorCode.INVALID_PHOTO_KEY
+      ) {
+        if (code === ErrorCode.INVALID_PHOTO_KEY) setPhotoKeys([]);
+        message = "선택한 사진을 사용할 수 없어요. 다른 사진을 선택해 주세요.";
+      } else if (
+        code === ErrorCode.INVALID_DESIGN ||
+        code === ErrorCode.INVALID_INPUT
+      ) {
+        message = "선택한 초안과 입력 내용을 확인해 주세요.";
+      } else if (
+        code === NETWORK_ERROR ||
+        code === PHOTO_UPLOAD_FAILED ||
+        status >= 500 ||
+        status === 429
+      ) {
+        message = "잠시 뒤 다시 시도해 주세요.";
+      } else {
+        message = "공동 티켓으로 돌아가 현재 상태를 확인해 주세요.";
+      }
+      Alert.alert(failure, message);
     } finally {
       operation.current = false;
       setBusy(false);
@@ -83,6 +138,7 @@ export default function SharedTicketEditor({
 
   const generate = () =>
     run(async () => {
+      if (draftLimitReached) return;
       const keys = photoKeys.length
         ? photoKeys
         : await uploadTicketPhotos(detail.sharedTicketId, photos);
@@ -125,7 +181,7 @@ export default function SharedTicketEditor({
         </Text>
         <Button
           title="사진 선택"
-          disabled={busy}
+          disabled={busy || editingUnavailable}
           onPress={() => void pickPhotos()}
         />
         <View style={styles.photos}>
@@ -149,7 +205,12 @@ export default function SharedTicketEditor({
         />
         <Button
           title="AI 초안 만들기"
-          disabled={busy || photos.length === 0}
+          disabled={
+            busy ||
+            editingUnavailable ||
+            draftLimitReached ||
+            photos.length === 0
+          }
           onPress={() => void generate()}
         />
         {drafts.map((draft) => (
@@ -191,7 +252,7 @@ export default function SharedTicketEditor({
             />
             <Button
               title="티켓 저장"
-              disabled={busy}
+              disabled={busy || editingUnavailable || photoKeys.length === 0}
               onPress={() => void save()}
             />
           </>
