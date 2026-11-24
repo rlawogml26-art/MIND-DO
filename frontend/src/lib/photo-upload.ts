@@ -43,9 +43,15 @@ async function toJpeg(
   const jpeg = await image.saveAsync({
     format: SaveFormat.JPEG,
     compress: quality,
+    base64: true,
   });
-  const blob = await (await fetch(jpeg.uri)).blob();
-  return { uri: jpeg.uri, size: blob.size };
+  if (!jpeg.base64) throw new ApiError(0, PHOTO_UPLOAD_FAILED);
+  const padding = jpeg.base64.endsWith("==")
+    ? 2
+    : jpeg.base64.endsWith("=")
+      ? 1
+      : 0;
+  return { uri: jpeg.uri, size: (jpeg.base64.length * 3) / 4 - padding };
 }
 
 // 기기 사진(JPEG·PNG·HEIC 등)을 JPEG로 바꾼다. 서버는 JPEG·PNG, 10MB 이하만 받는다.
@@ -75,15 +81,17 @@ async function postToS3(
     type: "image/jpeg",
   });
 
-  let response: Response;
-  try {
-    response = await fetch(upload.url, { method: "POST", body: form });
-  } catch {
-    throw new ApiError(0, NETWORK_ERROR);
-  }
-  if (response.status !== S3_POST_SUCCESS_STATUS) {
-    throw new ApiError(response.status, PHOTO_UPLOAD_FAILED);
-  }
+  // Expo fetch does not support React Native's URI-based FormData attachments.
+  await new Promise<void>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", upload.url);
+    request.onload = () => {
+      if (request.status === S3_POST_SUCCESS_STATUS) resolve();
+      else reject(new ApiError(request.status, PHOTO_UPLOAD_FAILED));
+    };
+    request.onerror = () => reject(new ApiError(0, NETWORK_ERROR));
+    request.send(form);
+  });
 }
 
 // 사진 1~4장을 준비해 S3에 직접 올리고, 순서대로 photoKey를 돌려준다.
