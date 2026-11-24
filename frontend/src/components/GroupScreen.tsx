@@ -41,6 +41,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import TicketRenderer from "./TicketRenderer";
+import SharedTicketEditor from "./SharedTicketEditor";
 import {
   ApiError,
   createGroup as createServerGroup,
@@ -107,6 +108,7 @@ type Page =
   | "jointDone"
   | "ticketMembers"
   | "ticketDetail"
+  | "personalTicket"
   | "duplicate"
   | "firstTicket"
   | "groupCreated"
@@ -1371,6 +1373,27 @@ export default function GroupScreen({
     (slot) => slot.userId === selectedSlotUserId,
   );
 
+  if (page === "personalTicket" && ticketDetail) {
+    return (
+      <SharedTicketEditor
+        detail={ticketDetail}
+        onClose={() => setPage("ticketMembers")}
+        onIssued={() => {
+          const ticket = selectedGroup?.tickets.find(
+            (entry) => entry.sharedTicketId === ticketDetail.sharedTicketId,
+          );
+          setPage("group");
+          if (ticket) void openTicketMembers(ticket);
+          if (selectedGroup) {
+            void loadGroup(Number(selectedGroup.id))
+              .then(updateGroup)
+              .catch(() => {});
+          }
+        }}
+      />
+    );
+  }
+
   if (page === "ticketMembers" && ticketDetail) {
     const ticketWidth = Math.min(360, windowWidth - 24);
     return (
@@ -1415,6 +1438,19 @@ export default function GroupScreen({
                   }}
                 >
                   {renderTicket(slot, ticketWidth)}
+                </Pressable>
+              ) : slot.userId === currentUserId && slot.isCurrentMember ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setPage("personalTicket")}
+                  style={[
+                    styles.emptyMemberTicketSlot,
+                    { width: ticketWidth, aspectRatio: 2.5 },
+                  ]}
+                >
+                  <Text style={styles.emptyMemberTicketText}>
+                    내 티켓 만들기
+                  </Text>
                 </Pressable>
               ) : (
                 <View

@@ -115,6 +115,10 @@ function AppContent() {
     void (async () => {
       try {
         const existing = await getIssuedTicket(visitDate);
+        if (!existing) {
+          openGroups();
+          return;
+        }
         setViewTicket(existing);
         setSelectedVisitDate(visitDate);
         setScreen("ticket");
@@ -140,7 +144,7 @@ function AppContent() {
         onCreateNew={() => {
           setViewTicket(null);
           setSelectedVisitDate(undefined);
-          setScreen("dateSelection");
+          openGroups();
         }}
       />
     );
