@@ -10,6 +10,7 @@ import {
   inviteInfoResponseSchema,
   joinGroupInviteParamsSchema,
   joinGroupResponseSchema,
+  leaveGroupResponseSchema,
   USER_GROUP_MAX,
 } from "@mind-do/shared";
 import {
@@ -29,6 +30,7 @@ import {
   getInviteInfo,
   getMyGroups,
   joinGroupByInvite,
+  leaveGroup,
 } from "./groups.service.js";
 
 export const postGroup = async (req: Request, res: Response) => {
@@ -299,6 +301,47 @@ export const getInvite = async (req: Request, res: Response) => {
         error: {
           code: ErrorCode.INVITE_INVALID,
           message: "초대 링크가 유효하지 않거나 만료되었습니다.",
+        },
+      });
+    }
+    throw error;
+  }
+};
+
+export const postLeaveGroup = async (req: Request, res: Response) => {
+  const parsedParams = groupIdParamsSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({
+      error: {
+        code: ErrorCode.INVALID_INPUT,
+        message: "입력값을 확인해주세요.",
+      },
+    });
+  }
+
+  try {
+    const result = await leaveGroup(
+      req.headers.cookie,
+      parsedParams.data.groupId,
+    );
+    return res
+      .status(200)
+      .json({ data: leaveGroupResponseSchema.parse(result) });
+  } catch (error: unknown) {
+    if (sendAuthError(res, error)) return;
+    if (error instanceof GroupNotFoundError) {
+      return res.status(404).json({
+        error: {
+          code: ErrorCode.GROUP_NOT_FOUND,
+          message: "그룹을 찾을 수 없습니다.",
+        },
+      });
+    }
+    if (error instanceof DefaultGroupNotAllowedError) {
+      return res.status(403).json({
+        error: {
+          code: ErrorCode.DEFAULT_GROUP_NOT_ALLOWED,
+          message: "기본 1인 그룹은 나갈 수 없습니다.",
         },
       });
     }

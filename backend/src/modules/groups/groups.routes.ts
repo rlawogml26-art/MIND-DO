@@ -4,6 +4,7 @@ import {
   getGroups,
   postGroup,
   postGroupInvite,
+  postLeaveGroup,
 } from "./groups.controller.js";
 
 const router = Router();
@@ -216,5 +217,58 @@ router.get("/:groupId", getGroup);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post("/:groupId/invites", postGroupInvite);
+
+/**
+ * @swagger
+ * /api/groups/{groupId}/leave:
+ *   post:
+ *     summary: 그룹 나가기
+ *     description: 그룹에서 나갑니다. 내 개인 티켓은 그룹에 그대로 남고 원본은 내 보관함에도 남습니다. 그룹장이 나가면 가장 먼저 들어온 멤버가 그룹장이 되고, 혼자 남은 사람이 나가면 그룹이 삭제됩니다.
+ *     tags: [그룹]
+ *     security:
+ *       - AccessTokenCookie: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *     responses:
+ *       200:
+ *         description: 나가기 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   $ref: '#/components/schemas/LeaveGroupResponse'
+ *       400:
+ *         description: 그룹 ID 검증 실패 (INVALID_INPUT)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: 인증 실패 (UNAUTHORIZED 또는 ACCESS_TOKEN_EXPIRED)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: 기본 1인 그룹은 나갈 수 없음 (DEFAULT_GROUP_NOT_ALLOWED)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: 그룹이 없거나 요청자가 멤버가 아님 (GROUP_NOT_FOUND)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post("/:groupId/leave", postLeaveGroup);
 
 export default router;

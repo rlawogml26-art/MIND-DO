@@ -54,6 +54,12 @@ export const sharedTicketIdParamsSchema = z.object({
   sharedTicketId: idParamSchema,
 });
 
+// 초대자 제외 (DELETE /api/shared-tickets/{sharedTicketId}/invitees/{userId})
+export const removeInviteeParamsSchema = z.object({
+  sharedTicketId: idParamSchema,
+  userId: idParamSchema,
+});
+
 export const createSharedTicketRequestSchema = z.object({
   ticketDate: ticketDateSchema,
   title: optionalTrimmedText(JOINT_TITLE_MAX),

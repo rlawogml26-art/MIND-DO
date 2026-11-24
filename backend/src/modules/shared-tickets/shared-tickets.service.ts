@@ -33,6 +33,8 @@ export class InvalidInviteeError extends Error {}
 export class SharedTicketDateTakenError extends Error {}
 export class InvalidPhotoKeyError extends Error {}
 export class InvalidDesignError extends Error {}
+export class NotSharedTicketEditorError extends Error {}
+export class InviteeNotFoundError extends Error {}
 
 const PHOTO_EXTENSIONS: Record<(typeof PHOTO_CONTENT_TYPES)[number], string> = {
   "image/jpeg": "jpg",
@@ -134,6 +136,13 @@ const toStoredDesign = (design: unknown) => {
   return parsed.success ? parsed.data : null;
 };
 
+// 공동 티켓 제목 수정·초대자 추가·제외 권한. 요청자가 그룹의 현재 멤버로 확인된 뒤에만 부르므로
+// "생성자이면서 현재 멤버"는 creatorId 비교만으로 충분하다 (생성자가 나가면 그룹장만 남는다)
+const canEditSharedTicket = (
+  sharedTicket: { creatorId: number; leaderId: number },
+  userId: number,
+) => sharedTicket.creatorId === userId || sharedTicket.leaderId === userId;
+
 export const getSharedTicketDetail = async (
   cookieHeader: string | undefined,
   sharedTicketId: number,
@@ -182,8 +191,7 @@ async function buildSharedTicketDetail(sharedTicketId: number, userId: number) {
     ticketDate: detail.ticketDate,
     title: detail.title,
     creatorId: detail.creatorId,
-    // 요청자는 이미 현재 멤버로 확인됐으므로 "생성자이면서 현재 멤버"는 creatorId 비교만으로 충분하다.
-    canEdit: detail.creatorId === userId || detail.leaderId === userId,
+    canEdit: canEditSharedTicket(detail, userId),
     createdAt: detail.createdAt.toISOString(),
     slots,
   };
@@ -254,6 +262,7 @@ export const issueTicket = async (
   if (result.status === "shared_ticket_not_found") {
     throw new SharedTicketNotFoundError();
   }
+  if (result.status === "not_invited") throw new NotInvitedError();
   if (result.status === "ticket_already_completed") {
     throw new TicketAlreadyCompletedError();
   }
@@ -312,4 +321,29 @@ export const getGroupSharedTicketList = async (
     }),
   );
   return { sharedTickets };
+};
+
+// 초대자 제외. 이미 개인 티켓을 저장한 사람도 제외할 수 있고, 그 티켓은 연결만 끊겨 본인 보관함에 남는다 (11/18 결정)
+export const removeSharedTicketInvitee = async (
+  cookieHeader: string | undefined,
+  sharedTicketId: number,
+  inviteeUserId: number,
+) => {
+  const userId = getRequesterId(cookieHeader);
+  const detail = await repository.findSharedTicketDetail({
+    sharedTicketId,
+    userId,
+  });
+  if (!detail) throw new SharedTicketNotFoundError();
+  if (!canEditSharedTicket(detail, userId)) {
+    throw new NotSharedTicketEditorError();
+  }
+
+  const result = await repository.removeInvitee({
+    sharedTicketId,
+    inviteeUserId,
+  });
+  if (result.status === "invitee_not_found") throw new InviteeNotFoundError();
+
+  return buildSharedTicketDetail(sharedTicketId, userId);
 };

@@ -257,3 +257,75 @@ export const countJoinedGroups = (userId: number) =>
       group: { isDefault: false, deletedAt: null },
     },
   });
+
+type LeaveGroupInput = {
+  groupId: number;
+  userId: number;
+};
+
+// 그룹 나가기. 나간 사람의 개인 티켓은 건드리지 않는다 (그룹에 남고, 원본은 본인 보관함에도 있다).
+export const leaveGroup = ({ groupId, userId }: LeaveGroupInput) =>
+  getPrismaClient().$transaction(async (transaction) => {
+    // 같은 그룹에서 동시에 나가거나 들어오는 요청을 한 줄로 세워, 마지막 두 명이 동시에 나가도
+    // 멤버 0명인 그룹이 남지 않게 한다
+    const groups = await transaction.$queryRaw<
+      Array<{ isDefault: boolean; leaderId: number }>
+    >`
+      SELECT is_default AS isDefault, leader_id AS leaderId
+      FROM \`groups\`
+      WHERE id = ${groupId} AND deleted_at IS NULL
+      FOR UPDATE
+    `;
+    const group = groups[0];
+    if (!group) return { status: "group_not_found" as const };
+
+    const membership = await transaction.groupMember.findFirst({
+      where: { groupId, userId, leftAt: null },
+      select: { id: true },
+    });
+    if (!membership) return { status: "group_not_found" as const };
+    if (group.isDefault) {
+      return { status: "default_group_not_allowed" as const };
+    }
+
+    const now = new Date();
+    await transaction.groupMember.update({
+      where: { id: membership.id },
+      data: { leftAt: now },
+    });
+
+    const firstRemaining = await transaction.groupMember.findFirst({
+      where: { groupId, leftAt: null },
+      orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
+      select: { userId: true },
+    });
+    if (!firstRemaining) {
+      await transaction.group.update({
+        where: { id: groupId },
+        data: { deletedAt: now },
+      });
+      return {
+        status: "left" as const,
+        groupDeleted: true,
+        newLeaderId: null,
+      };
+    }
+
+    if (Number(group.leaderId) !== userId) {
+      return {
+        status: "left" as const,
+        groupDeleted: false,
+        newLeaderId: null,
+      };
+    }
+
+    await transaction.group.update({
+      where: { id: groupId },
+      data: { leaderId: firstRemaining.userId },
+    });
+    return {
+      status: "left" as const,
+      groupDeleted: false,
+      newLeaderId: firstRemaining.userId,
+    };
+  });

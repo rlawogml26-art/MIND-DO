@@ -216,6 +216,15 @@ export const createIssuedTicket = async ({
       });
       if (!sharedTicket) return { status: "shared_ticket_not_found" as const };
 
+      // 초대자 제외(removeInvitee)와 같은 행을 잠가 순서를 정한다. 제외가 먼저 끝났으면 슬롯이 없어 저장을 막고,
+      // 저장이 먼저 끝났으면 제외할 때 이 티켓의 연결도 함께 끊긴다
+      const invitees = await transaction.$queryRaw<Array<{ id: number }>>`
+        SELECT id FROM shared_ticket_invitees
+        WHERE shared_ticket_id = ${sharedTicketId} AND user_id = ${userId}
+        FOR UPDATE
+      `;
+      if (invitees.length === 0) return { status: "not_invited" as const };
+
       const ticket = await transaction.ticket.create({
         data: {
           userId,
@@ -311,3 +320,35 @@ export const findGroupSharedTickets = async ({
     coverPhotoKey: sharedTicket.tickets[0]?.images[0]?.s3Key ?? null,
   }));
 };
+
+type RemoveInviteeInput = {
+  sharedTicketId: number;
+  inviteeUserId: number;
+};
+
+// 초대자 제외. 슬롯(초대자 행)은 지우고, 그 사람의 개인 티켓은 공동 티켓 연결만 끊는다.
+// 원본은 지우지 않으므로 본인 보관함에 그대로 남는다. 공동 티켓은 지우지 않는다.
+export const removeInvitee = ({
+  sharedTicketId,
+  inviteeUserId,
+}: RemoveInviteeInput) =>
+  getPrismaClient().$transaction(async (transaction) => {
+    const invitees = await transaction.$queryRaw<Array<{ id: number }>>`
+      SELECT id FROM shared_ticket_invitees
+      WHERE shared_ticket_id = ${sharedTicketId} AND user_id = ${inviteeUserId}
+      FOR UPDATE
+    `;
+    const invitee = invitees[0];
+    if (!invitee) return { status: "invitee_not_found" as const };
+
+    // 삭제(소프트)된 티켓도 연결을 끊는다. 남겨 두면 다시 초대받았을 때
+    // (shared_ticket_id, user_id) 고유 키에 걸려 새 개인 티켓을 저장할 수 없다
+    await transaction.ticket.updateMany({
+      where: { sharedTicketId, userId: inviteeUserId },
+      data: { sharedTicketId: null },
+    });
+    await transaction.sharedTicketInvitee.delete({
+      where: { id: Number(invitee.id) },
+    });
+    return { status: "removed" as const };
+  });

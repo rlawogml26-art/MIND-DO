@@ -108,6 +108,16 @@ export const inviteInfoResponseSchema = z.object({
   cannotJoinReason: z.enum(GROUP_JOIN_BLOCK_REASONS).nullable(),
 });
 
+// 그룹 나가기 (POST /api/groups/{groupId}/leave)
+// 나간 사람의 개인 티켓은 그룹에 그대로 남고, 원본은 본인 보관함에도 그대로 있다
+export const leaveGroupResponseSchema = z.object({
+  groupId: positiveIdSchema,
+  // 혼자 남은 사람이 나가서 그룹이 삭제됐는지
+  groupDeleted: z.boolean(),
+  // 그룹장이 나가 자동으로 넘겨받은 사람. 그룹장이 아니었거나 그룹이 삭제됐으면 null
+  newLeaderId: positiveIdSchema.nullable(),
+});
+
 export type CreateGroupRequest = z.infer<typeof createGroupRequestSchema>;
 export type GroupResponse = z.infer<typeof groupResponseSchema>;
 export type CreateGroupInviteResponse = z.infer<
@@ -119,3 +129,4 @@ export type GroupListResponse = z.infer<typeof groupListResponseSchema>;
 export type GroupMember = z.infer<typeof groupMemberSchema>;
 export type GroupDetailResponse = z.infer<typeof groupDetailResponseSchema>;
 export type InviteInfoResponse = z.infer<typeof inviteInfoResponseSchema>;
+export type LeaveGroupResponse = z.infer<typeof leaveGroupResponseSchema>;
