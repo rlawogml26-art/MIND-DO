@@ -1,7 +1,6 @@
 import type { MyTicket } from "@mind-do/shared";
 import { useMemo, useState } from "react";
 import {
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -356,6 +355,7 @@ function PersonalTicketBack({
 }
 
 type HomeScreenProps = {
+  onOpenStore: () => void;
   onOpenMy: () => void;
   onOpenGroup: () => void;
   onLogout?: () => void;
@@ -411,10 +411,6 @@ function ticketDateWithWeekday(date: string) {
   return `${year}.${String(month).padStart(2, "0")}.${String(day).padStart(2, "0")} · ${weekday}`;
 }
 
-function showPendingFeature() {
-  Alert.alert("안내", "아직 연결되지 않은 기능이에요.");
-}
-
 function BatchTicketCard({
   ticket,
   onPress,
@@ -453,7 +449,11 @@ function BatchTicketCard({
     </Pressable>
   );
 }
-export default function HomeScreen({ onOpenMy, onOpenGroup }: HomeScreenProps) {
+export default function HomeScreen({
+  onOpenMy,
+  onOpenGroup,
+  onOpenStore,
+}: HomeScreenProps) {
   const [monthDate, setMonthDate] = useState(currentMonth);
   const [selectedDate, setSelectedDate] = useState(todayDateKey);
   const [showAllTickets, setShowAllTickets] = useState(false);
@@ -633,7 +633,7 @@ export default function HomeScreen({ onOpenMy, onOpenGroup }: HomeScreenProps) {
                 if (tab === "home") setShowAllTickets(false);
                 else if (tab === "group") onOpenGroup();
                 else if (tab === "my") onOpenMy();
-                else showPendingFeature();
+                else onOpenStore();
               }}
             />
           </View>
@@ -805,7 +805,7 @@ export default function HomeScreen({ onOpenMy, onOpenGroup }: HomeScreenProps) {
                 if (tab === "home") setMonthDate(currentMonth());
                 else if (tab === "group") onOpenGroup();
                 else if (tab === "my") onOpenMy();
-                else showPendingFeature();
+                else onOpenStore();
               }}
             />
           </>

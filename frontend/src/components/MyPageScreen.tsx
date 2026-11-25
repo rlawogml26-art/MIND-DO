@@ -290,12 +290,14 @@ type TicketListEntry = {
 export default function MyPageScreen({
   onOpenHome,
   onOpenGroup,
+  onOpenStore,
   onLogout,
   savedProfile,
   onSaveProfile,
 }: {
   onOpenHome: () => void;
   onOpenGroup?: () => void;
+  onOpenStore: () => void;
   onLogout?: () => void;
   savedProfile: Profile;
   onSaveProfile: (profile: Profile) => void;
@@ -932,7 +934,7 @@ export default function MyPageScreen({
                     "App.tsx의 MyPageScreen에 onOpenGroup={openGroups}를 전달해 주세요.",
                   );
                 }
-              } else if (tab === "store") showPendingFeature();
+              } else if (tab === "store") onOpenStore();
               else returnToMy();
             }}
           />
