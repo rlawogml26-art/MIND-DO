@@ -769,10 +769,13 @@ export default function HomeScreen({
                         accessibilityRole="button"
                         accessibilityLabel="내 티켓 보기"
                         onPress={() => openTicket(ticket)}
-                        style={styles.ticketSlot}
+                        style={({ pressed }) => [
+                          styles.ticketSlot,
+                          pressed && styles.slotPressed,
+                        ]}
                       >
                         <View style={styles.slotTicketStub}>
-                          <Text style={styles.slotTicketName}>나의 티켓</Text>
+                          <Text style={styles.slotTicketName}>MEMO:RE</Text>
                           <Text style={styles.slotTicketDate}>
                             {formattedDate(ticket.visitDate)}
                           </Text>
@@ -788,6 +791,9 @@ export default function HomeScreen({
                             <View style={styles.slotTicketEmptyImage} />
                           )}
                         </View>
+                        <Text style={styles.slotLabel} numberOfLines={1}>
+                          나의 기록
+                        </Text>
                       </Pressable>
                     ))}
                     {!ticketLoadFailed && dateTickets.length === 0 && (
@@ -1288,8 +1294,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   batchEmptyTicket: {
-    width: "100%",
-    height: 144,
+    height: 110,
     borderRadius: 12,
     borderWidth: 1,
     borderStyle: "dashed",

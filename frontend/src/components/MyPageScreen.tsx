@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PROFILE_NICKNAME_MAX } from "@mind-do/shared";
 import {
   Alert,
@@ -15,6 +15,7 @@ import {
   Image,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { getGroupSharedTickets, getMyGroups } from "../lib/api";
 import { useMyTickets } from "../hooks/use-my-tickets";
 
 const colors = {
@@ -278,11 +279,12 @@ export type Profile = {
 
 type MyScreen = "profile" | "edit" | "tickets" | "following" | "followers";
 type TicketViewMode = "all" | "month";
+type TicketTypeFilter = "all" | "personal" | "shared";
 type TicketListEntry = {
   key: string;
   visitDate: string;
   title: string;
-  location: string;
+  subtitle: string;
   thumbnail?: string;
   segment: "full" | "shared" | "personal";
 };
@@ -313,6 +315,13 @@ export default function MyPageScreen({
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuRoute, setMenuRoute] = useState<MenuRoute>("settings");
   const [profilePhotoExpanded, setProfilePhotoExpanded] = useState(false);
+  const [ticketTypeFilter, setTicketTypeFilter] =
+    useState<TicketTypeFilter>("all");
+  const [sharedTickets, setSharedTickets] = useState<TicketListEntry[]>([]);
+  const [sharedTicketStatus, setSharedTicketStatus] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [sharedTicketAttempt, setSharedTicketAttempt] = useState(0);
   const [ticketViewMode, setTicketViewMode] = useState<TicketViewMode>("all");
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [selectedYearMonth, setSelectedYearMonth] = useState(() => {
@@ -320,6 +329,46 @@ export default function MyPageScreen({
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
   });
   const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
+
+  useEffect(() => {
+    if (screen !== "tickets") return;
+    let active = true;
+    setSharedTicketStatus("loading");
+    void getMyGroups()
+      .then(({ groups }) =>
+        Promise.all(
+          groups
+            .filter((group) => !group.isDefault)
+            .map(async (group) => {
+              const { sharedTickets } = await getGroupSharedTickets(
+                group.groupId,
+              );
+              return sharedTickets
+                .filter((ticket) => ticket.isInvited)
+                .map((ticket): TicketListEntry => ({
+                  key: `shared-${ticket.sharedTicketId}`,
+                  visitDate: ticket.ticketDate,
+                  title: ticket.title || "공동 티켓",
+                  subtitle: group.name,
+                  segment: "shared",
+                }));
+            }),
+        ),
+      )
+      .then((results) => {
+        if (!active) return;
+        setSharedTickets(results.flat());
+        setSharedTicketStatus("ready");
+      })
+      .catch(() => {
+        if (!active) return;
+        setSharedTickets([]);
+        setSharedTicketStatus("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [screen, sharedTicketAttempt]);
 
   const isEditing = screen === "edit";
   const visibleProfile = isEditing ? draftProfile : savedProfile;
@@ -419,14 +468,20 @@ export default function MyPageScreen({
     );
   }
   if (screen === "tickets") {
-    const ticketEntries: TicketListEntry[] = tickets.map((ticket) => ({
+    const personalEntries: TicketListEntry[] = tickets.map((ticket) => ({
       key: String(ticket.ticketId),
       visitDate: ticket.visitDate,
       title: "나의 티켓",
-      location: "내 티켓",
+      subtitle: "내 티켓",
       thumbnail: ticket.photos[0]?.url,
-      segment: "full",
+      segment: ticketTypeFilter === "personal" ? "personal" : "full",
     }));
+    const ticketEntries =
+      ticketTypeFilter === "personal"
+        ? personalEntries
+        : ticketTypeFilter === "shared"
+          ? sharedTickets
+          : [...personalEntries, ...sharedTickets];
     const monthFilteredEntries =
       ticketViewMode === "month"
         ? ticketEntries.filter(
@@ -448,7 +503,7 @@ export default function MyPageScreen({
     const [selectedYear, selectedMonth] = selectedYearMonth.split("-");
     const renderTicketCard = (ticket: TicketListEntry) => {
       const title = ticket.title;
-      const location = ticket.location;
+      const subtitle = ticket.subtitle;
       const date = ticket.visitDate.replace(/-/g, ".");
       const thumbnail = ticket.thumbnail;
       return (
@@ -476,7 +531,7 @@ export default function MyPageScreen({
                   {date}
                 </Text>
                 <Text style={styles.ticketStubLocation} numberOfLines={1}>
-                  {location}
+                  {subtitle}
                 </Text>
               </View>
             </View>
@@ -552,6 +607,37 @@ export default function MyPageScreen({
             ))}
           </View>
 
+          <View style={styles.ticketTypeTabs}>
+            {(
+              [
+                { key: "all", label: "전체" },
+                { key: "personal", label: "개인 티켓" },
+                { key: "shared", label: "공동 티켓" },
+              ] as const
+            ).map((tab) => (
+              <Pressable
+                key={tab.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected: ticketTypeFilter === tab.key }}
+                onPress={() => setTicketTypeFilter(tab.key)}
+                style={styles.ticketTypeTab}
+              >
+                <Text
+                  style={[
+                    styles.ticketTypeTabText,
+                    ticketTypeFilter === tab.key &&
+                      styles.ticketTypeTabTextActive,
+                  ]}
+                >
+                  {tab.label}
+                </Text>
+                {ticketTypeFilter === tab.key && (
+                  <View style={styles.ticketTypeIndicator} />
+                )}
+              </Pressable>
+            ))}
+          </View>
+
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={styles.ticketListContent}
@@ -577,20 +663,40 @@ export default function MyPageScreen({
                 </Pressable>
               )}
             </View>
-            {ticketLoadError ? (
+            {ticketTypeFilter === "shared" && sharedTicketStatus === "error" ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setSharedTicketAttempt((attempt) => attempt + 1)}
+              >
+                <Text style={styles.ticketListEmpty}>
+                  공동 티켓을 불러오지 못했어요. 다시 시도
+                </Text>
+              </Pressable>
+            ) : ticketTypeFilter === "shared" &&
+              sharedTicketStatus === "loading" ? (
+              <Text style={styles.ticketListEmpty}>
+                공동 티켓을 불러오는 중이에요.
+              </Text>
+            ) : ticketTypeFilter !== "shared" && ticketLoadError ? (
               <Pressable accessibilityRole="button" onPress={reload}>
                 <Text style={styles.ticketListEmpty}>
                   내 티켓을 불러오지 못했어요. 다시 시도
                 </Text>
               </Pressable>
-            ) : ticketLoading ? (
+            ) : ticketTypeFilter !== "shared" && ticketLoading ? (
               <Text style={styles.ticketListEmpty}>
                 티켓을 불러오는 중이에요.
               </Text>
             ) : visibleTickets.length === 0 ? (
               <Text style={styles.ticketListEmpty}>
-                아직 발권한 티켓이 없어요.
+                {ticketTypeFilter === "shared"
+                  ? "공동 티켓이 없어요."
+                  : "아직 발권한 티켓이 없어요."}
               </Text>
+            ) : ticketTypeFilter === "shared" ? (
+              <View style={styles.sharedTicketGrid}>
+                {visibleTickets.map(renderTicketCard)}
+              </View>
             ) : (
               monthGroups.map(([month, monthTickets], monthIndex) => (
                 <View key={month} style={styles.ticketMonthGroup}>
@@ -599,7 +705,18 @@ export default function MyPageScreen({
                       {month.slice(0, 4)}년 {Number(month.slice(5, 7))}월
                     </Text>
                   )}
-                  {monthTickets.map(renderTicketCard)}
+                  {monthTickets
+                    .filter((ticket) => ticket.segment !== "shared")
+                    .map(renderTicketCard)}
+                  {monthTickets.some(
+                    (ticket) => ticket.segment === "shared",
+                  ) && (
+                    <View style={styles.sharedTicketGrid}>
+                      {monthTickets
+                        .filter((ticket) => ticket.segment === "shared")
+                        .map(renderTicketCard)}
+                    </View>
+                  )}
                 </View>
               ))
             )}
@@ -1519,7 +1636,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#EEE5DD",
   },
-  sharedTicketCard: { width: 76, aspectRatio: 0.5 },
+  sharedTicketCard: { width: 80, aspectRatio: 0.5 },
   personalTicketCard: { width: "80%", aspectRatio: 2, alignSelf: "center" },
   sharedTicketRowViewport: { width: "100%", height: 154, flexGrow: 0 },
   sharedTicketRow: {
@@ -1527,6 +1644,14 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 12,
     paddingRight: 8,
+  },
+  sharedTicketGrid: {
+    width: "100%",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "flex-start",
+    gap: 10,
+    rowGap: 14,
   },
   ticketStub: {
     width: "20%",
