@@ -27,6 +27,8 @@ export enum ErrorCode {
   INVALID_TICKET_DATE = "INVALID_TICKET_DATE", // 400 미래 날짜 (KST 기준)
   INVALID_INVITEE = "INVALID_INVITEE", // 400 초대자가 그룹의 현재 멤버가 아님
   SHARED_TICKET_DATE_TAKEN = "SHARED_TICKET_DATE_TAKEN", // 409 그 그룹·그 날짜에 공동 티켓이 이미 있음
+  NOT_SHARED_TICKET_EDITOR = "NOT_SHARED_TICKET_EDITOR", // 403 공동 티켓 생성자·그룹장 전용 행동 (초대자 제외 등)
+  INVITEE_NOT_FOUND = "INVITEE_NOT_FOUND", // 404 그 사람이 이 공동 티켓의 초대자가 아님
 
   // 사진첨부·개인 티켓 저장·AI 초안
   NOT_INVITED = "NOT_INVITED", // 403 공동 티켓의 초대자가 아님

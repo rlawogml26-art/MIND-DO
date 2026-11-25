@@ -5,6 +5,7 @@ import {
   groupIdParamsSchema,
   issuedTicketResponseSchema,
   issueTicketRequestSchema,
+  removeInviteeParamsSchema,
   sharedTicketDetailResponseSchema,
   sharedTicketIdParamsSchema,
   sharedTicketListQuerySchema,
@@ -27,8 +28,11 @@ import {
   InvalidInviteeError,
   InvalidPhotoKeyError,
   InvalidTicketDateError,
+  InviteeNotFoundError,
   issueTicket,
   NotInvitedError,
+  NotSharedTicketEditorError,
+  removeSharedTicketInvitee,
   SharedTicketDateTakenError,
   SharedTicketNotFoundError,
   TicketAlreadyCompletedError,
@@ -174,6 +178,20 @@ const sendKnownError = (res: Response, error: unknown): boolean => {
       ErrorCode.TICKET_ALREADY_COMPLETED,
       "이미 개인 티켓을 저장했습니다.",
     );
+  } else if (error instanceof NotSharedTicketEditorError) {
+    sendError(
+      res,
+      403,
+      ErrorCode.NOT_SHARED_TICKET_EDITOR,
+      "공동 티켓을 만든 사람이나 그룹장만 할 수 있습니다.",
+    );
+  } else if (error instanceof InviteeNotFoundError) {
+    sendError(
+      res,
+      404,
+      ErrorCode.INVITEE_NOT_FOUND,
+      "이 공동 티켓의 초대자가 아닙니다.",
+    );
   } else {
     return false;
   }
@@ -258,6 +276,28 @@ export const getGroupSharedTickets = async (req: Request, res: Response) => {
     return res
       .status(200)
       .json({ data: sharedTicketListResponseSchema.parse(list) });
+  } catch (error: unknown) {
+    if (sendKnownError(res, error)) return;
+    throw error;
+  }
+};
+
+export const deleteSharedTicketInvitee = async (
+  req: Request,
+  res: Response,
+) => {
+  const parsedParams = removeInviteeParamsSchema.safeParse(req.params);
+  if (!parsedParams.success) return sendInvalidInput(res);
+
+  try {
+    const detail = await removeSharedTicketInvitee(
+      req.headers.cookie,
+      parsedParams.data.sharedTicketId,
+      parsedParams.data.userId,
+    );
+    return res
+      .status(200)
+      .json({ data: sharedTicketDetailResponseSchema.parse(detail) });
   } catch (error: unknown) {
     if (sendKnownError(res, error)) return;
     throw error;
