@@ -656,7 +656,7 @@ export default function HomeScreen({
                   나의 기록
                 </Text>
                 <Text style={styles.recordsCount}>{recordCount}장</Text>
-              </View>{" "}
+              </View>
               <View style={[styles.calendar, { minHeight: calendarHeight }]}>
                 <View style={styles.calendarHeader}>
                   <Pressable
