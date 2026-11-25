@@ -83,6 +83,7 @@ export type DemoGroup = {
 
 type GroupScreenProps = {
   onOpenHome: () => void;
+  onOpenStore: () => void;
   onOpenMy: () => void;
   groups: DemoGroup[];
   currentUserId: number;
@@ -615,6 +616,7 @@ function MemberProfiles({
 export default function GroupScreen({
   onOpenHome,
   onOpenMy,
+  onOpenStore,
   groups,
   onGroupsChange: setGroups,
   currentUserId,
@@ -1669,12 +1671,7 @@ export default function GroupScreen({
               onSelect={(tab) => {
                 if (tab === "home") onOpenHome();
                 else if (tab === "my") onOpenMy();
-                else if (tab === "store") {
-                  Alert.alert(
-                    "스토어",
-                    "스토어 화면은 이번 05 구현 범위에 포함되지 않았어요.",
-                  );
-                }
+                else if (tab === "store") onOpenStore();
               }}
             />
           </>
@@ -1902,12 +1899,7 @@ export default function GroupScreen({
                   onSelect={(tab) => {
                     if (tab === "home") onOpenHome();
                     else if (tab === "my") onOpenMy();
-                    else if (tab === "store") {
-                      Alert.alert(
-                        "스토어",
-                        "스토어 화면은 이번 05 구현 범위에 포함되지 않았어요.",
-                      );
-                    }
+                    else if (tab === "store") onOpenStore();
                   }}
                 />
               </>

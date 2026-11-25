@@ -4,6 +4,7 @@ import { Alert } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import HomeScreen from "../components/HomeScreen";
 import MyPageScreen, { type Profile } from "../components/MyPageScreen";
+import StoreScreen from "../components/StoreScreen";
 import LoginScreen from "../components/LoginScreen";
 import GroupScreen, {
   kstDate,
@@ -11,7 +12,7 @@ import GroupScreen, {
 } from "../components/GroupScreen";
 import { ApiError, getMyGroups, logout } from "../lib/api";
 
-type RootScreen = "home" | "group" | "my";
+type RootScreen = "home" | "group" | "my" | "store";
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -75,9 +76,21 @@ function AppContent() {
     return <LoginScreen onLoggedIn={setUser} />;
   }
 
+  const openStore = () => setScreen("store");
+
+  if (screen === "store") {
+    return (
+      <StoreScreen
+        onOpenHome={() => setScreen("home")}
+        onOpenGroup={openGroups}
+        onOpenMy={() => setScreen("my")}
+      />
+    );
+  }
   if (screen === "group") {
     return (
       <GroupScreen
+        onOpenStore={openStore}
         onOpenHome={() => setScreen("home")}
         onOpenMy={() => setScreen("my")}
         groups={groups}
@@ -89,6 +102,7 @@ function AppContent() {
   if (screen === "my") {
     return (
       <MyPageScreen
+        onOpenStore={openStore}
         onOpenHome={() => setScreen("home")}
         onOpenGroup={openGroups}
         savedProfile={profile}
@@ -98,6 +112,7 @@ function AppContent() {
   }
   return (
     <HomeScreen
+      onOpenStore={openStore}
       onOpenMy={() => setScreen("my")}
       onOpenGroup={openGroups}
       onLogout={() => {
