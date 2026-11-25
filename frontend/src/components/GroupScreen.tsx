@@ -624,9 +624,13 @@ export default function GroupScreen({
   const [page, setPage] = useState<Page>("groups");
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [popup, setPopup] = useState<Popup>("none");
+  const [shareLink, setShareLink] = useState("");
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
   const [monthPickerVisible, setMonthPickerVisible] = useState(false);
-  const [expandedMonthYear, setExpandedMonthYear] = useState<string | null>(
+  const [monthPickerYear, setMonthPickerYear] = useState(() =>
+    new Date().getFullYear(),
+  );
+  const [pendingMonthFilter, setPendingMonthFilter] = useState<string | null>(
     null,
   );
   const [datePickerTarget, setDatePickerTarget] = useState<
@@ -834,17 +838,6 @@ export default function GroupScreen({
         new Set(groupTicketsForDisplay.map((t) => t.date.slice(0, 7))),
       ).sort((a, b) => b.localeCompare(a)),
     [groupTicketsForDisplay],
-  );
-  const monthsByYear = useMemo(() => {
-    const grouped: Record<string, string[]> = {};
-    availableMonths.forEach((month) => {
-      const year = month.slice(0, 4);
-      (grouped[year] ??= []).push(month);
-    });
-    return grouped;
-  }, [availableMonths]);
-  const availableYears = Object.keys(monthsByYear).sort((a, b) =>
-    b.localeCompare(a),
   );
   const calendarYear = calendarMonth.getFullYear();
   const calendarMonthIndex = calendarMonth.getMonth();
@@ -1171,7 +1164,8 @@ export default function GroupScreen({
       Alert.alert("월별 보기", "아직 표시할 티켓이 없어요.");
       return;
     }
-    setExpandedMonthYear(availableMonths[0]?.slice(0, 4) ?? null);
+    setPendingMonthFilter(monthFilter);
+    setMonthPickerYear(Number((monthFilter ?? availableMonths[0]).slice(0, 4)));
     setMonthPickerVisible(true);
   }
   function openDatePicker(target: "first" | "joint") {
@@ -1210,16 +1204,34 @@ export default function GroupScreen({
     }
   }
 
-  async function shareInvite() {
+  function openShareInvite() {
+    requestVersion.current += 1;
+    setShareLink("");
+    setPopup("invite");
+  }
+
+  async function generateShareLink() {
     if (!selectedGroup || selectedGroup.isDefault || submitting.current) return;
+    const version = requestVersion.current;
     submitting.current = true;
     try {
       const { inviteUrl } = await createGroupInvite(Number(selectedGroup.id));
-      await Share.share({ message: inviteUrl });
+      if (version === requestVersion.current) setShareLink(inviteUrl);
     } catch {
-      Alert.alert("공유하기 오류", "그룹 초대 링크를 공유하지 못했어요.");
+      if (version === requestVersion.current) {
+        Alert.alert("초대 링크 오류", "그룹 초대 링크를 만들지 못했어요.");
+      }
     } finally {
       submitting.current = false;
+    }
+  }
+
+  async function shareInvite() {
+    if (!shareLink) return;
+    try {
+      await Share.share({ message: shareLink });
+    } catch {
+      Alert.alert("공유하기 오류", "그룹 초대 링크를 공유하지 못했어요.");
     }
   }
 
@@ -1808,7 +1820,7 @@ export default function GroupScreen({
                         onInvite={() =>
                           selectedGroup.isDefault
                             ? newGroup()
-                            : setPopup("invite")
+                            : openShareInvite()
                         }
                       />
                     </View>
@@ -2526,47 +2538,107 @@ export default function GroupScreen({
                     </View>
                   )}
                   {page === "newJoint" && (
-                    <View style={styles.formStack}>
-                      <FormInput
-                        label="날짜"
-                        value={jointDate}
-                        onChangeText={setJointDate}
-                        placeholder="YYYY.MM.DD"
-                        onPress={() => openDatePicker("joint")}
-                      />
-                      <FormInput
-                        label={`제목 · 선택 · 최대 ${JOINT_TITLE_MAX}자`}
-                        value={jointTitle}
-                        onChangeText={setJointTitle}
-                        placeholder="제목"
-                        maxLength={JOINT_TITLE_MAX}
-                      />
+                    <View style={styles.jointCreateContent}>
+                      <View style={styles.jointTicketStub}>
+                        <Text style={styles.jointTicketStubDate}>
+                          {fmtDate(validDate(jointDate) || dateToday()).slice(
+                            5,
+                            7,
+                          )}
+                        </Text>
+                        <Text style={styles.jointTicketStubDate}>
+                          {fmtDate(validDate(jointDate) || dateToday()).slice(
+                            8,
+                            10,
+                          )}
+                        </Text>
+                        <Text style={styles.jointTicketStubCaption}>
+                          MEMO:RE
+                        </Text>
+                      </View>
+
+                      <View style={styles.jointCreateField}>
+                        <Text style={styles.jointCreateLabel}>날짜</Text>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="공동 티켓 날짜 선택"
+                          onPress={() => openDatePicker("joint")}
+                          style={styles.jointCreateDateField}
+                        >
+                          <Text style={styles.jointCreateValue}>
+                            {jointDate || "YYYY.MM.DD"}
+                          </Text>
+                        </Pressable>
+                      </View>
+
+                      <View style={styles.jointCreateField}>
+                        <Text style={styles.jointCreateLabel}>제목 · 선택</Text>
+                        <TextInput
+                          accessibilityLabel="공동 티켓 제목"
+                          value={jointTitle}
+                          onChangeText={setJointTitle}
+                          placeholder="제목을 입력해 주세요"
+                          placeholderTextColor="#A0A4AD"
+                          maxLength={JOINT_TITLE_MAX}
+                          style={styles.jointCreateTitleInput}
+                        />
+                        <Text style={styles.jointCreateCounter}>
+                          {jointTitle.length} / {JOINT_TITLE_MAX}
+                        </Text>
+                      </View>
+
                       {!selectedGroup?.isDefault && (
-                        <>
-                          <Text style={styles.formLabel}>참여 멤버</Text>
-                          <View style={styles.jointMemberSummary}>
-                            <View style={styles.jointAvatar}>
-                              <Text style={styles.jointAvatarText}>나</Text>
-                            </View>
-                            {selectedJointMembers.map((letter) => (
-                              <View key={letter} style={styles.jointAvatar}>
-                                <Text style={styles.jointAvatarText}>
-                                  {letter}
-                                </Text>
-                              </View>
-                            ))}
+                        <View style={styles.jointCreateMembers}>
+                          <View style={styles.jointCreateMemberHeading}>
+                            <Text style={styles.jointCreateLabel}>
+                              참여 멤버
+                            </Text>
                             <Pressable
                               accessibilityRole="button"
-                              accessibilityLabel="티켓 참여 멤버 추가"
+                              accessibilityLabel="참여 멤버 선택"
                               onPress={openParticipants}
-                              style={styles.addJointMember}
+                              hitSlop={8}
                             >
-                              <Text style={styles.addJointMemberText}>
-                                ＋ 멤버 추가하기
-                              </Text>
+                              <Text style={styles.jointCreateSelect}>선택</Text>
                             </Pressable>
                           </View>
-                        </>
+                          <View style={styles.jointCreateAvatarRow}>
+                            {currentMemberLetters.map((letter) => {
+                              const name =
+                                selectedGroup?.memberNames?.[letter] ?? "멤버";
+                              const selected =
+                                selectedJointMembers.includes(letter);
+                              return (
+                                <Pressable
+                                  key={letter}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`멤버 ${name} ${selected ? "선택됨" : "선택"}`}
+                                  accessibilityState={{ selected }}
+                                  onPress={() =>
+                                    setSelectedJointMembers((old) =>
+                                      old.includes(letter)
+                                        ? old.filter((item) => item !== letter)
+                                        : [...old, letter],
+                                    )
+                                  }
+                                  style={styles.jointCreateAvatarCell}
+                                >
+                                  <View
+                                    style={[
+                                      styles.jointCreateAvatar,
+                                      selected &&
+                                        styles.jointCreateAvatarSelected,
+                                    ]}
+                                  >
+                                    <Text style={styles.jointAvatarText}>
+                                      {Array.from(name)[0]}
+                                    </Text>
+                                  </View>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        </View>
                       )}
                     </View>
                   )}
@@ -2586,7 +2658,19 @@ export default function GroupScreen({
                       />
                     )}
                     {page === "newJoint" && (
-                      <TextButton text="다음으로" onPress={createJoint} />
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="공동 티켓 만들기"
+                        onPress={createJoint}
+                        style={({ pressed }) => [
+                          styles.jointCreateButton,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.jointCreateButtonText}>
+                          공동 티켓 만들기
+                        </Text>
+                      </Pressable>
                     )}
                     {page === "renameGroup" && (
                       <TextButton text="변경 완료" onPress={saveGroupName} />
@@ -2748,16 +2832,46 @@ export default function GroupScreen({
               accessibilityLabel="초대 링크 팝업 닫기"
             />
             <View style={styles.inviteDialog}>
-              <Text style={styles.inviteHeading}>초대 링크 만들기</Text>
-              <TextButton text="공유하기" onPress={shareInvite} />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="닫기"
-                onPress={() => setPopup("none")}
-                style={styles.closeDialog}
-              >
-                <Text style={styles.closeDialogText}>닫기</Text>
-              </Pressable>
+              <View style={styles.inviteTitleRow}>
+                <Text style={styles.inviteHeading}>초대 링크</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="초대 링크 닫기"
+                  onPress={() => setPopup("none")}
+                  style={styles.inviteCloseButton}
+                >
+                  <Text style={styles.inviteCloseText}>×</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.inviteMemberCount}>
+                {selectedGroup?.members ?? 0} / {selectedGroup?.maxMembers ?? 0}
+                명 참여 중
+              </Text>
+              {shareLink ? (
+                <>
+                  <Text style={styles.inviteDialogLinkLabel}>
+                    길게 눌러 링크 복사
+                  </Text>
+                  <Text selectable style={styles.inviteUrl}>
+                    {shareLink}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={shareInvite}
+                    style={styles.inviteSecondaryButton}
+                  >
+                    <Text style={styles.inviteSecondaryLabel}>링크 공유</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={generateShareLink}
+                  style={styles.invitePrimaryButton}
+                >
+                  <Text style={styles.invitePrimaryLabel}>링크 만들기</Text>
+                </Pressable>
+              )}
             </View>
           </View>
         )}
@@ -2940,87 +3054,98 @@ export default function GroupScreen({
         animationType="fade"
         onRequestClose={() => setMonthPickerVisible(false)}
       >
-        <View style={styles.calendarBackdrop}>
+        <View style={styles.monthSelectBackdrop}>
           <Pressable
-            accessibilityLabel="월 선택 닫기"
+            accessibilityLabel="월별 보기 닫기"
             onPress={() => setMonthPickerVisible(false)}
             style={StyleSheet.absoluteFill}
           />
-          <View style={styles.calendarDialog}>
-            <Text style={styles.calendarTitle}>월별 보기</Text>
-            <Text style={styles.calendarSubtitle}>
-              연도를 펼쳐 원하는 월을 선택해 주세요.
-            </Text>
-            <ScrollView
-              style={styles.monthOptionsScroll}
-              contentContainerStyle={styles.monthOptions}
-              showsVerticalScrollIndicator={false}
-            >
-              {availableYears.map((year) => {
-                const expanded = expandedMonthYear === year;
-                const yearMonths = monthsByYear[year] ?? [];
-                return (
-                  <View key={year} style={styles.yearSection}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded }}
-                      onPress={() =>
-                        setExpandedMonthYear(expanded ? null : year)
-                      }
-                      style={styles.yearOption}
-                    >
-                      <Text style={styles.yearOptionText}>{year}년</Text>
-                      <Text style={styles.yearOptionCount}>
-                        {yearMonths.length}개월 {expanded ? "⌃" : "⌄"}
-                      </Text>
-                    </Pressable>
-                    {expanded && (
-                      <View style={styles.yearMonths}>
-                        {yearMonths.map((month) => {
-                          const count = groupTicketsForDisplay.filter(
-                            (ticket) => ticket.date.startsWith(month),
-                          ).length;
-                          const selected = monthFilter === month;
-                          return (
-                            <Pressable
-                              key={month}
-                              accessibilityRole="button"
-                              accessibilityState={{ selected }}
-                              onPress={() => {
-                                setMonthFilter(month);
-                                setMonthPickerVisible(false);
-                              }}
-                              style={[
-                                styles.monthOption,
-                                selected && styles.monthOptionSelected,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.monthOptionText,
-                                  selected && styles.monthOptionTextSelected,
-                                ]}
-                              >
-                                {Number(month.slice(5, 7))}월
-                              </Text>
-                              <Text style={styles.monthOptionCount}>
-                                {count}장 ›
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
-            </ScrollView>
+          <View style={styles.monthSelectDialog}>
+            <View style={styles.monthSelectHeader}>
+              <Text style={styles.monthSelectTitle}>월별 보기</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="닫기"
+                onPress={() => setMonthPickerVisible(false)}
+                style={styles.monthSelectClose}
+              >
+                <Text style={styles.monthSelectCloseText}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.monthSelectYearRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="이전 연도"
+                onPress={() => setMonthPickerYear((year) => year - 1)}
+                style={styles.monthSelectYearArrow}
+              >
+                <Text style={styles.monthSelectYearArrowText}>‹</Text>
+              </Pressable>
+              <Text style={styles.monthSelectYear}>{monthPickerYear}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="다음 연도"
+                onPress={() => setMonthPickerYear((year) => year + 1)}
+                style={styles.monthSelectYearArrow}
+              >
+                <Text style={styles.monthSelectYearArrowText}>›</Text>
+              </Pressable>
+            </View>
             <Pressable
               accessibilityRole="button"
-              onPress={() => setMonthPickerVisible(false)}
-              style={styles.calendarCancel}
+              accessibilityState={{ selected: pendingMonthFilter === null }}
+              onPress={() => setPendingMonthFilter(null)}
+              style={[
+                styles.monthSelectAllButton,
+                pendingMonthFilter === null &&
+                  styles.monthSelectAllButtonActive,
+              ]}
             >
-              <Text style={styles.calendarCancelText}>취소</Text>
+              <Text style={styles.monthSelectAllText}>전체 기간</Text>
+            </Pressable>
+            <Text style={styles.monthSelectCurrentPeriod}>
+              {pendingMonthFilter
+                ? `${pendingMonthFilter.slice(0, 4)}년 ${Number(pendingMonthFilter.slice(5, 7))}월`
+                : "전체 기간"}
+            </Text>
+            <View style={styles.monthSelectGrid}>
+              {Array.from({ length: 12 }, (_, index) => index + 1).map(
+                (month) => {
+                  const monthKey = `${monthPickerYear}-${String(month).padStart(2, "0")}`;
+                  const selected = pendingMonthFilter === monthKey;
+                  return (
+                    <Pressable
+                      key={monthKey}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      onPress={() => setPendingMonthFilter(monthKey)}
+                      style={[
+                        styles.monthSelectMonthButton,
+                        selected && styles.monthSelectMonthButtonActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.monthSelectMonthText,
+                          selected && styles.monthSelectMonthTextActive,
+                        ]}
+                      >
+                        {month}월
+                      </Text>
+                    </Pressable>
+                  );
+                },
+              )}
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setMonthFilter(pendingMonthFilter);
+                setMonthPickerVisible(false);
+              }}
+              style={styles.monthSelectApplyButton}
+            >
+              <Text style={styles.monthSelectApplyText}>적용</Text>
             </Pressable>
           </View>
         </View>
@@ -3137,6 +3262,202 @@ export default function GroupScreen({
 }
 
 const styles = StyleSheet.create({
+  jointCreateContent: { width: "100%", gap: 28 },
+  jointTicketStub: {
+    alignSelf: "center",
+    width: 58,
+    height: 114,
+    marginBottom: 8,
+    borderRadius: 8,
+    backgroundColor: "#A6C7F4",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  jointTicketStubDate: {
+    color: "#252B45",
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "500",
+  },
+  jointTicketStubCaption: {
+    marginTop: 10,
+    color: "#252B45",
+    fontSize: 9,
+    lineHeight: 13,
+  },
+  jointCreateField: { width: "100%", gap: 5 },
+  jointCreateLabel: {
+    color: "#252B45",
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
+  jointCreateDateField: {
+    height: 36,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ECEEF2",
+    justifyContent: "center",
+    paddingHorizontal: 0,
+  },
+  jointCreateValue: { color: "#252B45", fontSize: 16, lineHeight: 22 },
+  jointCreateTitleInput: {
+    height: 38,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ECEEF2",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    color: "#252B45",
+    fontSize: 16,
+  },
+  jointCreateCounter: {
+    marginTop: 8,
+    color: "#7C8292",
+    fontSize: 10,
+    lineHeight: 14,
+  },
+  jointCreateMembers: { gap: 22, marginTop: 2 },
+  jointCreateMemberHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  jointCreateSelect: {
+    color: "#4055EE",
+    fontSize: 10,
+    lineHeight: 16,
+    fontWeight: "500",
+  },
+  jointCreateAvatarRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  jointCreateAvatarCell: { width: 40, height: 40 },
+  jointCreateAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F2F3F6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  jointCreateAvatarSelected: {
+    backgroundColor: "#E7EBFF",
+    borderWidth: 1,
+    borderColor: "#4055EE",
+  },
+  jointCreateButton: {
+    alignSelf: "flex-end",
+    minWidth: 118,
+    minHeight: 40,
+    paddingHorizontal: 18,
+    borderRadius: 22,
+    backgroundColor: "#4055EE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  jointCreateButtonText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "600",
+  },
+  monthSelectBackdrop: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    backgroundColor: "rgba(22,25,33,0.30)",
+  },
+  monthSelectDialog: {
+    width: "100%",
+    maxWidth: 350,
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    elevation: 12,
+    shadowColor: "#282B33",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+  },
+  monthSelectHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  monthSelectTitle: { color: "#282B33", fontSize: 14, fontWeight: "700" },
+  monthSelectClose: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  monthSelectCloseText: { color: "#7C8292", fontSize: 22, lineHeight: 24 },
+  monthSelectYearRow: {
+    height: 38,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  monthSelectYearArrow: {
+    width: 30,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  monthSelectYearArrowText: { color: "#252B45", fontSize: 24, lineHeight: 28 },
+  monthSelectYear: { color: "#252B45", fontSize: 15, fontWeight: "600" },
+  monthSelectAllButton: {
+    height: 36,
+    width: 122,
+    borderWidth: 1,
+    borderColor: "#D6DFFF",
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  monthSelectAllButtonActive: {
+    backgroundColor: "#F2F3F6",
+    borderColor: "#D6DFFF",
+  },
+  monthSelectAllText: { color: "#4055EE", fontSize: 10, fontWeight: "600" },
+  monthSelectCurrentPeriod: {
+    color: "#4055EE",
+    fontSize: 9,
+    lineHeight: 14,
+    marginBottom: 6,
+  },
+  monthSelectGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: 8,
+    marginBottom: 10,
+  },
+  monthSelectMonthButton: {
+    width: "31.5%",
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#F2F3F6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  monthSelectMonthButtonActive: { backgroundColor: "#4055EE" },
+  monthSelectMonthText: { color: "#282B33", fontSize: 10, fontWeight: "500" },
+  monthSelectMonthTextActive: { color: "#FFFFFF", fontWeight: "600" },
+  monthSelectApplyButton: {
+    width: 98,
+    height: 38,
+    borderRadius: 21,
+    backgroundColor: "#4055EE",
+    alignSelf: "flex-end",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  monthSelectApplyText: { color: "#FFFFFF", fontSize: 11, fontWeight: "600" },
   handoffDescription: {
     color: C.text,
     fontSize: 12,
@@ -3175,12 +3496,6 @@ const styles = StyleSheet.create({
   },
   newLeaderInitial: { color: C.muted, fontSize: 28, fontWeight: "400" },
   newLeaderLabel: { color: C.detailMuted, fontSize: 12 },
-  jointMemberSummary: {
-    minHeight: 38,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
   jointAvatar: {
     width: 30,
     height: 30,
@@ -3190,17 +3505,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F2F3F6",
   },
   jointAvatarText: { color: "#303CB5", fontSize: 11, fontWeight: "600" },
-  addJointMember: {
-    minHeight: 36,
-    flex: 1,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    justifyContent: "center",
-    paddingHorizontal: 12,
-    backgroundColor: C.surface,
-  },
-  addJointMemberText: { color: C.text, fontSize: 12 },
   jointDoneHeading: { color: C.text, fontSize: 16, marginBottom: 16 },
   participantDialog: {
     backgroundColor: C.surface,
@@ -3800,26 +4104,26 @@ const styles = StyleSheet.create({
   ticketGrid: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 14,
-    paddingRight: 16,
+    gap: 24,
+    paddingRight: 20,
   },
-  ticketCard: { width: 92, alignItems: "center" },
+  ticketCard: { width: 68, alignItems: "center" },
   ticketCardFace: {
     width: "100%",
-    height: 144,
+    height: 135,
     borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingTop: 12,
+    paddingHorizontal: 9,
+    paddingTop: 14,
     paddingBottom: 10,
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
   },
   ticketCardDate: {
     color: "#252B45",
     fontSize: 17,
-    lineHeight: 22,
+    lineHeight: 23,
     fontWeight: "500",
   },
-  ticketGroupName: { color: "#252B45", fontSize: 11, lineHeight: 15 },
+  ticketGroupName: { color: "#252B45", fontSize: 9, lineHeight: 13 },
   ticketCardTitle: {
     width: "100%",
     marginTop: 6,
@@ -4186,41 +4490,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   calendarCancelText: { color: C.detailMuted, fontSize: 13 },
-  monthOptionsScroll: { maxHeight: 300 },
-  monthOptions: { gap: 8, paddingVertical: 4 },
-  yearSection: { gap: 6 },
-  yearOption: {
-    minHeight: 46,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    backgroundColor: "#F4E5DF",
-    paddingHorizontal: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  yearOptionText: { color: C.text, fontSize: 14, fontWeight: "700" },
-  yearOptionCount: { color: C.muted, fontSize: 12 },
-  yearMonths: { gap: 6, paddingLeft: 12 },
-  monthOption: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    backgroundColor: C.canvas,
-    paddingHorizontal: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  monthOptionSelected: {
-    borderColor: C.accent,
-    backgroundColor: "#F4E5DF",
-  },
-  monthOptionText: { color: C.text, fontSize: 14, fontWeight: "600" },
-  monthOptionTextSelected: { color: C.primary },
-  monthOptionCount: { color: C.muted, fontSize: 12 },
   formBottom: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },
   moreMenuOverlay: {
     ...StyleSheet.absoluteFill,
@@ -4281,30 +4550,86 @@ const styles = StyleSheet.create({
     zIndex: 25,
     justifyContent: "center",
     paddingHorizontal: 24,
-    backgroundColor: "rgba(52,39,33,0.08)",
+    backgroundColor: "rgba(37,43,69,0.08)",
   },
   inviteDialog: {
     backgroundColor: C.surface,
-    borderRadius: 16,
+    borderRadius: 18,
     minHeight: 214,
-    paddingHorizontal: 19,
-    paddingTop: 18,
-    paddingBottom: 10,
-    gap: 12,
-    elevation: 12,
-    shadowColor: "#44322A",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
+    gap: 10,
+    elevation: 10,
+    shadowColor: "#252B45",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 13,
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
     transform: [{ translateY: -50 }],
+  },
+  inviteTitleRow: {
+    height: 28,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  inviteCloseButton: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inviteCloseText: { color: C.detailMuted, fontSize: 23, lineHeight: 26 },
+  inviteMemberCount: {
+    color: C.primary,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "600",
+    marginTop: 1,
+  },
+  inviteDialogLinkLabel: {
+    color: C.text,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  invitePrimaryButton: {
+    height: 40,
+    borderRadius: 24,
+    backgroundColor: C.button,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  invitePrimaryLabel: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
+  },
+  inviteSecondaryButton: {
+    height: 40,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inviteSecondaryLabel: {
+    color: C.primary,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
   },
   inviteHeading: {
     color: C.primary,
-    fontSize: 18,
-    lineHeight: 24,
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: "700",
   },
-  inviteUrl: { color: C.detailMuted, fontSize: 14, lineHeight: 20 },
+  inviteUrl: { color: C.detailMuted, fontSize: 13, lineHeight: 18 },
   closeDialog: { height: 52, alignItems: "center", justifyContent: "center" },
   closeDialogText: { fontSize: 14, color: C.text, fontWeight: "500" },
   // 05. GROUP / 나가기 · 멤버 내보내기
