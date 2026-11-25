@@ -1,0 +1,210 @@
+{
+  "id": "polaroid_offwhite_01",
+  "name": "polaroid_offwhite_01",
+  "category": "polaroid",
+  "orientation": "horizontal",
+  "tags": ["여행", "차분함"],
+  "mainColor": "#E6E6E7",
+  "shape": {
+    "cornerRadius": 24,
+    "notchRadius": 28
+  },
+  "stub": {
+    "image": "stub.webp",
+    "texts": [
+      {
+        "bind": "static",
+        "value": "MEMO:RE",
+        "x": 40,
+        "y": 48,
+        "w": 320,
+        "h": 40,
+        "font": "sans",
+        "size": 28,
+        "weight": "bold",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "title",
+        "fallback": "우리의 하루",
+        "x": 40,
+        "y": 139,
+        "w": 320,
+        "h": 130,
+        "font": "sans",
+        "size": 48,
+        "weight": "bold",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 2,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "date",
+        "x": 134,
+        "y": 713,
+        "w": 238,
+        "h": 52,
+        "font": "sans",
+        "size": 30,
+        "weight": "regular",
+        "color": "#2B2B2B",
+        "align": "right",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "groupName",
+        "x": 40,
+        "y": 328,
+        "w": 209,
+        "h": 34,
+        "font": "sans",
+        "size": 28,
+        "weight": "bold",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      },
+      {
+        "bind": "participants",
+        "x": 40,
+        "y": 400,
+        "w": 320,
+        "h": 40,
+        "font": "sans",
+        "size": 22,
+        "weight": "regular",
+        "color": "#2B2B2B",
+        "align": "left",
+        "rotate": 0,
+        "maxLines": 1,
+        "letterSpacing": 0
+      }
+    ]
+  },
+  "body": {
+    "1": {
+      "under": "body-1-under.webp",
+      "photos": [
+        {
+          "x": 299,
+          "y": 102,
+          "w": 1003,
+          "h": 520,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        }
+      ],
+      "texts": []
+    },
+    "2": {
+      "under": "body-2-under.webp",
+      "photos": [
+        {
+          "x": 205,
+          "y": 109,
+          "w": 536,
+          "h": 520,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 852,
+          "y": 112,
+          "w": 536,
+          "h": 520,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        }
+      ],
+      "texts": []
+    },
+    "3": {
+      "under": "body-3-under.webp",
+      "photos": [
+        {
+          "x": 76,
+          "y": 154,
+          "w": 440,
+          "h": 440,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 580,
+          "y": 154,
+          "w": 440,
+          "h": 440,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 1084,
+          "y": 154,
+          "w": 440,
+          "h": 440,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        }
+      ],
+      "texts": []
+    },
+    "4": {
+      "under": "body-4-under.webp",
+      "photos": [
+        {
+          "x": 76,
+          "y": 217,
+          "w": 314,
+          "h": 314,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 454,
+          "y": 217,
+          "w": 314,
+          "h": 314,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 832,
+          "y": 217,
+          "w": 314,
+          "h": 314,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        },
+        {
+          "x": 1210,
+          "y": 217,
+          "w": 314,
+          "h": 314,
+          "shape": "rect",
+          "radius": 16,
+          "rotate": 0
+        }
+      ],
+      "texts": []
+    }
+  }
+}

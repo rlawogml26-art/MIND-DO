@@ -9,12 +9,15 @@ import {
   createSharedTicketRequestSchema,
   createGroupInviteResponseSchema,
   currentUserResponseSchema,
+  myTicketListResponseSchema,
   groupResponseSchema,
   issuedTicketResponseSchema,
   issueTicketRequestSchema,
   loginRequestSchema,
   loginResponseSchema,
   joinGroupResponseSchema,
+  leaveGroupRequestSchema,
+  leaveGroupResponseSchema,
   groupListResponseSchema,
   groupDetailResponseSchema,
   inviteInfoResponseSchema,
@@ -104,6 +107,14 @@ const options: swaggerJsdoc.Options = {
           target: "openapi-3.0",
           io: "output",
         }),
+        LeaveGroupRequest: z.toJSONSchema(leaveGroupRequestSchema, {
+          target: "openapi-3.0",
+          io: "input",
+        }),
+        LeaveGroupResponse: z.toJSONSchema(leaveGroupResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
         SharedTicketPhotoUploadRequest: z.toJSONSchema(
           sharedTicketPhotoUploadRequestSchema,
           {
@@ -126,6 +137,10 @@ const options: swaggerJsdoc.Options = {
           sharedTicketListResponseSchema,
           { target: "openapi-3.0", io: "output" },
         ),
+        MyTicketListResponse: z.toJSONSchema(myTicketListResponseSchema, {
+          target: "openapi-3.0",
+          io: "output",
+        }),
         SharedTicketDetailResponse: z.toJSONSchema(
           sharedTicketDetailResponseSchema,
           { target: "openapi-3.0", io: "output" },

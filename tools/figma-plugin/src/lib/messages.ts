@@ -1,4 +1,4 @@
-import type { DesignFile, MoodTag } from "@mind-do/shared";
+import type { DesignFile, DesignOrientation, MoodTag } from "@mind-do/shared";
 import type { TextBind } from "./names";
 
 // 피그마 쪽 코드(code.ts)와 플러그인 창(ui.ts)이 주고받는 메시지
@@ -20,7 +20,7 @@ export type SelectionState =
   | { status: "none" }
   | { status: "design"; meta: Meta; category: string | null; pageName: string };
 
-// 창에서 자를 그림: 티켓 한 장(2000×800)을 내보낸 원본에서 잘라 파일로 만든다
+// 창에서 자를 그림: 티켓 한 장(가로 2000×800, 세로 800×2000)을 내보낸 원본에서 잘라 파일로 만든다
 export type ImageJob = {
   file: string;
   source: string;
@@ -61,7 +61,7 @@ export type PreparedImage = {
 export type AssignRole = "photo" | TextBind;
 
 export type ToCode =
-  | { type: "create-blank" }
+  | { type: "create-blank"; orientation: DesignOrientation }
   | { type: "apply-background" }
   | { type: "image-prepared"; id: number; result: PreparedImage }
   | { type: "save-meta"; meta: Meta }

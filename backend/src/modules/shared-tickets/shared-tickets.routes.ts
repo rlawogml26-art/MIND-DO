@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  deleteSharedTicketInvitee,
   getSharedTicket,
   postIssuedTicket,
   postSharedTicketPhotoUploadUrls,
@@ -199,5 +200,65 @@ router.get("/:sharedTicketId", getSharedTicket);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post("/:sharedTicketId/tickets", postIssuedTicket);
+
+/**
+ * @swagger
+ * /api/shared-tickets/{sharedTicketId}/invitees/{userId}:
+ *   delete:
+ *     summary: 초대자 제외
+ *     description: 공동 티켓 생성자나 그룹장이 초대자를 제외합니다. 그 사람의 슬롯은 없어지고, 이미 저장한 개인 티켓은 이 공동 티켓과의 연결만 끊겨 본인 보관함에 남습니다. 응답은 바뀐 공동 티켓 상세입니다.
+ *     tags: [공동 티켓]
+ *     security:
+ *       - AccessTokenCookie: []
+ *     parameters:
+ *       - in: path
+ *         name: sharedTicketId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         description: 제외할 초대자의 회원 번호
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *     responses:
+ *       200:
+ *         description: 제외 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   $ref: '#/components/schemas/SharedTicketDetailResponse'
+ *       400:
+ *         description: 경로 값 검증 실패 (INVALID_INPUT)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: 인증 실패 (UNAUTHORIZED 또는 ACCESS_TOKEN_EXPIRED)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: 공동 티켓 생성자·그룹장이 아님 (NOT_SHARED_TICKET_EDITOR)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: 공동 티켓이 없거나 내 그룹 것이 아님 (SHARED_TICKET_NOT_FOUND), 그 사람이 초대자가 아님 (INVITEE_NOT_FOUND)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.delete("/:sharedTicketId/invitees/:userId", deleteSharedTicketInvitee);
 
 export default router;

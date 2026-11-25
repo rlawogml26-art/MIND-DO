@@ -1,9 +1,12 @@
-import type { Request, Response } from "express";
+import type { CookieOptions, Request, Response } from "express";
 import {
   EmailAlreadyExistsError,
   InvalidCredentialsError,
   login as loginService,
+  logout as logoutService,
+  refresh as refreshService,
   signup as signupService,
+  UnauthorizedError,
 } from "./auth.service.js";
 import {
   ErrorCode,
@@ -21,21 +24,34 @@ type SessionTokens = {
   cookieSecure: boolean;
 };
 
+// 쿠키를 지울 때도 설정할 때와 이름·path·속성이 같아야 브라우저·앱이 같은 쿠키로 알아본다
+const accessCookieOptions = (secure: boolean): CookieOptions => ({
+  httpOnly: true,
+  secure,
+  sameSite: "lax",
+  path: "/",
+});
+const refreshCookieOptions = (secure: boolean): CookieOptions => ({
+  httpOnly: true,
+  secure,
+  sameSite: "lax",
+  path: "/api/auth",
+});
+
 const setAuthCookies = (res: Response, tokens: SessionTokens) => {
   res.cookie("accessToken", tokens.accessToken, {
-    httpOnly: true,
-    secure: tokens.cookieSecure,
-    sameSite: "lax",
-    path: "/",
+    ...accessCookieOptions(tokens.cookieSecure),
     maxAge: tokens.accessTokenTtlSeconds * 1000,
   });
   res.cookie("refreshToken", tokens.refreshToken, {
-    httpOnly: true,
-    secure: tokens.cookieSecure,
-    sameSite: "lax",
-    path: "/api/auth",
+    ...refreshCookieOptions(tokens.cookieSecure),
     maxAge: tokens.refreshTokenTtlSeconds * 1000,
   });
+};
+
+const clearAuthCookies = (res: Response, cookieSecure: boolean) => {
+  res.clearCookie("accessToken", accessCookieOptions(cookieSecure));
+  res.clearCookie("refreshToken", refreshCookieOptions(cookieSecure));
 };
 
 export const signup = async (req: Request, res: Response) => {
@@ -104,4 +120,28 @@ export const login = async (req: Request, res: Response) => {
     }
     throw error;
   }
+};
+
+export const refresh = async (req: Request, res: Response) => {
+  try {
+    const result = await refreshService(req.headers.cookie);
+    setAuthCookies(res, result);
+    return res.status(200).json({ data: {} });
+  } catch (error: unknown) {
+    if (error instanceof UnauthorizedError) {
+      return res.status(401).json({
+        error: {
+          code: ErrorCode.INVALID_REFRESH_TOKEN,
+          message: "로그인이 만료되었습니다. 다시 로그인해주세요.",
+        },
+      });
+    }
+    throw error;
+  }
+};
+
+export const logout = async (req: Request, res: Response) => {
+  const result = await logoutService(req.headers.cookie);
+  clearAuthCookies(res, result.cookieSecure);
+  return res.status(200).json({ data: {} });
 };

@@ -54,6 +54,12 @@ export const sharedTicketIdParamsSchema = z.object({
   sharedTicketId: idParamSchema,
 });
 
+// 초대자 제외 (DELETE /api/shared-tickets/{sharedTicketId}/invitees/{userId})
+export const removeInviteeParamsSchema = z.object({
+  sharedTicketId: idParamSchema,
+  userId: idParamSchema,
+});
+
 export const createSharedTicketRequestSchema = z.object({
   ticketDate: ticketDateSchema,
   title: optionalTrimmedText(JOINT_TITLE_MAX),
@@ -79,6 +85,22 @@ export const ticketPhotoResponseSchema = z.object({
   url: z.url(),
   sortOrder: z.number().int().positive(),
 });
+
+export const myTicketListResponseSchema = z.object({
+  tickets: z.array(
+    z.object({
+      ticketId: z.number().int().positive(),
+      visitDate: ticketDateSchema,
+      photos: z.array(ticketPhotoResponseSchema),
+      memo: z.string().nullable(),
+      design: ticketDesignSchema.nullable(),
+    }),
+  ),
+});
+
+export type MyTicket = z.infer<
+  typeof myTicketListResponseSchema
+>["tickets"][number];
 
 export const issuedTicketResponseSchema = z.object({
   ticketId: z.number().int().positive(),

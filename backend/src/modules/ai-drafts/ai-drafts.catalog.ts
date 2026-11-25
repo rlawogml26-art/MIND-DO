@@ -1,109 +1,29 @@
-import type { CompositeTemplateId, MoodTag, PaletteId } from "@mind-do/shared";
+import type { DesignCategory, MoodTag } from "@mind-do/shared";
 
 // AI 초안 카탈로그 데이터 (서버 전용)
-// ID 목록은 shared에 있고, 여기에는 AI 프롬프트와 색 계산에 쓰는 설명·규칙만 둔다.
-// Record<ID, ...> 타입이라 shared에 ID가 추가되면 여기를 채우기 전까지 타입 검사가 실패한다.
+// 어떤 디자인이 있는지는 디자인 파일(shared/src/designs)이 정한다. 여기에는 AI 프롬프트와
+// 디자인 순위 계산에 쓰는 설명·가중치만 둔다.
 // 값은 디자인 결정이라 환경변수가 아니라 데이터로 두고, 바꿀 때는 PR로 리뷰한다 (AGENTS.md "AI 초안").
 
-// 사진 합성 템플릿 (PM 시안의 세 스타일)
-export const TEMPLATE_INFO: Record<
-  CompositeTemplateId,
-  { name: string; description: string }
-> = {
-  blend_fade: {
-    name: "자연스러운 장면",
-    description: "사진들의 색감을 이어 자연스럽게 한 장면처럼 합성",
-  },
-  collage_grid: {
-    name: "감각적인 조합",
-    description: "사진의 주요 장면을 자유롭게 겹쳐 배치",
-  },
-  light_basic: {
-    name: "광원·색감·질감",
-    description: "빛과 색, 질감으로 분위기를 강조",
-  },
+// 카테고리 설명 (AI 프롬프트용). Record 타입이라 shared에 카테고리가 늘면 여기를 채우기 전까지 타입 검사가 실패한다
+export const CATEGORY_INFO: Record<DesignCategory, string> = {
+  ticket: "티켓: 공연·입장권 같은 정돈된 티켓 모양, 사진을 큼직하게",
+  polaroid: "폴라로이드: 흰 테두리의 즉석 사진, 아기자기하고 일상적인 느낌",
+  four_cut: "인생네컷: 사진 부스처럼 여러 컷을 나란히, 친구들과 노는 장면",
+  film: "필름: 필름 카메라 감성, 차분하고 레트로한 느낌",
 };
 
-// 팔레트 규칙: 실제 색 = 사진의 주요 색상(hue) + 이 규칙의 선명도·밝기
-// hueAnchor가 있으면 사진 색상이 anchorRange도 안에 있을 때만 그 방향으로 anchorWeight만큼 당기고,
-// 너무 멀면(예: warm인데 파란 사진) 반대 색과 섞여 엉뚱한 색이 되므로 hueAnchor를 그대로 쓴다.
-// 사진에서 쓸 만한 색이 없으면(거의 회색·검정·흰색) defaultColor를 쓴다.
-// 처음 값은 PM 시안 색에 맞춰 잡은 것이고, 화면을 보며 조정한다.
-export type PaletteRule = {
-  name: string;
-  tags: readonly MoodTag[]; // 이 팔레트가 어울리는 분위기 (AI 프롬프트용)
-  hueAnchor: number | null; // 0~360
-  anchorRange: number; // 사진 색상과 hueAnchor의 거리(도)가 이 안이면 섞음
-  anchorWeight: number; // 0~1
-  saturation: number; // 0~100
-  lightness: number; // 0~100
-  defaultColor: string; // #RRGGBB
-};
+// 디자인 순위 = 태그 점수 + 색 점수 - 정반대 분위기 감점.
+// 태그 하나가 겹칠 때의 점수를 1로 두고, 색 점수(0~1, 대표 색이 사진 색과 가까울수록 1)는 그보다 작게 둬서
+// "분위기는 AI가, 색은 보조로" 판단한다 (AGENTS.md "AI 초안" > 색)
+export const TAG_MATCH_SCORE = 1;
+export const COLOR_SCORE_WEIGHT = 0.8;
+export const MOOD_CLASH_PENALTY = 2;
 
-export const PALETTE_RULES: Record<PaletteId, PaletteRule> = {
-  warm: {
-    name: "따뜻한 노을",
-    tags: ["따뜻함", "맑음", "낮", "여행", "음식"],
-    hueAnchor: 30,
-    anchorRange: 60,
-    anchorWeight: 0.5,
-    saturation: 60,
-    lightness: 52,
-    defaultColor: "#C9773F",
-  },
-  cool: {
-    name: "차분한 푸른빛",
-    tags: ["차분함", "흐림", "자연", "감성"],
-    hueAnchor: 210,
-    anchorRange: 60,
-    anchorWeight: 0.5,
-    saturation: 35,
-    lightness: 45,
-    defaultColor: "#4F6F8F",
-  },
-  night: {
-    name: "밤의 조명",
-    tags: ["밤", "공연", "활기참"],
-    hueAnchor: null,
-    anchorRange: 0,
-    anchorWeight: 0,
-    saturation: 45,
-    lightness: 18,
-    defaultColor: "#1F2A4A",
-  },
-  pastel: {
-    name: "파스텔",
-    tags: ["귀여움", "생일", "설렘", "데이트"],
-    hueAnchor: null,
-    anchorRange: 0,
-    anchorWeight: 0,
-    saturation: 55,
-    lightness: 82,
-    defaultColor: "#F2C4D4",
-  },
-  vivid: {
-    name: "선명한 색",
-    tags: ["활기참", "축하", "모임", "여행"],
-    hueAnchor: null,
-    anchorRange: 0,
-    anchorWeight: 0,
-    saturation: 72,
-    lightness: 50,
-    defaultColor: "#D9482B",
-  },
-  mono: {
-    name: "빈티지 흑백",
-    tags: ["레트로", "차분함", "감성"],
-    hueAnchor: null,
-    anchorRange: 0,
-    anchorWeight: 0,
-    saturation: 8,
-    lightness: 38,
-    defaultColor: "#615A55",
-  },
-};
+// OKLab 거리가 이 값 이상이면 색 점수 0. 0이면 1
+export const COLOR_DISTANCE_MAX = 0.5;
 
-// 배경색 후보로 쓸 사진 색의 조건. 색의 진함(chroma, 0~100)이 낮으면 회색,
+// 색 비교에 쓸 사진 색의 조건. 색의 진함(chroma, 0~100)이 낮으면 회색,
 // 밝기(0~100)가 너무 낮거나 높으면 검정·흰색으로 보고 쓰지 않는다
 export const PHOTO_COLOR_MIN_CHROMA = 15;
 export const PHOTO_COLOR_MIN_LIGHTNESS = 15;
@@ -132,7 +52,7 @@ export const MOOD_TAG_INFO: Record<MoodTag, string> = {
   감성: "잔잔하게 마음에 남는 분위기",
 };
 
-// 정반대 분위기 쌍. 프롬프트 분위기와 정반대인 테마는 쓰지 않는다 (프롬프트가 있을 때만 적용)
+// 정반대 분위기 쌍. 사진 분위기와 정반대 태그를 가진 디자인은 순위를 낮춘다
 export const MOOD_CLASHES: readonly (readonly [MoodTag, MoodTag])[] = [
   ["차분함", "활기참"],
   ["맑음", "흐림"],

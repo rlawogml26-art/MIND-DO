@@ -12,7 +12,7 @@ import {
 export type PreparedPhoto = {
   jpeg: Buffer; // 긴 변 imageMaxSide 이하 JPEG
   colors: string[]; // 주요 색 #RRGGBB, 많은 순 (AI 프롬프트용)
-  accentColors: string[]; // 배경색 후보. 회색·검정·흰색을 빼고 "많고 진한" 순
+  accentColors: string[]; // 디자인 대표 색과 비교할 색. 회색·검정·흰색을 빼고 "많고 진한" 순
 };
 
 // 색을 셀 때 채널마다 앞 몇 비트만 본다 (4비트 = 채널당 16단계, 비슷한 색을 하나로 묶음)

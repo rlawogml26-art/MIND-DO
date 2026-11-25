@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import type { MyTicket } from "@mind-do/shared";
+import { useMemo, useState } from "react";
 import {
-  Alert,
   Image,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,62 +9,357 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { useMyTickets } from "../hooks/use-my-tickets";
+import TicketRenderer from "./TicketRenderer";
 
-import { getIssuedTicket, type IssuedTicket } from "../storage/issued-tickets";
-import { IssuedTicketFlipPreview } from "./TicketEditor";
-import MenuExperience from "./MenuScreens";
-
-import logo from "../../assets/images/memore/logo.png";
-import ticketIcon from "../../assets/images/memore/ticket-icon.png";
+import logo from "../../assets/memo-re-wordmark.png";
 
 const colors = {
-  canvas: "#FFF8EF",
-  surface: "#FFFDF8",
-  primary: "#654C40",
-  secondary: "#987966",
-  accent: "#CF897C",
-  soft: "#F0C8BE",
-  text: "#5C473E",
-  overlay: "rgba(48, 38, 34, 0.27)",
+  canvas: "#FFFFFF",
+  surface: "#FFFFFF",
+  primary: "#303CB5",
+  secondary: "#78819A",
+  accent: "#EC806F",
+  soft: "#DCE5F7",
+  text: "#252B45",
+  overlay: "rgba(28, 30, 44, 0.48)",
 };
 
-const weekdays = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
 
-/** 로그인한 사용자가 각 그룹에서 직접 발권한 개인 티켓입니다. */
-export type MyGroupTicket = IssuedTicket & {
-  id?: string;
-  groupId?: string;
-  groupName?: string;
-};
+type BottomTab = "home" | "group" | "store" | "my";
+function BottomNavigation({
+  activeTab,
+  onSelect,
+}: {
+  activeTab: BottomTab;
+  onSelect: (tab: BottomTab) => void;
+}) {
+  return (
+    <View style={bottomNavStyles.outer}>
+      <View style={bottomNavStyles.bar}>
+        {(
+          [
+            { key: "home", label: "홈" },
+            { key: "group", label: "그룹" },
+            { key: "store", label: "스토어" },
+            { key: "my", label: "마이" },
+          ] as const
+        ).map((tab) => (
+          <Pressable
+            key={tab.key}
+            accessibilityRole="button"
+            accessibilityLabel={tab.label}
+            accessibilityState={{ selected: activeTab === tab.key }}
+            onPress={() => onSelect(tab.key)}
+            style={({ pressed }) => [
+              bottomNavStyles.item,
+              pressed && bottomNavStyles.pressed,
+            ]}
+          >
+            <BottomNavIcon tab={tab.key} />
+            <Text
+              style={[
+                bottomNavStyles.label,
+                activeTab === tab.key && bottomNavStyles.activeLabel,
+              ]}
+            >
+              {tab.label}
+            </Text>
+            <View
+              style={[
+                bottomNavStyles.activeIndicator,
+                activeTab !== tab.key && bottomNavStyles.indicatorHidden,
+              ]}
+            />
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+function BottomNavIcon({ tab }: { tab: BottomTab }) {
+  return (
+    <View style={bottomNavStyles.icon}>
+      {tab === "home" && (
+        <>
+          <View style={bottomNavStyles.homeRoof} />
+          <View style={bottomNavStyles.homeBody}>
+            <View style={bottomNavStyles.homeDoor} />
+          </View>
+        </>
+      )}
+      {tab === "group" && (
+        <View style={bottomNavStyles.ticketIcon}>
+          <View style={bottomNavStyles.ticketHoleLeft} />
+          <View style={bottomNavStyles.ticketLine} />
+          <View style={bottomNavStyles.ticketHoleRight} />
+        </View>
+      )}
+      {tab === "store" && (
+        <>
+          <View style={bottomNavStyles.storeRoof}>
+            <View style={bottomNavStyles.storeStripe} />
+            <View style={bottomNavStyles.storeStripe} />
+          </View>
+          <View style={bottomNavStyles.storeBody}>
+            <View style={bottomNavStyles.storeDoor} />
+          </View>
+        </>
+      )}
+      {tab === "my" && (
+        <>
+          <View style={bottomNavStyles.personHead} />
+          <View style={bottomNavStyles.personBody} />
+        </>
+      )}
+    </View>
+  );
+}
+const bottomNavStyles = StyleSheet.create({
+  outer: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 4 },
+  bar: {
+    height: 68,
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#303CB5",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  item: {
+    flex: 1,
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+    borderRadius: 18,
+  },
+  pressed: { opacity: 0.65 },
+  label: { color: "#7C8292", fontSize: 11, lineHeight: 14, fontWeight: "500" },
+  activeLabel: { color: "#303CB5", fontWeight: "700" },
+  activeIndicator: {
+    position: "absolute",
+    bottom: 4,
+    width: 18,
+    height: 2,
+    borderRadius: 2,
+    backgroundColor: "#EC806F",
+  },
+  indicatorHidden: { opacity: 0 },
+  icon: {
+    width: 30,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  homeRoof: {
+    position: "absolute",
+    top: 3,
+    width: 11,
+    height: 11,
+    borderTopWidth: 1.8,
+    borderLeftWidth: 1.8,
+    borderColor: "#29211E",
+    transform: [{ rotate: "45deg" }],
+  },
+  homeBody: {
+    position: "absolute",
+    bottom: 3,
+    width: 14,
+    height: 11,
+    borderWidth: 1.8,
+    borderTopWidth: 0,
+    borderColor: "#29211E",
+    borderBottomLeftRadius: 2,
+    borderBottomRightRadius: 2,
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  homeDoor: {
+    width: 3,
+    height: 6,
+    borderWidth: 1.3,
+    borderBottomWidth: 0,
+    borderColor: "#29211E",
+  },
+  ticketIcon: {
+    width: 28,
+    height: 18,
+    borderWidth: 2,
+    borderColor: "#29211E",
+    borderRadius: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ticketLine: {
+    width: 0,
+    height: 11,
+    borderLeftWidth: 1.4,
+    borderStyle: "dashed",
+    borderColor: "#29211E",
+  },
+  ticketHoleLeft: {
+    position: "absolute",
+    left: -3,
+    top: 5,
+    width: 6,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#FFFFFF",
+  },
+  ticketHoleRight: {
+    position: "absolute",
+    right: -3,
+    top: 5,
+    width: 6,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#FFFFFF",
+  },
+  storeRoof: {
+    position: "absolute",
+    top: 3,
+    width: 17,
+    height: 6,
+    borderWidth: 1.7,
+    borderColor: "#29211E",
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    flexDirection: "row",
+    justifyContent: "space-evenly",
+  },
+  storeStripe: { width: 1, height: 5, backgroundColor: "#29211E" },
+  storeBody: {
+    position: "absolute",
+    bottom: 3,
+    width: 15,
+    height: 10,
+    borderWidth: 1.7,
+    borderTopWidth: 0,
+    borderColor: "#29211E",
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  storeDoor: {
+    width: 4,
+    height: 6,
+    borderWidth: 1.3,
+    borderBottomWidth: 0,
+    borderColor: "#29211E",
+  },
+  personHead: {
+    position: "absolute",
+    top: 2,
+    width: 7,
+    height: 7,
+    borderWidth: 1.7,
+    borderColor: "#29211E",
+    borderRadius: 4,
+  },
+  personBody: {
+    position: "absolute",
+    bottom: 2,
+    width: 15,
+    height: 9,
+    borderWidth: 1.7,
+    borderBottomWidth: 0,
+    borderColor: "#29211E",
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+  },
+});
 
-type TicketListEntry = {
-  key: string;
-  ticket: IssuedTicket;
-  source: "group" | "personal";
-  groupName?: string;
-};
-
-type HomeScreenProps = {
-  onOpenMy: () => void;
-  onOpenGroup: () => void;
-  onOpenTickets: (date?: string) => void;
-  dateSelectionMode?: boolean;
-  onCancelDateSelection?: () => void;
-  onLogout?: () => void;
-  /** 선택 사항: 같은 날짜의 여러 장을 반환하는 저장소/서버 조회 함수 */
-  loadIssuedTicketsForDate?: (date: string) => Promise<IssuedTicket[]>;
-  /**
-   * 그룹별로 '내가 직접 만든 개인 티켓' 전체를 가져오는 함수.
-   * 그룹 멤버가 만든 다른 사람의 티켓이나 공동 티켓은 포함하지 마세요.
-   */
-  loadMyGroupTickets?: () => Promise<MyGroupTicket[]>;
-};
-
-async function getTicketsForDate(date: string): Promise<IssuedTicket[]> {
-  const ticket = await getIssuedTicket(date);
-  return ticket ? [ticket] : [];
+function PersonalPhotoTicket({
+  ticket,
+  width,
+}: {
+  ticket: MyTicket;
+  width: number;
+}) {
+  const photos = ticket.photos.map((photo) => photo.url);
+  const photoHeight = width * 0.39;
+  return (
+    <View style={[styles.personalPhotoTicket, { width }]}>
+      <View style={[styles.personalPhotoCollage, { height: photoHeight }]}>
+        {photos.length === 1 ? (
+          <Image
+            source={{ uri: photos[0] }}
+            style={styles.personalPhotoSingle}
+            resizeMode="cover"
+          />
+        ) : photos.length > 1 ? (
+          <>
+            <Image
+              source={{ uri: photos[0] }}
+              style={styles.personalPhotoMain}
+              resizeMode="cover"
+            />
+            <View style={styles.personalPhotoSide}>
+              {photos.slice(1).map((uri, index) => (
+                <Image
+                  key={`${index}-${uri}`}
+                  source={{ uri }}
+                  style={styles.personalPhotoThumb}
+                  resizeMode="cover"
+                />
+              ))}
+              {photos.length === 2 && (
+                <View style={styles.personalPhotoThumbPlaceholder} />
+              )}
+            </View>
+          </>
+        ) : (
+          <View style={styles.personalPhotoPlaceholder}>
+            <Text style={styles.personalPhotoPlaceholderText}>
+              사진이 없어요
+            </Text>
+          </View>
+        )}
+      </View>
+      <View style={styles.personalPhotoCaptionRow}>
+        <Text style={styles.personalPhotoTitle} numberOfLines={1}>
+          나의 티켓
+        </Text>
+        <Text style={styles.personalPhotoDate}>
+          {formattedDate(ticket.visitDate)}
+        </Text>
+      </View>
+    </View>
+  );
 }
 
+function PersonalTicketBack({
+  ticket,
+  width,
+}: {
+  ticket: MyTicket;
+  width: number;
+}) {
+  return (
+    <View style={[styles.personalTicketBack, { width, height: width * 0.5 }]}>
+      <View style={styles.personalTicketBackHeader}>
+        <Text style={styles.personalTicketBackLabel}>MEMORY NOTE</Text>
+        <Text style={styles.personalTicketBackDate}>
+          {formattedDate(ticket.visitDate)}
+        </Text>
+      </View>
+      <Text style={styles.personalTicketBackMemo}>
+        {ticket.memo?.trim() || "이날의 기억을 적어 주세요"}
+      </Text>
+    </View>
+  );
+}
+
+type HomeScreenProps = {
+  onOpenStore: () => void;
+  onOpenMy: () => void;
+  onOpenGroup: () => void;
+  onLogout?: () => void;
+};
 function currentMonth() {
   const today = new Date();
   return new Date(today.getFullYear(), today.getMonth(), 1);
@@ -79,47 +373,6 @@ function todayDateKey() {
   return `${today.getFullYear()}-${month}-${day}`;
 }
 
-function dateKey(value: string | null | undefined): string {
-  const match = /^(\d{4})[-.](\d{1,2})[-.](\d{1,2})/.exec(value ?? "");
-  return match
-    ? `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`
-    : "";
-}
-
-/** 한 날짜에 여러 그룹의 티켓이 있어도 중복 없이 모두 표시합니다. */
-function makeTicketEntries(
-  selectedDay: string,
-  personalTickets: IssuedTicket[],
-  myGroupTickets: MyGroupTicket[],
-): TicketListEntry[] {
-  const used = new Set<string>();
-  const items: TicketListEntry[] = [];
-  const add = (
-    ticket: MyGroupTicket,
-    source: "group" | "personal",
-    groupName?: string,
-  ) => {
-    if (dateKey(ticket.visitDate) !== selectedDay) return;
-    // 서버 id가 우선이며, 기존 날짜별 로컬 티켓은 발권 시간 등으로 중복 제거.
-    const uniqueKey = ticket.id
-      ? `id:${ticket.id}`
-      : `fallback:${dateKey(ticket.visitDate)}:${ticket.issuedAt ?? ""}:${ticket.front ?? ""}:${ticket.title ?? ""}`;
-    if (used.has(uniqueKey)) return;
-    used.add(uniqueKey);
-    items.push({
-      key: `${source}-${uniqueKey}`,
-      ticket,
-      source,
-      groupName: groupName?.trim() || undefined,
-    });
-  };
-  myGroupTickets.forEach((ticket) => add(ticket, "group", ticket.groupName));
-  personalTickets.forEach((ticket) => add(ticket, "personal"));
-  return items.sort((a, b) =>
-    (b.ticket.issuedAt ?? "").localeCompare(a.ticket.issuedAt ?? ""),
-  );
-}
-
 function formattedDate(date: string) {
   return date.replace(/-/g, ".");
 }
@@ -129,270 +382,134 @@ function dateTitle(date: string) {
   return `${Number(parts[1] ?? 0)}월 ${Number(parts[2] ?? 0)}일`;
 }
 
-function showPendingFeature() {
-  Alert.alert("안내", "아직 연결되지 않은 기능이에요.");
+function dateLongTitle(date: string) {
+  const [year, month, day] = date.split(/[-.]/).map(Number);
+  const weekday = [
+    "일요일",
+    "월요일",
+    "화요일",
+    "수요일",
+    "목요일",
+    "금요일",
+    "토요일",
+  ][new Date(year, month - 1, day).getDay()];
+  return `${dateTitle(date)} ${weekday}`;
 }
 
-/** 날짜별 목록에 보이는 가로형 티켓 카드(피그마 2번 화면). */
-function TicketListCard({
-  entry,
-  index,
+function ticketDateWithWeekday(date: string) {
+  if (!date) return "";
+  const [year, month, day] = date.split(/[-.]/).map(Number);
+  const weekday = [
+    "일요일",
+    "월요일",
+    "화요일",
+    "수요일",
+    "목요일",
+    "금요일",
+    "토요일",
+  ][new Date(year, month - 1, day).getDay()];
+  return `${year}.${String(month).padStart(2, "0")}.${String(day).padStart(2, "0")} · ${weekday}`;
+}
+
+function BatchTicketCard({
+  ticket,
   onPress,
 }: {
-  entry: TicketListEntry;
-  index: number;
+  ticket: MyTicket;
   onPress: () => void;
 }) {
-  const { ticket } = entry;
-  const title = ticket.title?.trim() || "우리들의 기억";
-  const ticketDate = formattedDate(ticket.visitDate || "");
-  const thumbnail = ticket.front || (ticket.backs ?? []).find(Boolean);
-
+  const thumbnail = ticket.photos[0]?.url;
   return (
     <Pressable
-      onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${title} 티켓 ${index + 1}번 보기`}
-      style={({ pressed }) => [
-        styles.listTicket,
-        pressed && styles.listTicketPressed,
-      ]}
+      accessibilityLabel="내 티켓 보기"
+      onPress={onPress}
+      style={styles.batchTicket}
     >
-      <View style={styles.listTicketStub}>
-        <Text style={styles.stubCaption}>
-          {entry.source === "group" ? "GROUP TICKET" : "TICKET"}
-        </Text>
-        <Text style={styles.stubTitle} numberOfLines={3}>
-          {title}
-        </Text>
-        <Text style={styles.stubDate} numberOfLines={1}>
-          {ticketDate}
+      <View style={styles.batchTicketStub}>
+        <Text style={styles.batchStubBrand}>MEMO:RE</Text>
+        <Text style={styles.batchTicketTitle}>나의 티켓</Text>
+        <Text style={styles.batchStubDate}>
+          {ticketDateWithWeekday(ticket.visitDate)}
         </Text>
       </View>
-      <View style={styles.stubDashedLine} />
-      <View style={styles.listTicketMain}>
-        <Text style={styles.listTicketBrand} numberOfLines={1}>
-          MEMORY BOARDING PASS
-        </Text>
-        <View style={styles.listTicketImageWrap}>
-          {thumbnail ? (
-            <Image
-              source={{ uri: thumbnail }}
-              style={styles.listTicketImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.listTicketImageEmpty} />
-          )}
-        </View>
-        <Text style={styles.listTicketName} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={styles.listTicketDescription} numberOfLines={1}>
-          {entry.source === "group"
-            ? `${entry.groupName || "그룹에서 만든 내 티켓"} · ${ticketDate}`
-            : ticketDate}
-        </Text>
+      <View style={styles.batchTicketPhotoPanel}>
+        {thumbnail ? (
+          <Image
+            source={{ uri: thumbnail }}
+            style={styles.batchTicketFullPhoto}
+            resizeMode="cover"
+          />
+        ) : (
+          <View
+            style={[styles.batchTicketFullPhoto, styles.batchTicketPhotoEmpty]}
+          />
+        )}
       </View>
     </Pressable>
   );
 }
-
 export default function HomeScreen({
   onOpenMy,
   onOpenGroup,
-  onOpenTickets,
-  dateSelectionMode = false,
-  onCancelDateSelection,
-  onLogout,
-  loadIssuedTicketsForDate,
-  loadMyGroupTickets,
+  onOpenStore,
 }: HomeScreenProps) {
   const [monthDate, setMonthDate] = useState(currentMonth);
-  const [issuedDates, setIssuedDates] = useState<Set<string>>(new Set());
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [dateTickets, setDateTickets] = useState<TicketListEntry[]>([]);
-  const [myGroupTickets, setMyGroupTickets] = useState<MyGroupTicket[]>([]);
-  const [listLoading, setListLoading] = useState(false);
-  const [previewTicket, setPreviewTicket] = useState<IssuedTicket | null>(null);
+  const [selectedDate, setSelectedDate] = useState(todayDateKey);
+  const [showAllTickets, setShowAllTickets] = useState(false);
+  const [previewTicketId, setPreviewTicketId] = useState<number | null>(null);
   const [showingBack, setShowingBack] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const {
+    tickets,
+    loading: listLoading,
+    failed: ticketLoadFailed,
+    reload,
+  } = useMyTickets();
+  const groupTicketPage = tickets.find(
+    (ticket) => ticket.ticketId === previewTicketId,
+  );
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-
-  // 티켓은 원본 320×128 비율을 유지하며 작게 보여줍니다.
-  // 가로 원본을 90도 회전시키기 때문에, 팝업의 세로 길이는 원본 가로 길이입니다.
-  // 이전처럼 원본을 500px 넘게 키우면 이미지가 지나치게 확대/잘릴 수 있습니다.
-  const verticalTicketHeight = Math.max(
-    180,
-    Math.min(700, screenHeight - 260, (screenWidth - 64) * 2.5),
+  const calendarRows = Math.ceil(
+    (new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay() +
+      new Date(
+        monthDate.getFullYear(),
+        monthDate.getMonth() + 1,
+        0,
+      ).getDate()) /
+      7,
   );
-  const verticalTicketWidth = verticalTicketHeight * (128 / 320);
-
-  const fetchDateTickets = useCallback(
-    (date: string) =>
-      loadIssuedTicketsForDate
-        ? loadIssuedTicketsForDate(date)
-        : getTicketsForDate(date),
-    [loadIssuedTicketsForDate],
+  const calendarHeight = Math.round(screenHeight * 0.51);
+  const calendarDayCellHeight = Math.max(
+    42,
+    Math.floor((calendarHeight - 90) / calendarRows),
   );
 
-  const fetchMyGroupTickets = useCallback(async (): Promise<
-    MyGroupTicket[]
-  > => {
-    const loader = loadMyGroupTickets;
-    if (typeof loader !== "function") return [];
-    const result = await loader();
-    if (!Array.isArray(result))
-      throw new Error("그룹 티켓 응답이 배열이 아닙니다.");
-    // 호출자가 현재 로그인한 사용자의 티켓만 제공한다는 계약입니다.
-    return result.filter((ticket): ticket is MyGroupTicket =>
-      Boolean(ticket && typeof ticket.visitDate === "string"),
-    );
-  }, [loadMyGroupTickets]);
+  const markedDates = useMemo(
+    () => new Set(tickets.map((ticket) => ticket.visitDate)),
+    [tickets],
+  );
+  const recordCount = tickets.length;
+  const dateTickets = tickets.filter(
+    (ticket) => ticket.visitDate === selectedDate,
+  );
 
-  const groupSourceConnected = Boolean(loadMyGroupTickets);
+  const openTicket = (ticket: MyTicket) => {
+    setPreviewTicketId(ticket.ticketId);
+    setShowingBack(false);
+    reload();
+  };
 
-  // 달력에서도 그룹 티켓이 발권된 날짜에 티켓 마크를 표시합니다.
-  useEffect(() => {
-    let active = true;
-    void fetchMyGroupTickets()
-      .then((tickets) => {
-        if (active) setMyGroupTickets(tickets);
-      })
-      .catch(() => {
-        if (active && loadMyGroupTickets) {
-          Alert.alert(
-            "티켓 조회 오류",
-            "내 그룹 티켓 목록을 불러오지 못했어요.",
-          );
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [fetchMyGroupTickets]);
-
-  const markedDates = useMemo(() => {
-    const dates = new Set(issuedDates);
-    myGroupTickets.forEach((ticket) => {
-      const key = dateKey(ticket.visitDate);
-      if (key) dates.add(key);
-    });
-    return dates;
-  }, [issuedDates, myGroupTickets]);
-
-  const groupCount = dateTickets.filter(
-    (item) => item.source === "group",
-  ).length;
-
-  const closePreview = () => {
-    setPreviewTicket(null);
+  const openCalendarDate = (date: string) => {
+    if (date > todayDateKey()) return;
+    setSelectedDate(date);
+    setShowAllTickets(false);
     setShowingBack(false);
   };
-
-  const returnToCalendar = () => {
-    closePreview();
-    setSelectedDate(null);
-    setDateTickets([]);
-  };
-
-  const openCalendarDate = async (date: string, issued: boolean) => {
-    if (date > todayDateKey()) {
-      Alert.alert(
-        "미래 날짜는 선택할 수 없어요",
-        "오늘 또는 지난 날짜에만 티켓을 만들 수 있어요.",
-      );
-      return;
-    }
-    // 그룹 티켓 조회가 연결되지 않았다면 기존의 빈 날짜 → 생성 동작을 유지합니다.
-    if (!issued && !groupSourceConnected) {
-      onOpenTickets(date);
-      return;
-    }
-    setListLoading(true);
-    try {
-      const [personalResult, groupResult] = await Promise.allSettled([
-        fetchDateTickets(date),
-        fetchMyGroupTickets(),
-      ]);
-      const personalTickets =
-        personalResult.status === "fulfilled" &&
-        Array.isArray(personalResult.value)
-          ? personalResult.value
-          : [];
-      const groupTickets =
-        groupResult.status === "fulfilled" ? groupResult.value : myGroupTickets;
-      if (
-        personalResult.status === "rejected" &&
-        groupResult.status === "rejected"
-      ) {
-        throw new Error("개인 및 그룹 티켓 조회 실패");
-      }
-      if (groupResult.status === "fulfilled") setMyGroupTickets(groupTickets);
-
-      const entries = makeTicketEntries(date, personalTickets, groupTickets);
-      if (!entries.length && personalResult.status === "rejected")
-        throw new Error("티켓 조회 실패");
-      if (!entries.length) {
-        // 기존과 동일하게 발권 내역이 없으면 티켓 생성 화면을 엽니다.
-        onOpenTickets(date);
-        return;
-      }
-      setDateTickets(entries);
-      setSelectedDate(date);
-      setShowingBack(false);
-      setPreviewTicket(null);
-      if (groupResult.status === "rejected") {
-        Alert.alert(
-          "일부 티켓 조회 실패",
-          "그룹 티켓을 불러오지 못해 현재 확인 가능한 티켓만 보여드려요.",
-        );
-      }
-    } catch {
-      Alert.alert(
-        "티켓 확인 오류",
-        "티켓을 불러오지 못했어요. 다시 시도해 주세요.",
-      );
-    } finally {
-      setListLoading(false);
-    }
-  };
-
   const todayKey = todayDateKey();
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
   const lastDay = new Date(year, month + 1, 0).getDate();
-
-  // 달을 바꿀 때 날짜마다 발권 여부를 다시 확인합니다.
-  useEffect(() => {
-    let active = true;
-    setIssuedDates(new Set());
-    const dates = Array.from(
-      { length: lastDay },
-      (_, index) =>
-        `${year}-${String(month + 1).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`,
-    );
-    Promise.all(
-      dates.map(async (date) => {
-        try {
-          const tickets = await fetchDateTickets(date);
-          return tickets.length ? date : null;
-        } catch {
-          return null;
-        }
-      }),
-    ).then((datesWithTickets) => {
-      if (active) {
-        setIssuedDates(
-          new Set(datesWithTickets.filter((d): d is string => !!d)),
-        );
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, [year, month, lastDay, fetchDateTickets]);
 
   const cellCount = Math.ceil((firstDay + lastDay) / 7) * 7;
   const days = Array.from({ length: cellCount }, (_, index) => {
@@ -410,91 +527,137 @@ export default function HomeScreen({
   return (
     <View style={styles.screen}>
       <View style={styles.page}>
-        {selectedDate ? (
-          // 2번 화면: 해당 날짜의 발권된 티켓 목록
-          <View style={styles.ticketListPage}>
-            <View style={styles.listHeader}>
+        {groupTicketPage ? (
+          <View style={styles.groupTicketPage}>
+            <View style={styles.groupTicketHeader}>
               <Pressable
-                onPress={returnToCalendar}
                 accessibilityRole="button"
-                accessibilityLabel="달력으로 돌아가기"
-                style={styles.listBackButton}
+                accessibilityLabel="홈으로 돌아가기"
+                onPress={() => setPreviewTicketId(null)}
+                style={styles.groupTicketBackButton}
               >
-                <Text style={styles.listBackIcon}>‹</Text>
+                <Text style={styles.fullListBackIcon}>‹</Text>
               </Pressable>
-              <Text style={styles.listHeaderTitle} accessibilityRole="header">
-                {dateTitle(selectedDate)}
-              </Text>
+              <Text style={styles.groupTicketHeaderTitle}>내 티켓</Text>
+              <View style={styles.groupTicketHeaderSpacer} />
             </View>
-            <ScrollView
-              style={styles.listScroll}
-              contentContainerStyle={styles.listScrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-              <Text style={styles.listCount}>
-                내 티켓 {dateTickets.length}장
-                {groupCount > 0 ? ` · 그룹에서 만든 티켓 ${groupCount}장` : ""}
+            <View style={styles.groupTicketMeta}>
+              <Text style={styles.groupTicketDate}>
+                {formattedDate(groupTicketPage.visitDate)}
               </Text>
-              {dateTickets.map((entry, index) => (
-                <TicketListCard
-                  key={entry.key}
-                  entry={entry}
-                  index={index}
-                  onPress={() => {
-                    setShowingBack(false);
-                    setPreviewTicket(entry.ticket);
-                  }}
-                />
-              ))}
-              {!groupSourceConnected && (
-                <Text style={styles.groupSourceNotice}>
-                  그룹에서 만든 다른 티켓까지 표시하려면 그룹 티켓 조회 기능을
-                  연결해야 해요.
-                </Text>
-              )}
-              {dateTickets.length === 0 && (
-                <Text style={styles.emptyTickets}>
-                  이 날짜에 발권된 티켓이 없어요.
-                </Text>
-              )}
-            </ScrollView>
-          </View>
-        ) : (
-          // 1번 화면: 기존 HOME 달력 유지
-          <>
-            <ScrollView contentContainerStyle={styles.content}>
-              <View style={styles.header}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="메뉴"
-                  onPress={
-                    dateSelectionMode
-                      ? onCancelDateSelection
-                      : () => setMenuOpen(true)
-                  }
-                  style={styles.menuButton}
-                >
-                  <Text style={styles.menuText}>
-                    {dateSelectionMode ? "‹" : "≡"}
-                  </Text>
-                </Pressable>
-                {dateSelectionMode ? (
-                  <Text style={styles.dateSelectionTitle}>티켓 날짜 선택</Text>
+              <Text style={styles.groupTicketMenu}>•••</Text>
+            </View>
+            <View style={styles.groupTicketPreviewArea}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  showingBack ? "티켓 앞면 보기" : "티켓 뒷면 보기"
+                }
+                accessibilityHint="티켓을 누르면 앞면과 뒷면이 바뀝니다"
+                onPress={() => setShowingBack((current) => !current)}
+                style={({ pressed }) => [
+                  styles.groupTicketPreview,
+                  pressed && styles.slotPressed,
+                ]}
+              >
+                {showingBack ? (
+                  <PersonalTicketBack
+                    ticket={groupTicketPage}
+                    width={Math.min(screenWidth - 48, 390)}
+                  />
+                ) : groupTicketPage.design ? (
+                  <TicketRenderer
+                    designId={groupTicketPage.design.designId}
+                    photoUris={groupTicketPage.photos.map((photo) => photo.url)}
+                    values={{
+                      date: groupTicketPage.visitDate,
+                      groupName: "",
+                      participants: [],
+                    }}
+                    width={Math.min(screenWidth - 48, 390)}
+                    lieDown
+                  />
                 ) : (
-                  <Image
-                    source={logo}
-                    resizeMode="contain"
-                    accessibilityLabel="MEMO:RE"
-                    style={styles.logo}
+                  <PersonalPhotoTicket
+                    ticket={groupTicketPage}
+                    width={Math.min(screenWidth - 48, 390)}
                   />
                 )}
-              </View>
-              {dateSelectionMode && (
-                <Text style={styles.dateSelectionHint}>
-                  오늘 또는 지난 날짜를 선택해 주세요.
-                </Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : showAllTickets ? (
+          <View style={styles.fullListPage}>
+            <View style={styles.fullListHeader}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="나의 기록으로 돌아가기"
+                onPress={() => setShowAllTickets(false)}
+                style={styles.fullListBackButton}
+              >
+                <Text style={styles.fullListBackIcon}>‹</Text>
+              </Pressable>
+              <Text style={styles.fullListDate}>{dateTitle(selectedDate)}</Text>
+            </View>
+            <ScrollView
+              contentContainerStyle={styles.fullListContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.fullListTitle}>오늘의 티켓</Text>
+              <Text style={styles.fullListSectionLabel}>나의 기록</Text>
+              {dateTickets.map((ticket) => (
+                <BatchTicketCard
+                  key={ticket.ticketId}
+                  ticket={ticket}
+                  onPress={() => openTicket(ticket)}
+                />
+              ))}
+              {!listLoading &&
+                !ticketLoadFailed &&
+                dateTickets.length === 0 && (
+                  <Text style={styles.emptyTickets}>
+                    이 날짜에 만든 내 티켓이 없어요.
+                  </Text>
+                )}
+              {ticketLoadFailed && (
+                <Pressable accessibilityRole="button" onPress={reload}>
+                  <Text style={styles.emptyTickets}>
+                    내 티켓을 불러오지 못했어요. 다시 시도
+                  </Text>
+                </Pressable>
               )}
-              <View style={styles.calendar}>
+            </ScrollView>
+            <BottomNavigation
+              activeTab="home"
+              onSelect={(tab) => {
+                if (tab === "home") setShowAllTickets(false);
+                else if (tab === "group") onOpenGroup();
+                else if (tab === "my") onOpenMy();
+                else onOpenStore();
+              }}
+            />
+          </View>
+        ) : (
+          <>
+            <ScrollView
+              contentContainerStyle={styles.content}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.header}>
+                <Image
+                  source={logo}
+                  resizeMode="contain"
+                  accessibilityLabel="MEMO:RE"
+                  style={styles.logo}
+                />
+              </View>
+              <View style={styles.recordsHeading}>
+                <Text accessibilityRole="header" style={styles.recordsTitle}>
+                  나의 기록
+                </Text>
+                <Text style={styles.recordsCount}>{recordCount}장</Text>
+              </View>
+              <View style={[styles.calendar, { minHeight: calendarHeight }]}>
                 <View style={styles.calendarHeader}>
                   <Pressable
                     accessibilityRole="button"
@@ -515,16 +678,6 @@ export default function HomeScreen({
                   >
                     <Text style={styles.arrow}>›</Text>
                   </Pressable>
-                  {!dateSelectionMode && (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="티켓 추가"
-                      onPress={() => onOpenTickets()}
-                      style={[styles.monthButton, styles.addButton]}
-                    >
-                      <Text style={styles.plus}>+</Text>
-                    </Pressable>
-                  )}
                 </View>
                 <View style={styles.weekdays}>
                   {weekdays.map((day) => (
@@ -537,7 +690,10 @@ export default function HomeScreen({
                   {days.map((day, index) => (
                     <View
                       key={`${year}-${month}-${index}`}
-                      style={styles.dayCell}
+                      style={[
+                        styles.dayCell,
+                        { height: calendarDayCellHeight },
+                      ]}
                     >
                       {day !== null &&
                         (() => {
@@ -547,12 +703,10 @@ export default function HomeScreen({
                           return (
                             <Pressable
                               accessibilityRole="button"
-                              accessibilityLabel={`${year}년 ${month + 1}월 ${day}일 ${isFutureDate ? "미래 날짜, 선택 불가" : issued ? "발권한 티켓 목록" : "티켓 만들기"}`}
+                              accessibilityLabel={`${year}년 ${month + 1}월 ${day}일 ${isFutureDate ? "미래 날짜, 선택 불가" : issued ? "발권한 티켓 목록" : "발권된 티켓 없음"}`}
                               accessibilityState={{ disabled: isFutureDate }}
                               disabled={isFutureDate || listLoading}
-                              onPress={() =>
-                                void openCalendarDate(date, issued)
-                              }
+                              onPress={() => void openCalendarDate(date)}
                               style={[
                                 styles.dateButton,
                                 isFutureDate && styles.futureDateButton,
@@ -560,11 +714,6 @@ export default function HomeScreen({
                             >
                               {issued ? (
                                 <View style={styles.issuedDay}>
-                                  <Image
-                                    source={ticketIcon}
-                                    resizeMode="contain"
-                                    style={styles.issuedTicketIcon}
-                                  />
                                   <Text style={styles.issuedDayText}>
                                     {day}
                                   </Text>
@@ -579,139 +728,95 @@ export default function HomeScreen({
                   ))}
                 </View>
               </View>
-            </ScrollView>
-            {!dateSelectionMode && (
-              <View style={styles.bottomNav}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="홈"
-                  accessibilityState={{ selected: true }}
-                  onPress={() => setMonthDate(currentMonth())}
-                  style={styles.navButton}
-                >
-                  <Text style={[styles.navText, styles.activeText]}>Home</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="그룹"
-                  onPress={onOpenGroup}
-                  style={styles.navButton}
-                >
-                  <Text style={styles.navText}>Group</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="스토어"
-                  onPress={showPendingFeature}
-                  style={styles.navButton}
-                >
-                  <Text style={styles.navText}>Store</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="마이페이지"
-                  onPress={onOpenMy}
-                  style={styles.navButton}
-                >
-                  <Text style={styles.navText}>My</Text>
-                </Pressable>
+              <View style={styles.selectedTicketsSection}>
+                {ticketLoadFailed && (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={listLoading}
+                    onPress={reload}
+                  >
+                    <Text style={styles.emptyTickets}>
+                      내 티켓을 불러오지 못했어요. 다시 시도
+                    </Text>
+                  </Pressable>
+                )}
+                <View style={styles.selectedTicketsHeading}>
+                  <Text style={styles.selectedDateTitle}>
+                    {dateLongTitle(selectedDate)}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="이 날짜 티켓 전체 보기"
+                    onPress={() => setShowAllTickets(true)}
+                    style={styles.fullViewButton}
+                  >
+                    <Text style={styles.fullViewText}>전체 보기</Text>
+                  </Pressable>
+                </View>
+                {listLoading ? (
+                  <Text style={styles.emptyTickets}>
+                    티켓을 불러오는 중이에요.
+                  </Text>
+                ) : (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.ticketSlots}
+                  >
+                    {dateTickets.map((ticket) => (
+                      <Pressable
+                        key={ticket.ticketId}
+                        accessibilityRole="button"
+                        accessibilityLabel="내 티켓 보기"
+                        onPress={() => openTicket(ticket)}
+                        style={({ pressed }) => [
+                          styles.ticketSlot,
+                          pressed && styles.slotPressed,
+                        ]}
+                      >
+                        <View style={styles.slotTicketStub}>
+                          <Text style={styles.slotTicketName}>MEMO:RE</Text>
+                          <Text style={styles.slotTicketDate}>
+                            {formattedDate(ticket.visitDate)}
+                          </Text>
+                        </View>
+                        <View style={styles.slotTicketPhoto}>
+                          {ticket.photos[0] ? (
+                            <Image
+                              source={{ uri: ticket.photos[0].url }}
+                              style={styles.slotTicketImage}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.slotTicketEmptyImage} />
+                          )}
+                        </View>
+                        <Text style={styles.slotLabel} numberOfLines={1}>
+                          나의 기록
+                        </Text>
+                      </Pressable>
+                    ))}
+                    {!ticketLoadFailed && dateTickets.length === 0 && (
+                      <Text style={styles.emptyTickets}>
+                        이 날짜에 만든 내 티켓이 없어요.
+                      </Text>
+                    )}
+                  </ScrollView>
+                )}
               </View>
-            )}
+            </ScrollView>
+            <BottomNavigation
+              activeTab="home"
+              onSelect={(tab) => {
+                if (tab === "home") setMonthDate(currentMonth());
+                else if (tab === "group") onOpenGroup();
+                else if (tab === "my") onOpenMy();
+                else onOpenStore();
+              }}
+            />
           </>
         )}
       </View>
-      <MenuExperience
-        visible={menuOpen && !dateSelectionMode && !selectedDate}
-        onClose={() => setMenuOpen(false)}
-        onLogout={onLogout}
-      />
-
-      {/* 3, 4번 화면: 티켓 앞면/뒷면 팝업 */}
-      <Modal
-        visible={previewTicket !== null}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={closePreview}
-      >
-        <View style={styles.previewOverlay}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={closePreview}
-            accessibilityRole="button"
-            accessibilityLabel="티켓 팝업 닫기"
-          />
-          {previewTicket && (
-            <>
-              <View style={styles.previewCenter}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    showingBack
-                      ? "티켓 앞면으로 뒤집기"
-                      : "티켓 뒷면으로 뒤집기"
-                  }
-                  onPress={() => setShowingBack((value) => !value)}
-                  style={[
-                    styles.verticalTicketHolder,
-                    {
-                      width: verticalTicketWidth,
-                      height: verticalTicketHeight,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.rotatedTicket,
-                      {
-                        width: verticalTicketHeight,
-                        height: verticalTicketWidth,
-                        left: (verticalTicketWidth - verticalTicketHeight) / 2,
-                        top: (verticalTicketHeight - verticalTicketWidth) / 2,
-                      },
-                    ]}
-                  >
-                    {showingBack && !previewTicket.memo?.trim() ? (
-                      // 메모가 없는 티켓의 뒷면은 피그마처럼 빈 크림색 면으로 표시합니다.
-                      <View
-                        style={[
-                          styles.emptyTicketBack,
-                          {
-                            width: verticalTicketHeight,
-                            height: verticalTicketWidth,
-                          },
-                        ]}
-                      />
-                    ) : (
-                      <IssuedTicketFlipPreview
-                        ticket={previewTicket}
-                        showingBack={showingBack}
-                        ticketWidth={verticalTicketHeight}
-                        onMore={() =>
-                          Alert.alert(
-                            "티켓 뒷면",
-                            previewTicket.memo || "기록된 글이 없어요.",
-                          )
-                        }
-                      />
-                    )}
-                  </View>
-                </Pressable>
-              </View>
-              <View style={styles.previewBottom}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="티켓 목록으로 돌아가기"
-                  style={styles.previewBackButton}
-                  onPress={closePreview}
-                >
-                  <Text style={styles.previewBackText}>돌아가기</Text>
-                </Pressable>
-              </View>
-            </>
-          )}
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -721,9 +826,9 @@ const styles = StyleSheet.create({
   page: { flex: 1, width: "100%", maxWidth: 420 },
   content: { flexGrow: 1, paddingBottom: 40 },
   header: {
-    height: 130,
-    paddingTop: 35,
-    paddingBottom: 45,
+    height: 78,
+    paddingTop: 18,
+    paddingBottom: 12,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -737,7 +842,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   menuText: { fontSize: 25, color: colors.primary },
-  logo: { width: 100, height: 50 },
+  logo: { width: 132, height: 46, alignSelf: "flex-start", marginLeft: 18 },
+  recordsHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  recordsTitle: { color: colors.text, fontSize: 23, fontWeight: "700" },
+  recordsCount: { color: colors.secondary, fontSize: 12, fontWeight: "600" },
   dateSelectionTitle: {
     color: colors.primary,
     fontSize: 18,
@@ -750,23 +865,24 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   calendar: {
-    marginHorizontal: 28,
-    minHeight: 561,
-    borderRadius: 16,
-    paddingTop: 58,
-    paddingBottom: 14,
-    paddingHorizontal: 3,
+    marginHorizontal: 12,
+    borderRadius: 0,
+    borderWidth: 0,
+    paddingTop: 12,
+    paddingBottom: 8,
+    paddingHorizontal: 8,
     backgroundColor: colors.surface,
   },
   calendarHeader: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
-    marginBottom: 40,
+    marginBottom: 13,
+    justifyContent: "space-between",
   },
   monthButton: {
-    width: 34,
-    height: 44,
+    width: 38,
+    height: 38,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -777,8 +893,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.text,
   },
-  addButton: { marginLeft: "auto" },
-  plus: { fontSize: 25, color: colors.text },
   weekdays: { flexDirection: "row", marginBottom: 0 },
   weekday: {
     flex: 1,
@@ -790,36 +904,43 @@ const styles = StyleSheet.create({
   days: { flexDirection: "row", flexWrap: "wrap" },
   dayCell: {
     width: "14.285714%",
-    height: 78,
+    height: 50,
     alignItems: "center",
     justifyContent: "center",
   },
   dateButton: {
-    width: "100%",
-    height: "100%",
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
   },
   futureDateButton: { opacity: 0.32 },
-  dayText: { fontSize: 12, lineHeight: 16, color: colors.primary },
-  issuedDay: { alignItems: "center", justifyContent: "center" },
-  issuedTicketIcon: { width: 34, height: 30 },
+  dayText: { fontSize: 13, lineHeight: 18, color: colors.text },
+  issuedDay: {
+    width: 34,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   issuedDayText: {
-    fontSize: 10,
-    lineHeight: 13,
-    color: colors.primary,
-    fontWeight: "700",
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#FFFFFF",
+    fontWeight: "600",
   },
   // Group 화면의 하단 바와 통일: 4등분, 50 높이, 기본 안드로이드 글꼴.
   // 검은 하단 가로줄은 Android 시스템 제스처 표시줄이므로 별도로 그리지 않습니다.
   bottomNav: {
-    height: 50,
+    height: 80,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 0,
     paddingTop: 0,
     paddingBottom: 0,
-    backgroundColor: "#F0C8BE",
+    backgroundColor: "#FFFFFF",
   },
   navButton: {
     flex: 1,
@@ -830,10 +951,361 @@ const styles = StyleSheet.create({
   navText: {
     color: "#352722",
     fontSize: 14,
+    lineHeight: 20,
     fontWeight: "400",
     textAlign: "center",
   },
-  activeText: { color: "#FFFDF8", fontWeight: "700" },
+  activeText: {
+    color: colors.primary,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+
+  selectedTicketsSection: {
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  selectedTicketsHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  selectedDateTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  fullViewButton: { paddingVertical: 6, paddingHorizontal: 8 },
+  fullViewText: { color: "#3F63E9", fontSize: 11, fontWeight: "700" },
+  ticketSlots: { gap: 12, paddingRight: 16, paddingBottom: 8 },
+  ticketSlot: {
+    width: 68,
+    height: 134,
+    borderRadius: 13,
+    overflow: "hidden",
+    backgroundColor: "#E7E9EF",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 7,
+  },
+  slotPressed: { opacity: 0.8, transform: [{ scale: 0.97 }] },
+  slotTicketStub: {
+    width: "100%",
+    flex: 1,
+    padding: 7,
+    justifyContent: "space-between",
+    backgroundColor: "#CBD9F1",
+  },
+  slotTicketName: {
+    color: colors.text,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: "700",
+  },
+  slotTicketDate: { color: colors.secondary, fontSize: 8 },
+  slotTicketPhoto: { width: "100%", height: 42, backgroundColor: "#D9DCE4" },
+  slotTicketImage: { width: "100%", height: "100%" },
+  slotTicketEmptyImage: { flex: 1, backgroundColor: "#D9DCE4" },
+  slotLabel: {
+    width: "100%",
+    color: colors.text,
+    fontSize: 9,
+    fontWeight: "600",
+    textAlign: "center",
+    paddingHorizontal: 3,
+    paddingTop: 3,
+  },
+  emptySlot: {
+    flex: 1,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptySlotPlus: { color: colors.text, fontSize: 19, lineHeight: 23 },
+  commonTicketSummary: {
+    flex: 1,
+    width: "100%",
+    paddingHorizontal: 6,
+    paddingVertical: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#E7E9EF",
+  },
+  commonTicketDate: { color: colors.secondary, fontSize: 9, lineHeight: 12 },
+  commonTicketTitle: {
+    color: colors.text,
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  personalPhotoTicket: {
+    overflow: "hidden",
+    borderRadius: 12,
+    backgroundColor: "#F2F3F6",
+    padding: 6,
+    borderWidth: 1,
+    borderColor: "#E6E8ED",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  personalPhotoCollage: {
+    width: "100%",
+    flexDirection: "row",
+    gap: 4,
+    overflow: "hidden",
+    borderRadius: 7,
+    backgroundColor: "#E7E9EF",
+  },
+  personalPhotoSingle: { width: "100%", height: "100%" },
+  personalPhotoMain: { width: "64%", height: "100%", borderRadius: 5 },
+  personalPhotoSide: { flex: 1, gap: 4 },
+  personalPhotoThumb: { flex: 1, width: "100%", borderRadius: 5 },
+  personalPhotoThumbPlaceholder: { flex: 1 },
+  personalPhotoPlaceholder: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  personalPhotoPlaceholderText: { color: colors.secondary, fontSize: 11 },
+  personalPhotoCaptionRow: {
+    height: 25,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 3,
+  },
+  personalPhotoTitle: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  personalPhotoDate: { color: colors.secondary, fontSize: 9, marginLeft: 8 },
+  personalTicketBack: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#B9BDC6",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  personalTicketBackHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  personalTicketBackLabel: { color: "#3F63E9", fontSize: 8, fontWeight: "700" },
+  personalTicketBackDate: { color: colors.secondary, fontSize: 8 },
+  personalTicketBackMemo: {
+    marginTop: 18,
+    color: "#454955",
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: "left",
+  },
+
+  groupTicketPage: { flex: 1, backgroundColor: "#FFFFFF" },
+  groupTicketHeader: {
+    height: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+  },
+  groupTicketBackButton: {
+    width: 38,
+    height: 44,
+    alignItems: "flex-start",
+    justifyContent: "center",
+  },
+  groupTicketHeaderTitle: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  groupTicketHeaderSpacer: { width: 38 },
+  groupTicketMeta: {
+    height: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
+  },
+  groupTicketDate: { color: colors.secondary, fontSize: 10 },
+  groupTicketMenu: { color: colors.primary, fontSize: 16, letterSpacing: 2 },
+  groupTicketPreviewArea: {
+    flex: 1,
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 76,
+  },
+  groupTicketPreview: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  ticketImageSaveRow: {
+    width: "100%",
+    alignItems: "flex-end",
+    paddingRight: 20,
+    marginTop: 78,
+  },
+  ticketImageSaveButton: {
+    minWidth: 112,
+    height: 42,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#D7E1FF",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  ticketImageSaveText: { color: "#3F63E9", fontSize: 11, fontWeight: "600" },
+
+  fullListPage: { flex: 1, backgroundColor: colors.surface },
+  fullListHeader: {
+    height: 66,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    gap: 16,
+  },
+  fullListBackButton: {
+    width: 34,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fullListBackIcon: { color: colors.primary, fontSize: 30, lineHeight: 34 },
+  fullListDate: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  fullListContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 22 },
+  fullListTitle: {
+    color: colors.text,
+    fontSize: 23,
+    fontWeight: "700",
+    marginBottom: 16,
+  },
+  fullListSectionLabel: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  fullListGroupLabel: {
+    color: "#3F63E9",
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  fullGroupSection: { marginTop: 18 },
+  batchTicket: {
+    width: "100%",
+    height: 144,
+    flexDirection: "row",
+    overflow: "hidden",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#DDE3ED",
+    backgroundColor: "#FFFFFF",
+  },
+  batchTicketFullPhoto: { width: "100%", height: "100%" },
+  batchTicketStub: {
+    width: "25%",
+    backgroundColor: "#E6B9D0",
+    paddingVertical: 13,
+    paddingHorizontal: 9,
+    justifyContent: "space-between",
+  },
+  batchTicketPhotoPanel: {
+    flex: 1,
+    height: "100%",
+    backgroundColor: "#DDE3ED",
+  },
+  batchStubBrand: {
+    color: colors.secondary,
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: 0.3,
+  },
+  batchStubDate: { color: colors.secondary, fontSize: 8, lineHeight: 11 },
+  batchStubLabel: {
+    color: colors.text,
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: "500",
+  },
+  batchTicketDetails: { flex: 1, paddingHorizontal: 12, paddingVertical: 8 },
+  batchTicketBrand: {
+    color: colors.secondary,
+    fontSize: 9,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+    marginBottom: 5,
+  },
+  batchTicketImageWrap: {
+    width: "100%",
+    height: 49,
+    borderRadius: 5,
+    backgroundColor: "#F1E9E1",
+    overflow: "hidden",
+    marginBottom: 5,
+  },
+  batchTicketPhoto: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 6,
+    backgroundColor: "#E7E9EF",
+  },
+  batchTicketPhotoEmpty: { backgroundColor: "#DDE3ED" },
+  batchTicketTitle: {
+    color: colors.text,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  batchTicketName: {
+    color: colors.primary,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+  },
+  batchTicketCaption: {
+    color: colors.secondary,
+    fontSize: 9,
+    lineHeight: 12,
+    marginTop: 2,
+  },
+  batchEmptyTicket: {
+    height: 110,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#DDE3ED",
+    backgroundColor: "#F1F4F8",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+  },
+  batchEmptyPlus: { color: colors.secondary, fontSize: 24, lineHeight: 28 },
+  batchEmptyText: { color: colors.secondary, fontSize: 10 },
 
   // 날짜별 티켓 목록
   ticketListPage: { flex: 1, backgroundColor: colors.canvas },
@@ -859,7 +1331,7 @@ const styles = StyleSheet.create({
   listHeaderTitle: { color: "#352722", fontSize: 19, fontWeight: "700" },
   listScroll: { flex: 1 },
   listScrollContent: {
-    paddingHorizontal: 22,
+    paddingHorizontal: 8,
     paddingTop: 38,
     paddingBottom: 60,
     gap: 16,
@@ -879,7 +1351,7 @@ const styles = StyleSheet.create({
   },
   listTicket: {
     width: "100%",
-    height: 144,
+    aspectRatio: 2.5,
     flexDirection: "row",
     borderRadius: 13,
     backgroundColor: colors.surface,
@@ -889,49 +1361,46 @@ const styles = StyleSheet.create({
   },
   listTicketPressed: { opacity: 0.86 },
   listTicketStub: {
-    width: "25%",
+    width: "20%",
     backgroundColor: "#E8CAC2",
-    paddingHorizontal: 9,
-    paddingVertical: 13,
+    paddingHorizontal: 7,
+    paddingVertical: 8,
+    justifyContent: "space-between",
   },
-  stubCaption: { color: colors.secondary, fontSize: 9, marginBottom: 12 },
+  stubCaption: { color: colors.secondary, fontSize: 7, lineHeight: 10 },
   stubTitle: {
     color: colors.primary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
-    lineHeight: 18,
+    lineHeight: 14,
     flex: 1,
+    marginTop: 7,
   },
-  stubDate: { color: colors.secondary, fontSize: 10 },
+  stubFooter: { gap: 5 },
+  stubDate: { color: colors.secondary, fontSize: 7, lineHeight: 9 },
+  stubLocation: { color: colors.secondary, fontSize: 8, lineHeight: 10 },
   stubDashedLine: {
-    width: 1,
+    width: 2,
     borderLeftWidth: 1,
     borderStyle: "dashed",
-    borderColor: "#D9AFA5",
+    borderColor: "#FFF8EF",
   },
-  listTicketMain: { flex: 1, paddingHorizontal: 18, paddingVertical: 12 },
-  listTicketBrand: {
-    color: colors.secondary,
-    fontSize: 9,
-    fontWeight: "600",
-    letterSpacing: 0.4,
-    marginBottom: 5,
-  },
-  listTicketImageWrap: {
-    width: "100%",
-    height: 49,
-    borderRadius: 5,
+  listTicketPhoto: {
+    flex: 1,
+    position: "relative",
     backgroundColor: "#F1E9E1",
-    overflow: "hidden",
-    marginBottom: 8,
   },
   listTicketImage: { width: "100%", height: "100%" },
   listTicketImageEmpty: { flex: 1, backgroundColor: "#F1E9E1" },
-  listTicketName: { color: colors.primary, fontSize: 13, fontWeight: "700" },
-  listTicketDescription: {
-    color: colors.secondary,
-    fontSize: 10,
-    marginTop: 3,
+  listTicketPhotoDate: {
+    position: "absolute",
+    left: 6,
+    bottom: 4,
+    color: colors.surface,
+    fontSize: 7,
+    textShadowColor: "rgba(0,0,0,0.65)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   emptyTickets: { color: colors.secondary, textAlign: "center", marginTop: 40 },
 

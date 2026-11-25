@@ -19,19 +19,37 @@ const errors = [];
 const fail = (file, message) => errors.push(`${file}: ${message}`);
 const rel = (p) => p.slice(root.length + 1);
 
-// PNG 머리(앞 24바이트)에서 가로·세로를 읽는다. 패키지를 늘리지 않으려고 직접 읽음
-function pngSize(file) {
+// 그림 머리에서 가로·세로를 읽는다 (PNG·WebP). 패키지를 늘리지 않으려고 직접 읽음
+function imageSize(file) {
   const b = readFileSync(file);
-  const sig = "89504e470d0a1a0a";
-  if (b.length < 24 || b.subarray(0, 8).toString("hex") !== sig) return null;
-  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+  if (b.length >= 24 && b.subarray(0, 8).toString("hex") === "89504e470d0a1a0a")
+    return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+  if (
+    b.length < 30 ||
+    b.toString("ascii", 0, 4) !== "RIFF" ||
+    b.toString("ascii", 8, 12) !== "WEBP"
+  )
+    return null;
+  const chunk = b.toString("ascii", 12, 16);
+  // 손실 압축
+  if (chunk === "VP8 ")
+    return { w: b.readUInt16LE(26) & 0x3fff, h: b.readUInt16LE(28) & 0x3fff };
+  // 무손실 압축: 14비트씩 (값 - 1)
+  if (chunk === "VP8L") {
+    const bits = b.readUInt32LE(21);
+    return { w: (bits & 0x3fff) + 1, h: ((bits >> 14) & 0x3fff) + 1 };
+  }
+  // 투명도가 있는 손실 압축 등: 24비트씩 (값 - 1)
+  if (chunk === "VP8X")
+    return { w: b.readUIntLE(24, 3) + 1, h: b.readUIntLE(27, 3) + 1 };
+  return null;
 }
 
-function checkPng(id, name, size, owner) {
+function checkImage(id, name, size, owner) {
   const file = join(assetsDir, id, name);
   if (!existsSync(file)) return fail(owner, `그림이 없습니다: ${rel(file)}`);
-  const got = pngSize(file);
-  if (!got) return fail(owner, `PNG 파일이 아닙니다: ${rel(file)}`);
+  const got = imageSize(file);
+  if (!got) return fail(owner, `PNG·WebP 그림이 아닙니다: ${rel(file)}`);
   if (got.w !== size.w || got.h !== size.h) {
     fail(
       owner,
@@ -69,6 +87,9 @@ for (const entry of readdirSync(designsDir)) {
     if (!parsed.success) {
       for (const i of parsed.error.issues)
         fail(owner, `${i.path.join(".") || "(전체)"}: ${i.message}`);
+      // 형식이 틀려도 그림 폴더 짝은 맞는 것으로 봐서, "디자인 파일이 없다"는 엉뚱한 오류를 덧붙이지 않는다
+      if (raw && typeof raw === "object" && typeof raw.id === "string")
+        seen.add(raw.id);
       continue;
     }
     const d = parsed.data;
@@ -77,20 +98,31 @@ for (const entry of readdirSync(designsDir)) {
       fail(owner, `파일 이름(${stem})과 id(${d.id})가 다릅니다`);
     if (d.category !== entry)
       fail(owner, `폴더(${entry})와 category(${d.category})가 다릅니다`);
-    if (!new RegExp(`^${d.category}_[a-z0-9_]+_[0-9]+$`).test(d.id)) {
-      fail(
-        owner,
-        `id는 <카테고리>_<디자인 이름>_<번호> 형식이어야 합니다 (예: ${d.category}_sunset_01)`,
-      );
-    }
     if (seen.has(d.id)) fail(owner, `id ${d.id}가 겹칩니다`);
     seen.add(d.id);
 
     const layout = DESIGN_LAYOUTS[d.orientation];
-    checkPng(d.id, d.stub.image, layout.stub, owner);
+    checkImage(d.id, d.stub.image, layout.stub, owner);
     for (const n of DESIGN_PHOTO_COUNTS) {
-      checkPng(d.id, d.body[n].under, layout.body, owner);
-      if (d.body[n].over) checkPng(d.id, d.body[n].over, layout.body, owner);
+      checkImage(d.id, d.body[n].under, layout.body, owner);
+      if (d.body[n].over) checkImage(d.id, d.body[n].over, layout.body, owner);
+    }
+    // 디자인 파일이 쓰지 않는 그림 (다시 내보낼 때 예전 그림이 남은 경우). 앱 용량만 늘린다
+    const used = new Set([
+      d.stub.image,
+      ...DESIGN_PHOTO_COUNTS.flatMap((n) =>
+        [d.body[n].under, d.body[n].over].filter(Boolean),
+      ),
+    ]);
+    const assetDir = join(assetsDir, d.id);
+    if (isDir(assetDir)) {
+      for (const f of readdirSync(assetDir)) {
+        if (!used.has(f))
+          fail(
+            owner,
+            `디자인 파일이 쓰지 않는 그림입니다. 지워 주세요: ${rel(join(assetDir, f))}`,
+          );
+      }
     }
   }
 }

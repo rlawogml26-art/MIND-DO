@@ -10,6 +10,7 @@ import {
   type GroupDetailResponse,
   type GroupListResponse,
   type InviteInfoResponse,
+  type LeaveGroupResponse,
 } from "@mind-do/shared";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -261,5 +262,26 @@ export const getInviteInfo = async (
     alreadyMember,
     canJoin: cannotJoinReason === null,
     cannotJoinReason,
+  };
+};
+
+export const leaveGroup = async (
+  cookieHeader: string | undefined,
+  groupId: number,
+  keepTickets: boolean,
+): Promise<LeaveGroupResponse> => {
+  const userId = getAuthenticatedUserId(
+    getAccessTokenFromCookieHeader(cookieHeader),
+  );
+  const result = await repository.leaveGroup({ groupId, userId, keepTickets });
+  if (result.status === "group_not_found") throw new GroupNotFoundError();
+  if (result.status === "default_group_not_allowed") {
+    throw new DefaultGroupNotAllowedError();
+  }
+
+  return {
+    groupId,
+    groupDeleted: result.groupDeleted,
+    newLeaderId: result.newLeaderId,
   };
 };

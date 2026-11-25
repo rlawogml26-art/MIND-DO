@@ -9,6 +9,7 @@ export enum ErrorCode {
   // 인증 (모든 API 공통, 로그인)
   UNAUTHORIZED = "UNAUTHORIZED", // 401 로그인 안 됨 → 로그인 화면
   ACCESS_TOKEN_EXPIRED = "ACCESS_TOKEN_EXPIRED", // 401 액세스 토큰 만료 → 토큰 갱신 후 재요청
+  INVALID_REFRESH_TOKEN = "INVALID_REFRESH_TOKEN", // 401 토큰 갱신 실패: 리프레시 토큰 없음·만료·무효·재사용 (구분하지 않음) → 로그인 화면
   INVALID_CREDENTIALS = "INVALID_CREDENTIALS", // 401 이메일 또는 비밀번호 불일치 (둘을 구분하지 않음)
   EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS", // 409 이미 가입된 이메일
 
@@ -26,6 +27,8 @@ export enum ErrorCode {
   INVALID_TICKET_DATE = "INVALID_TICKET_DATE", // 400 미래 날짜 (KST 기준)
   INVALID_INVITEE = "INVALID_INVITEE", // 400 초대자가 그룹의 현재 멤버가 아님
   SHARED_TICKET_DATE_TAKEN = "SHARED_TICKET_DATE_TAKEN", // 409 그 그룹·그 날짜에 공동 티켓이 이미 있음
+  NOT_SHARED_TICKET_EDITOR = "NOT_SHARED_TICKET_EDITOR", // 403 공동 티켓 생성자·그룹장 전용 행동 (초대자 제외 등)
+  INVITEE_NOT_FOUND = "INVITEE_NOT_FOUND", // 404 그 사람이 이 공동 티켓의 초대자가 아님
 
   // 사진첨부·개인 티켓 저장·AI 초안
   NOT_INVITED = "NOT_INVITED", // 403 공동 티켓의 초대자가 아님
