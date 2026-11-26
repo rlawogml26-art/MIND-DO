@@ -475,19 +475,23 @@ export default function HomeScreen({
   const groupTicketPage = previewTicket?.ticket;
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const previewWidth = Math.min(screenWidth - 48, 390);
-  const calendarRows = Math.ceil(
-    (new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay() +
-      new Date(
-        monthDate.getFullYear(),
-        monthDate.getMonth() + 1,
-        0,
-      ).getDate()) /
-      7,
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const daysPerWeek = weekdays.length;
+  const weeks = Array.from(
+    { length: Math.ceil((firstDay + lastDay) / daysPerWeek) },
+    (_, weekIndex) =>
+      Array.from({ length: daysPerWeek }, (_, dayIndex) => {
+        const day = weekIndex * daysPerWeek + dayIndex - firstDay + 1;
+        return day >= 1 && day <= lastDay ? day : null;
+      }),
   );
   const calendarHeight = Math.round(screenHeight * 0.51);
   const calendarDayCellHeight = Math.max(
     42,
-    Math.floor((calendarHeight - 90) / calendarRows),
+    Math.floor((calendarHeight - 90) / weeks.length),
   );
 
   const markedDates = useMemo(
@@ -503,16 +507,6 @@ export default function HomeScreen({
     setShowingBack(false);
   };
   const todayKey = todayDateKey();
-  const year = monthDate.getFullYear();
-  const month = monthDate.getMonth();
-  const firstDay = new Date(year, month, 1).getDay();
-  const lastDay = new Date(year, month + 1, 0).getDate();
-
-  const cellCount = Math.ceil((firstDay + lastDay) / 7) * 7;
-  const days = Array.from({ length: cellCount }, (_, index) => {
-    const day = index - firstDay + 1;
-    return day >= 1 && day <= lastDay ? day : null;
-  });
 
   function changeMonth(amount: number) {
     setMonthDate(
@@ -705,47 +699,52 @@ export default function HomeScreen({
                     </Text>
                   ))}
                 </View>
-                <View style={styles.days}>
-                  {days.map((day, index) => (
-                    <View
-                      key={`${year}-${month}-${index}`}
-                      style={[
-                        styles.dayCell,
-                        { height: calendarDayCellHeight },
-                      ]}
-                    >
-                      {day !== null &&
-                        (() => {
-                          const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                          const issued = markedDates.has(date);
-                          const isFutureDate = date > todayKey;
-                          return (
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel={`${year}년 ${month + 1}월 ${day}일 ${isFutureDate ? "미래 날짜, 선택 불가" : issued ? "발권한 티켓 목록" : "발권된 티켓 없음"}`}
-                              accessibilityState={{ disabled: isFutureDate }}
-                              disabled={isFutureDate || listLoading}
-                              onPress={() => void openCalendarDate(date)}
-                              style={[
-                                styles.dateButton,
-                                isFutureDate && styles.futureDateButton,
-                              ]}
-                            >
-                              {issued ? (
-                                <View style={styles.issuedDay}>
-                                  <Text style={styles.issuedDayText}>
-                                    {day}
-                                  </Text>
-                                </View>
-                              ) : (
-                                <Text style={styles.dayText}>{day}</Text>
-                              )}
-                            </Pressable>
-                          );
-                        })()}
-                    </View>
-                  ))}
-                </View>
+                {weeks.map((week, weekIndex) => (
+                  <View
+                    key={`${year}-${month}-${weekIndex}`}
+                    style={styles.weekRow}
+                  >
+                    {week.map((day, index) => (
+                      <View
+                        key={index}
+                        style={[
+                          styles.dayCell,
+                          { height: calendarDayCellHeight },
+                        ]}
+                      >
+                        {day !== null &&
+                          (() => {
+                            const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                            const issued = markedDates.has(date);
+                            const isFutureDate = date > todayKey;
+                            return (
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel={`${year}년 ${month + 1}월 ${day}일 ${isFutureDate ? "미래 날짜, 선택 불가" : issued ? "발권한 티켓 목록" : "발권된 티켓 없음"}`}
+                                accessibilityState={{ disabled: isFutureDate }}
+                                disabled={isFutureDate || listLoading}
+                                onPress={() => void openCalendarDate(date)}
+                                style={[
+                                  styles.dateButton,
+                                  isFutureDate && styles.futureDateButton,
+                                ]}
+                              >
+                                {issued ? (
+                                  <View style={styles.issuedDay}>
+                                    <Text style={styles.issuedDayText}>
+                                      {day}
+                                    </Text>
+                                  </View>
+                                ) : (
+                                  <Text style={styles.dayText}>{day}</Text>
+                                )}
+                              </Pressable>
+                            );
+                          })()}
+                      </View>
+                    ))}
+                  </View>
+                ))}
               </View>
               <View style={styles.selectedTicketsSection}>
                 {ticketLoadFailed && (
@@ -982,10 +981,9 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     color: colors.secondary,
   },
-  days: { flexDirection: "row", flexWrap: "wrap" },
+  weekRow: { flexDirection: "row" },
   dayCell: {
-    width: "14.285714%",
-    height: 50,
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
