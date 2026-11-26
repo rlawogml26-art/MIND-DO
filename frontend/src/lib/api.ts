@@ -194,9 +194,9 @@ export const joinGroupByInvite = (token: string) =>
   );
 
 // 공동 티켓
-export const getGroupSharedTickets = (groupId: number) =>
+export const getGroupSharedTickets = (groupId: number, month?: string) =>
   request(
-    `/api/groups/${groupId}/shared-tickets`,
+    `/api/groups/${groupId}/shared-tickets${month ? `?month=${encodeURIComponent(month)}` : ""}`,
     sharedTicketListResponseSchema,
   );
 
@@ -243,7 +243,11 @@ export const createAiDrafts = (
 
 export const issueTicket = (
   sharedTicketId: number,
-  input: { photoKeys: string[]; memo?: string; design: TicketDesign },
+  input: {
+    photoKeys: string[];
+    memo?: string;
+    design: TicketDesign;
+  },
 ) =>
   request(
     `/api/shared-tickets/${sharedTicketId}/tickets`,

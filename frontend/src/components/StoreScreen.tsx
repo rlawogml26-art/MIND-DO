@@ -1,4 +1,6 @@
 import { useState } from "react";
+import mascot from "../../assets/memo-re-mascot.png";
+import wordmark from "../../assets/memo-re-wordmark.png";
 import {
   Alert,
   Image,
@@ -12,8 +14,6 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import mascot from "../../assets/memo-re-mascot.png";
-import wordmark from "../../assets/memo-re-wordmark.png";
 
 type StoreTab = "home" | "group" | "store" | "my";
 type Product = {
@@ -22,7 +22,9 @@ type Product = {
   description: string;
   start: number;
   vip?: boolean;
+  kind?: "sticker" | "font";
   category?: string;
+  sample?: string;
 };
 type Props = {
   onOpenHome: () => void;
@@ -81,8 +83,6 @@ const collaborationArt = {
 };
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-// 후속 Issue #127: 스토어 API 연결 후 서버 목록으로 교체
-const DEMO_VIP_MONTHLY_PRICE = "월 5,990원";
 const stickerProducts: Product[] = [
   {
     name: "크롬 셀레스티얼",
@@ -133,6 +133,30 @@ const stickerProducts: Product[] = [
     category: "레트로",
   },
 ];
+const fontProducts = [
+  {
+    name: "모리 둥근 글씨",
+    sample: "오늘의 기억을\n오래 간직해요",
+    description: "부드럽고 둥근 느낌의 폰트",
+  },
+  {
+    name: "기록의 온도",
+    sample: "우리의 순간을\n차곡차곡 기록",
+    description: "차분한 분위기의 기록용 폰트",
+  },
+];
+const catalogFonts = [
+  {
+    name: "오늘의 명조",
+    sample: "오늘을\n기억해",
+    description: "차분한 명조체 폰트",
+  },
+  {
+    name: "메모 산스",
+    sample: "소중한\n우리의 날",
+    description: "또렷하고 단정한 산스 폰트",
+  },
+];
 const stickerCategories = [
   "전체",
   "반짝임",
@@ -140,6 +164,13 @@ const stickerCategories = [
   "젤리",
   "픽셀",
   "레트로",
+];
+const fontMoods = [
+  "깔끔·모던",
+  "귀여움·발랄함",
+  "감성·손글씨",
+  "강렬·굵음",
+  "고급·차분함",
 ];
 
 export default function StoreScreen({
@@ -151,6 +182,9 @@ export default function StoreScreen({
   const [page, setPage] = useState<
     "store" | "arrivals" | "catalog" | "product" | "vip" | "collaboration"
   >("store");
+  const [catalogCategory, setCatalogCategory] = useState<"sticker" | "font">(
+    "sticker",
+  );
   const [catalogReturnPage, setCatalogReturnPage] = useState<
     "store" | "arrivals" | "collaboration"
   >("store");
@@ -184,10 +218,12 @@ export default function StoreScreen({
     );
     setPage("vip");
   };
-  const openArrivals = () => {
+  const openArrivals = (category: "sticker" | "font") => {
+    setCatalogCategory(category);
     setPage("arrivals");
   };
-  const openCatalog = () => {
+  const openCatalog = (category: "sticker" | "font") => {
+    setCatalogCategory(category);
     setCatalogReturnPage(
       page === "arrivals"
         ? "arrivals"
@@ -248,7 +284,7 @@ export default function StoreScreen({
               <Text style={styles.vipEyebrow}>MEMO:RE VIP</Text>
               <Text style={styles.vipHeadline}>모든 디자인 제한 없이</Text>
               <Text style={styles.vipDescription}>
-                {DEMO_VIP_MONTHLY_PRICE} · 스티커
+                월 5,990원 · 스티커와 폰트
               </Text>
               <View style={styles.vipActionRow}>
                 <Pressable
@@ -263,15 +299,24 @@ export default function StoreScreen({
             </View>
 
             <View style={styles.categoryRow}>
-              <Pressable onPress={openArrivals} style={styles.categoryButton}>
+              <Pressable
+                onPress={() => openCatalog("sticker")}
+                style={styles.categoryButton}
+              >
                 <Text style={styles.categoryText}>스티커</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => openCatalog("font")}
+                style={styles.categoryButton}
+              >
+                <Text style={styles.categoryText}>폰트</Text>
               </Pressable>
             </View>
 
             <View>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>새로 나온 스티커</Text>
-                <Pressable onPress={openArrivals}>
+                <Pressable onPress={() => openArrivals("sticker")}>
                   <Text style={styles.seeAll}>전체 보기</Text>
                 </Pressable>
               </View>
@@ -289,6 +334,42 @@ export default function StoreScreen({
                   />
                 ))}
               </ScrollView>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>새로 나온 폰트</Text>
+                <Pressable onPress={() => openArrivals("font")}>
+                  <Text style={styles.seeAll}>전체 보기</Text>
+                </Pressable>
+              </View>
+              <View style={styles.fontRow}>
+                {fontProducts.map((font, index) => (
+                  <Pressable
+                    key={font.name}
+                    onPress={() =>
+                      openProduct({
+                        name: font.name,
+                        price: "₩2,900",
+                        description: font.description,
+                        start: index * 6,
+                        vip: true,
+                        kind: "font",
+                        sample: font.sample,
+                      })
+                    }
+                    style={[styles.fontCard, { width: cardWidth }]}
+                  >
+                    <Text
+                      style={[
+                        styles.fontSample,
+                        index === 1 && styles.fontSampleSerif,
+                      ]}
+                    >
+                      {font.sample}
+                    </Text>
+                    <Text style={styles.fontName}>{font.name}</Text>
+                    <Text style={styles.fontPrice}>₩2,900</Text>
+                  </Pressable>
+                ))}
+              </View>
               <CollaborationAdCard onPress={() => setPage("collaboration")} />
             </View>
           </ScrollView>
@@ -303,8 +384,10 @@ export default function StoreScreen({
         </>
       ) : page === "arrivals" ? (
         <NewArrivalsScreen
+          category={catalogCategory}
+          onCategoryChange={setCatalogCategory}
           onBack={() => setPage("store")}
-          onViewAll={openCatalog}
+          onViewAll={() => openCatalog(catalogCategory)}
           onSelectProduct={openProduct}
           onOpenHome={onOpenHome}
           onOpenGroup={onOpenGroup}
@@ -312,7 +395,9 @@ export default function StoreScreen({
         />
       ) : page === "catalog" ? (
         <DesignStoreScreen
+          initialTab={catalogCategory}
           onBack={() => setPage(catalogReturnPage)}
+          onTabChange={setCatalogCategory}
           onSelectProduct={openProduct}
           onVip={openVip}
           onOpenHome={onOpenHome}
@@ -324,6 +409,7 @@ export default function StoreScreen({
           onBack={() => setPage("store")}
           onSelectProduct={openProduct}
           onStickerStore={() => {
+            setCatalogCategory("sticker");
             setCatalogReturnPage("collaboration");
             setPage("catalog");
           }}
@@ -376,6 +462,8 @@ function CollaborationAdCard({ onPress }: { onPress: () => void }) {
 }
 
 function NewArrivalsScreen({
+  category,
+  onCategoryChange,
   onBack,
   onViewAll,
   onSelectProduct,
@@ -383,6 +471,8 @@ function NewArrivalsScreen({
   onOpenGroup,
   onOpenMy,
 }: {
+  category: "sticker" | "font";
+  onCategoryChange: (category: "sticker" | "font") => void;
   onBack: () => void;
   onViewAll: () => void;
   onSelectProduct: (product: Product) => void;
@@ -392,6 +482,7 @@ function NewArrivalsScreen({
 }) {
   const { width } = useWindowDimensions();
   const cardWidth = (width - 60) / 2;
+  const showingStickers = category === "sticker";
   return (
     <View style={styles.arrivalsScreen}>
       <View style={styles.arrivalsHeader}>
@@ -412,28 +503,93 @@ function NewArrivalsScreen({
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.arrivalsEyebrow}>NEW ARRIVALS</Text>
-        <Text style={styles.arrivalsTitle}>새로 나온 스티커</Text>
+        <Text style={styles.arrivalsTitle}>
+          새로 나온 {showingStickers ? "스티커" : "폰트"}
+        </Text>
         <Text style={styles.arrivalsSubtitle}>최근 등록된 디자인</Text>
+        <View style={styles.arrivalsTabs}>
+          {(["sticker", "font"] as const).map((tab) => (
+            <Pressable
+              key={tab}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: category === tab }}
+              onPress={() => onCategoryChange(tab)}
+              style={styles.arrivalsTab}
+            >
+              <Text
+                style={[
+                  styles.arrivalsTabText,
+                  category === tab && styles.arrivalsTabTextActive,
+                ]}
+              >
+                {tab === "sticker" ? "스티커" : "폰트"}
+              </Text>
+              <View
+                style={[
+                  styles.arrivalsTabLine,
+                  category === tab && styles.arrivalsTabLineActive,
+                ]}
+              />
+            </Pressable>
+          ))}
+        </View>
         <View style={styles.arrivalsSectionHeader}>
-          <Text style={styles.arrivalsSectionTitle}>신규 스티커</Text>
+          <Text style={styles.arrivalsSectionTitle}>
+            신규 {showingStickers ? "스티커" : "폰트"}
+          </Text>
           <Pressable
             accessibilityRole="button"
             onPress={onViewAll}
             style={styles.arrivalsViewAll}
           >
-            <Text style={styles.arrivalsViewAllText}>전체 스티커</Text>
+            <Text style={styles.arrivalsViewAllText}>
+              전체 {showingStickers ? "스티커" : "폰트"}
+            </Text>
           </Pressable>
         </View>
-        <View style={styles.arrivalsGrid}>
-          {stickerProducts.map((product) => (
-            <StickerCard
-              key={product.name}
-              product={product}
-              width={cardWidth}
-              onPress={() => onSelectProduct(product)}
-            />
-          ))}
-        </View>
+        {showingStickers ? (
+          <View style={styles.arrivalsGrid}>
+            {stickerProducts.map((product) => (
+              <StickerCard
+                key={product.name}
+                product={product}
+                width={cardWidth}
+                onPress={() => onSelectProduct(product)}
+              />
+            ))}
+          </View>
+        ) : (
+          <View style={styles.arrivalsGrid}>
+            {fontProducts.map((font, index) => (
+              <Pressable
+                key={font.name}
+                onPress={() =>
+                  onSelectProduct({
+                    name: font.name,
+                    price: "₩2,900",
+                    description: font.description,
+                    start: index * 6,
+                    vip: true,
+                    kind: "font",
+                    sample: font.sample,
+                  })
+                }
+                style={[styles.fontCard, { width: cardWidth }]}
+              >
+                <Text
+                  style={[
+                    styles.fontSample,
+                    index === 1 && styles.fontSampleSerif,
+                  ]}
+                >
+                  {font.sample}
+                </Text>
+                <Text style={styles.fontName}>{font.name}</Text>
+                <Text style={styles.fontPrice}>₩2,900</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </ScrollView>
       <BottomNavigation
         activeTab="store"
@@ -542,15 +698,18 @@ function CollaborationScreen({
 }
 
 function DesignStoreScreen({
+  initialTab,
   onBack,
-
+  onTabChange,
   onSelectProduct,
   onVip,
   onOpenHome,
   onOpenGroup,
   onOpenMy,
 }: {
+  initialTab: "sticker" | "font";
   onBack: () => void;
+  onTabChange: (tab: "sticker" | "font") => void;
   onSelectProduct: (product: Product) => void;
   onVip: () => void;
   onOpenHome: () => void;
@@ -558,8 +717,11 @@ function DesignStoreScreen({
   onOpenMy: () => void;
 }) {
   const { width } = useWindowDimensions();
+  const [tab, setTab] = useState(initialTab);
   const [query, setQuery] = useState("");
   const [stickerFilter, setStickerFilter] = useState("전체");
+  const [fontMood, setFontMood] = useState("고급·차분함");
+  const [fontKeyword, setFontKeyword] = useState("");
   const cardWidth = (width - 44) / 2;
   const visibleStickers = stickerProducts.filter(
     (product) =>
@@ -568,6 +730,22 @@ function DesignStoreScreen({
         .toLowerCase()
         .includes(query.trim().toLowerCase()),
   );
+  const visibleFonts = catalogFonts.filter((font) =>
+    `${font.name} ${font.sample} ${font.description}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
+  );
+  const moodKeywords: Record<string, string[]> = {
+    "깔끔·모던": ["산세리프", "단정한", "미니멀", "가독성"],
+    "귀여움·발랄함": ["둥근", "통통한", "귀여운", "밝은"],
+    "감성·손글씨": ["손글씨", "일기", "부드러운", "따뜻한"],
+    "강렬·굵음": ["두꺼운", "강조", "선명한", "개성"],
+    "고급·차분함": ["명조", "세리프", "고전", "격식", "우아한"],
+  };
+  const toggleTab = (next: "sticker" | "font") => {
+    setTab(next);
+    onTabChange(next);
+  };
 
   return (
     <View style={styles.catalogScreen}>
@@ -583,6 +761,30 @@ function DesignStoreScreen({
         <Text style={styles.catalogHeaderTitle}>디자인 스토어</Text>
         <View style={styles.catalogBack} />
       </View>
+      <View style={styles.catalogTabs}>
+        {(["sticker", "font"] as const).map((key) => (
+          <Pressable
+            key={key}
+            onPress={() => toggleTab(key)}
+            style={styles.catalogTab}
+          >
+            <Text
+              style={[
+                styles.catalogTabText,
+                tab === key && styles.catalogTabTextActive,
+              ]}
+            >
+              {key === "sticker" ? "스티커" : "폰트"}
+            </Text>
+            <View
+              style={[
+                styles.catalogTabLine,
+                tab === key && styles.catalogTabLineActive,
+              ]}
+            />
+          </Pressable>
+        ))}
+      </View>
       <ScrollView
         style={styles.catalogScroll}
         contentContainerStyle={styles.catalogContent}
@@ -591,54 +793,150 @@ function DesignStoreScreen({
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="??? ??"
+          placeholder={
+            tab === "sticker"
+              ? "검색   디자인 검색"
+              : "검색   폰트명·분위기로 검색"
+          }
           placeholderTextColor="#969AA4"
           style={styles.catalogSearch}
         />
-        <Text style={styles.catalogTaxonomy}>
-          크롬 · 드로잉 · 젤리 · 픽셀 · 레트로
-        </Text>
-        <View style={styles.filterGrid}>
-          {stickerCategories.map((category) => (
-            <Pressable
-              key={category}
-              onPress={() => setStickerFilter(category)}
-              style={[
-                styles.filterChip,
-                stickerFilter === category && styles.filterChipActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  stickerFilter === category && styles.filterChipTextActive,
-                ]}
-              >
-                {category}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <View style={styles.catalogSectionHeader}>
-          <Text style={styles.catalogSectionTitle}>스티커팩</Text>
-          <Text style={styles.catalogMuted}>전체</Text>
-        </View>
-        <View style={styles.catalogProductGrid}>
-          {visibleStickers.map((product) => (
-            <StickerCard
-              key={product.name}
-              product={product}
-              width={cardWidth}
-              compact
-              onPress={() => onSelectProduct(product)}
-            />
-          ))}
-        </View>
-        {visibleStickers.length === 0 && (
-          <Text style={styles.catalogEmpty}>검색 결과가 없어요.</Text>
+        {tab === "sticker" ? (
+          <>
+            <Text style={styles.catalogTaxonomy}>
+              크롬 · 드로잉 · 젤리 · 픽셀 · 레트로
+            </Text>
+            <View style={styles.filterGrid}>
+              {stickerCategories.map((category) => (
+                <Pressable
+                  key={category}
+                  onPress={() => setStickerFilter(category)}
+                  style={[
+                    styles.filterChip,
+                    stickerFilter === category && styles.filterChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      stickerFilter === category && styles.filterChipTextActive,
+                    ]}
+                  >
+                    {category}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.catalogSectionHeader}>
+              <Text style={styles.catalogSectionTitle}>스티커팩</Text>
+              <Text style={styles.catalogMuted}>전체</Text>
+            </View>
+            <View style={styles.catalogProductGrid}>
+              {visibleStickers.map((product) => (
+                <StickerCard
+                  key={product.name}
+                  product={product}
+                  width={cardWidth}
+                  compact
+                  onPress={() => onSelectProduct(product)}
+                />
+              ))}
+            </View>
+            {visibleStickers.length === 0 && (
+              <Text style={styles.catalogEmpty}>검색 결과가 없어요.</Text>
+            )}
+          </>
+        ) : (
+          <>
+            <Text style={styles.filterTitle}>분위기·느낌</Text>
+            <View style={styles.moodGrid}>
+              {fontMoods.map((mood) => (
+                <Pressable
+                  key={mood}
+                  onPress={() => {
+                    setFontMood(mood);
+                    setFontKeyword("");
+                  }}
+                  style={[
+                    styles.moodChip,
+                    fontMood === mood && styles.moodChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.moodChipText,
+                      fontMood === mood && styles.moodChipTextActive,
+                    ]}
+                  >
+                    {mood}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.keywordHeading}>
+              <Text style={styles.keywordTitle}>{fontMood} 검색어</Text>
+              <Pressable onPress={() => setFontKeyword("")}>
+                <Text style={styles.resetText}>초기화</Text>
+              </Pressable>
+            </View>
+            <View style={styles.keywordRow}>
+              {moodKeywords[fontMood].map((keyword) => (
+                <Pressable
+                  key={keyword}
+                  onPress={() =>
+                    setFontKeyword(fontKeyword === keyword ? "" : keyword)
+                  }
+                  style={[
+                    styles.keywordChip,
+                    fontKeyword === keyword && styles.keywordChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.keywordText,
+                      fontKeyword === keyword && styles.keywordTextActive,
+                    ]}
+                  >
+                    {keyword}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.catalogSectionHeader}>
+              <View>
+                <Text style={styles.catalogSectionTitle}>전체 폰트</Text>
+                <Text style={styles.catalogMuted}>{visibleFonts.length}개</Text>
+              </View>
+            </View>
+            {visibleFonts.length === 0 && (
+              <Text style={styles.catalogEmpty}>검색 결과가 없어요.</Text>
+            )}
+            <Text style={styles.fontUsageHint}>티켓 뒷면 메모에 적용</Text>
+            <View style={styles.catalogProductGrid}>
+              {visibleFonts.map((font, index) => (
+                <CatalogFontCard
+                  key={font.name}
+                  font={font}
+                  index={index}
+                  width={cardWidth}
+                  onPress={() =>
+                    onSelectProduct({
+                      name: font.name,
+                      price: "₩2,900",
+                      description: font.description,
+                      start: index,
+                      vip: true,
+                      kind: "font",
+                      sample: font.sample,
+                    })
+                  }
+                />
+              ))}
+            </View>
+          </>
         )}
         <View style={styles.catalogVipCard}>
-          <Text style={styles.catalogVipTitle}>VIP · 모든 스티커</Text>
+          <Text style={styles.catalogVipTitle}>VIP · 모든 스티커와 폰트</Text>
           <Text style={styles.catalogMuted}>구독 기간 동안 무제한 이용</Text>
           <Pressable onPress={onVip} style={styles.catalogVipButton}>
             <Text style={styles.catalogVipButtonText}>VIP 혜택 보기</Text>
@@ -654,6 +952,41 @@ function DesignStoreScreen({
         }}
       />
     </View>
+  );
+}
+
+function CatalogFontCard({
+  font,
+  index,
+  width,
+  onPress,
+}: {
+  font: (typeof catalogFonts)[number];
+  index: number;
+  width: number;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.catalogFontCard,
+        { width },
+        pressed && styles.pressed,
+      ]}
+    >
+      <Text
+        style={[
+          styles.catalogFontSample,
+          index === 0 && styles.catalogFontSerif,
+        ]}
+      >
+        {font.sample}
+      </Text>
+      <Text style={styles.productMeta}>FONT · VIP 이용 가능</Text>
+      <Text style={styles.catalogFontName}>{font.name}</Text>
+      <Text style={styles.catalogMuted}>스토어 가격 확인</Text>
+    </Pressable>
   );
 }
 
@@ -735,23 +1068,35 @@ function ProductDetails({
           {product.vip ? "개별 구매 · VIP 이용 가능" : "개별 구매"}
         </Text>
         <Text style={styles.detailTitle}>{product.name}</Text>
-        <Text style={styles.detailSub}>스티커팩 · 12종</Text>
+        <Text style={styles.detailSub}>
+          {product.kind === "font" ? "폰트" : "스티커팩 · 12종"}
+        </Text>
         <Text style={styles.detailDescription}>{product.description}</Text>
-        <View style={[styles.detailStickerGrid, { width: cardWidth }]}>
-          {Array.from({ length: 12 }, (_, i) => (
-            <View key={i} style={styles.detailStickerCell}>
-              <Image
-                source={
-                  stickerAssets[
-                    (product.start + (i % 6)) % stickerAssets.length
-                  ]
-                }
-                style={styles.detailStickerImage}
-                resizeMode="contain"
-              />
-            </View>
-          ))}
-        </View>
+        {product.kind === "font" ? (
+          <View style={[styles.fontDetailPreview, { width: cardWidth }]}>
+            <Text style={styles.fontDetailLabel}>MEMO:RE</Text>
+            <Text style={styles.fontDetailSample}>
+              {product.sample || "우리의 순간을\n오래 간직해요"}
+            </Text>
+            <Text style={styles.fontDetailDate}>2026.11.24</Text>
+          </View>
+        ) : (
+          <View style={[styles.detailStickerGrid, { width: cardWidth }]}>
+            {Array.from({ length: 12 }, (_, i) => (
+              <View key={i} style={styles.detailStickerCell}>
+                <Image
+                  source={
+                    stickerAssets[
+                      (product.start + (i % 6)) % stickerAssets.length
+                    ]
+                  }
+                  style={styles.detailStickerImage}
+                  resizeMode="contain"
+                />
+              </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
       <View style={styles.purchaseBar}>
         <View>
@@ -798,19 +1143,18 @@ function VipDetails({
           모든 디자인을{"\n"}제한 없이 사용해요
         </Text>
         <Text style={styles.vipDetailCopy}>
-          스티커 디자인을 자유롭게 이용하고{"\n"}나만의 티켓을 더 다채롭게
-          꾸며보세요.
+          스티커와 폰트 디자인을 자유롭게 이용하고{"\n"}나만의 티켓을 더
+          다채롭게 꾸며보세요.
         </Text>
         <View style={styles.vipPerk}>
           <Text style={styles.vipPerkText}>✓ 프리미엄 스티커 무제한</Text>
+          <Text style={styles.vipPerkText}>✓ 모든 폰트 이용 가능</Text>
           <Text style={styles.vipPerkText}>✓ 새로운 디자인 계속 추가</Text>
         </View>
       </View>
       <View style={styles.vipBottom}>
         <Pressable onPress={onBuy} style={styles.purchaseButton}>
-          <Text style={styles.purchaseButtonText}>
-            {DEMO_VIP_MONTHLY_PRICE}으로 시작하기
-          </Text>
+          <Text style={styles.purchaseButtonText}>월 5,990원으로 시작하기</Text>
         </Pressable>
         <Text style={styles.purchaseFine}>
           언제든지 구독을 관리할 수 있어요
@@ -1069,6 +1413,28 @@ const styles = StyleSheet.create({
   productMeta: { color: blue, fontSize: 10, lineHeight: 14 },
   productName: { color: ink, fontSize: 13, lineHeight: 18 },
   productPrice: { color: ink, fontSize: 14, lineHeight: 20 },
+  fontRow: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 24,
+    paddingBottom: 20,
+  },
+  fontCard: {
+    backgroundColor: "#FFF4F1",
+    borderRadius: 16,
+    padding: 12,
+    minHeight: 158,
+    justifyContent: "space-between",
+  },
+  fontSample: {
+    color: "#313B5C",
+    fontSize: 18,
+    lineHeight: 27,
+    fontWeight: "700",
+  },
+  fontSampleSerif: { fontFamily: "serif", fontWeight: "400" },
+  fontName: { color: ink, fontSize: 13 },
+  fontPrice: { color: ink, fontSize: 14 },
   arrivalsScreen: { flex: 1, backgroundColor: "#FFFFFF" },
   arrivalsHeader: {
     height: 52,
@@ -1100,6 +1466,36 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 2,
   },
+  arrivalsTabs: {
+    flexDirection: "row",
+    marginTop: 20,
+    marginBottom: 24,
+    gap: 14,
+  },
+  arrivalsTab: {
+    flex: 1,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  arrivalsTabText: {
+    color: blue,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "600",
+  },
+  arrivalsTabTextActive: { color: blue },
+  arrivalsTabLine: {
+    position: "absolute",
+    bottom: -2,
+    left: "50%",
+    marginLeft: -24,
+    width: 48,
+    height: 2,
+  },
+  arrivalsTabLineActive: { backgroundColor: blue },
   arrivalsSectionHeader: {
     minHeight: 48,
     flexDirection: "row",
@@ -1136,6 +1532,29 @@ const styles = StyleSheet.create({
   catalogBack: { width: 32, height: 36, justifyContent: "center" },
   catalogBackText: { color: "#252B45", fontSize: 30, lineHeight: 34 },
   catalogHeaderTitle: { color: ink, fontSize: 14, fontWeight: "600" },
+  catalogTabs: {
+    height: 48,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    gap: 8,
+  },
+  catalogTab: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: "#E5E7EB",
+  },
+  catalogTabText: { color: muted, fontSize: 13, fontWeight: "600" },
+  catalogTabTextActive: { color: blue },
+  catalogTabLine: {
+    position: "absolute",
+    bottom: -2,
+    left: 0,
+    right: 0,
+    height: 2,
+  },
+  catalogTabLineActive: { backgroundColor: blue },
   catalogScroll: { flex: 1 },
   catalogContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 20 },
   catalogSearch: {
@@ -1201,6 +1620,78 @@ const styles = StyleSheet.create({
     paddingVertical: 28,
     fontSize: 12,
   },
+  filterTitle: {
+    color: ink,
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  moodGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+  moodChip: {
+    width: "48%",
+    height: 32,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "#D8E0F0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moodChipActive: { backgroundColor: blue, borderColor: blue },
+  moodChipText: { color: blue, fontSize: 10 },
+  moodChipTextActive: { color: "white", fontWeight: "600" },
+  keywordHeading: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  keywordTitle: { color: muted, fontSize: 10 },
+  resetText: { color: blue, fontSize: 10 },
+  keywordRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 14,
+  },
+  keywordChip: {
+    minWidth: 40,
+    height: 30,
+    paddingHorizontal: 10,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "#D8E0F0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  keywordChipActive: { backgroundColor: blue, borderColor: blue },
+  keywordText: { color: blue, fontSize: 10 },
+  keywordTextActive: { color: "white" },
+  fontUsageHint: {
+    color: muted,
+    fontSize: 10,
+    marginTop: -4,
+    marginBottom: 12,
+  },
+  catalogFontCard: { minHeight: 174, gap: 7 },
+  catalogFontSample: {
+    height: 118,
+    borderRadius: 14,
+    backgroundColor: "#F9EEEE",
+    color: ink,
+    fontSize: 21,
+    fontWeight: "700",
+    lineHeight: 29,
+    padding: 12,
+    textAlignVertical: "center",
+  },
+  catalogFontSerif: { fontFamily: "serif", fontWeight: "400" },
+  catalogFontName: { color: ink, fontSize: 11, fontWeight: "600" },
   catalogVipCard: {
     marginTop: 18,
     borderRadius: 16,
@@ -1534,6 +2025,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   detailStickerImage: { width: "100%", height: "100%" },
+  fontDetailPreview: {
+    height: 330,
+    borderRadius: 16,
+    backgroundColor: soft,
+    padding: 24,
+    justifyContent: "space-between",
+  },
+  fontDetailLabel: { color: blue, fontSize: 12, fontWeight: "700" },
+  fontDetailSample: {
+    color: ink,
+    fontSize: 30,
+    lineHeight: 44,
+    fontWeight: "600",
+  },
+  fontDetailDate: { color: muted, fontSize: 13 },
   purchaseBar: {
     paddingHorizontal: 24,
     paddingTop: 12,

@@ -26,6 +26,16 @@ function AppContent() {
   const [user, setUser] = useState<LoginResponse | null>(null);
   const [groups, setGroups] = useState<DemoGroup[]>([]);
   const [screen, setScreen] = useState<RootScreen>("home");
+  const [homeTicket, setHomeTicket] = useState<{
+    groupId: string;
+    date: string;
+    sharedTicketId: number | null;
+  } | null>(null);
+  const [homeReturnDate, setHomeReturnDate] = useState<string>();
+  const [showIssuedTickets, setShowIssuedTickets] = useState(false);
+  useEffect(() => {
+    if (screen === "home" && showIssuedTickets) setShowIssuedTickets(false);
+  }, [screen, showIssuedTickets]);
   const [profile, setProfile] = useState<Profile>({
     nickname: "닉네임 입력",
     introduction: "나를 소개해보세요.",
@@ -34,7 +44,8 @@ function AppContent() {
   });
 
   useEffect(() => {
-    if (!user || screen !== "group") return;
+    if (!user || (screen !== "home" && (screen !== "group" || homeTicket)))
+      return;
     let active = true;
     void getMyGroups()
       .then(({ groups: serverGroups }) => {
@@ -68,9 +79,12 @@ function AppContent() {
     return () => {
       active = false;
     };
-  }, [user, screen]);
+  }, [user, screen, homeTicket]);
 
-  const openGroups = () => setScreen("group");
+  const openGroups = () => {
+    setHomeTicket(null);
+    setScreen("group");
+  };
 
   if (!user) {
     return <LoginScreen onLoggedIn={setUser} />;
@@ -90,18 +104,29 @@ function AppContent() {
   if (screen === "group") {
     return (
       <GroupScreen
+        onOpenTodaysTickets={(date) => {
+          setHomeReturnDate(date);
+          setShowIssuedTickets(true);
+          setHomeTicket(null);
+          setScreen("home");
+        }}
         onOpenStore={openStore}
-        onOpenHome={() => setScreen("home")}
+        onOpenHome={() => {
+          setHomeTicket(null);
+          setScreen("home");
+        }}
         onOpenMy={() => setScreen("my")}
         groups={groups}
         onGroupsChange={setGroups}
         currentUserId={user.userId}
+        homeTicket={homeTicket}
       />
     );
   }
   if (screen === "my") {
     return (
       <MyPageScreen
+        currentUserId={user.userId}
         onOpenStore={openStore}
         onOpenHome={() => setScreen("home")}
         onOpenGroup={openGroups}
@@ -112,6 +137,15 @@ function AppContent() {
   }
   return (
     <HomeScreen
+      initialShowAllTickets={showIssuedTickets}
+      groups={groups}
+      currentUserId={user.userId}
+      initialDate={homeReturnDate}
+      onOpenGroupSlot={(groupId, date, sharedTicketId) => {
+        setHomeReturnDate(date);
+        setHomeTicket({ groupId, date, sharedTicketId });
+        setScreen("group");
+      }}
       onOpenStore={openStore}
       onOpenMy={() => setScreen("my")}
       onOpenGroup={openGroups}

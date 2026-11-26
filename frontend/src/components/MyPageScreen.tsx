@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { PROFILE_NICKNAME_MAX } from "@mind-do/shared";
+import {
+  PROFILE_NICKNAME_MAX,
+  SLOT_STATUS_COMPLETED,
+  type MyTicket,
+  type TicketTextValues,
+} from "@mind-do/shared";
 import {
   Alert,
   Keyboard,
@@ -13,10 +18,16 @@ import {
   TextInput,
   View,
   Image,
+  useWindowDimensions,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { getGroupSharedTickets, getMyGroups } from "../lib/api";
+import {
+  getGroupSharedTickets,
+  getMyGroups,
+  getSharedTicketDetail,
+} from "../lib/api";
 import { useMyTickets } from "../hooks/use-my-tickets";
+import TicketRenderer from "./TicketRenderer";
 
 const colors = {
   "background/canvas": "#FFFFFF",
@@ -286,10 +297,14 @@ type TicketListEntry = {
   title: string;
   subtitle: string;
   thumbnail?: string;
+  ticket?: MyTicket;
+  values?: TicketTextValues;
+  sharedTicketId?: number;
   segment: "full" | "shared" | "personal";
 };
 
 export default function MyPageScreen({
+  currentUserId,
   onOpenHome,
   onOpenGroup,
   onOpenStore,
@@ -297,6 +312,7 @@ export default function MyPageScreen({
   savedProfile,
   onSaveProfile,
 }: {
+  currentUserId: number;
   onOpenHome: () => void;
   onOpenGroup?: () => void;
   onOpenStore: () => void;
@@ -305,6 +321,7 @@ export default function MyPageScreen({
   onSaveProfile: (profile: Profile) => void;
 }) {
   const [screen, setScreen] = useState<MyScreen>("profile");
+  const { width: windowWidth } = useWindowDimensions();
   const {
     tickets,
     loading: ticketLoading,
@@ -318,6 +335,9 @@ export default function MyPageScreen({
   const [ticketTypeFilter, setTicketTypeFilter] =
     useState<TicketTypeFilter>("all");
   const [sharedTickets, setSharedTickets] = useState<TicketListEntry[]>([]);
+  const [groupContext, setGroupContext] = useState<
+    Record<number, { sharedTicketId: number; values: TicketTextValues }>
+  >({});
   const [sharedTicketStatus, setSharedTicketStatus] = useState<
     "loading" | "ready" | "error"
   >("loading");
@@ -334,31 +354,66 @@ export default function MyPageScreen({
     if (screen !== "tickets") return;
     let active = true;
     setSharedTicketStatus("loading");
+    setGroupContext({});
     void getMyGroups()
       .then(({ groups }) =>
         Promise.all(
-          groups
-            .filter((group) => !group.isDefault)
-            .map(async (group) => {
-              const { sharedTickets } = await getGroupSharedTickets(
-                group.groupId,
-              );
-              return sharedTickets
-                .filter((ticket) => ticket.isInvited)
-                .map((ticket): TicketListEntry => ({
-                  key: `shared-${ticket.sharedTicketId}`,
-                  visitDate: ticket.ticketDate,
-                  title: ticket.title || "공동 티켓",
-                  subtitle: group.name,
-                  segment: "shared",
-                }));
-            }),
+          groups.map(async (group) => {
+            const { sharedTickets } = await getGroupSharedTickets(
+              group.groupId,
+            );
+            return { group, sharedTickets };
+          }),
         ),
       )
-      .then((results) => {
+      .then(async (results) => {
         if (!active) return;
-        setSharedTickets(results.flat());
+        setSharedTickets(
+          results.flatMap(({ group, sharedTickets }) =>
+            group.isDefault
+              ? []
+              : sharedTickets
+                  .filter((ticket) => ticket.isInvited)
+                  .map((ticket): TicketListEntry => ({
+                    key: `shared-${ticket.sharedTicketId}`,
+                    visitDate: ticket.ticketDate,
+                    title: ticket.title || "공동 티켓",
+                    subtitle: group.name,
+                    segment: "shared",
+                    sharedTicketId: ticket.sharedTicketId,
+                  })),
+          ),
+        );
         setSharedTicketStatus("ready");
+        await Promise.all(
+          results.map(async ({ sharedTickets }) => {
+            for (const summary of sharedTickets) {
+              if (!active) return;
+              if (summary.myStatus !== SLOT_STATUS_COMPLETED) continue;
+              const detail = await getSharedTicketDetail(
+                summary.sharedTicketId,
+              ).catch(() => null);
+              if (!active || !detail) continue;
+              const ownSlot = detail.slots.find(
+                (slot) => slot.userId === currentUserId,
+              );
+              if (!ownSlot?.ticket) continue;
+              const ticketId = ownSlot.ticket.ticketId;
+              setGroupContext((current) => ({
+                ...current,
+                [ticketId]: {
+                  sharedTicketId: detail.sharedTicketId,
+                  values: {
+                    title: detail.title,
+                    date: detail.ticketDate,
+                    groupName: detail.groupName,
+                    participants: detail.slots.map((slot) => slot.name),
+                  },
+                },
+              }));
+            }
+          }),
+        );
       })
       .catch(() => {
         if (!active) return;
@@ -368,7 +423,7 @@ export default function MyPageScreen({
     return () => {
       active = false;
     };
-  }, [screen, sharedTicketAttempt]);
+  }, [screen, sharedTicketAttempt, currentUserId]);
 
   const isEditing = screen === "edit";
   const visibleProfile = isEditing ? draftProfile : savedProfile;
@@ -474,14 +529,12 @@ export default function MyPageScreen({
       title: "나의 티켓",
       subtitle: "내 티켓",
       thumbnail: ticket.photos[0]?.url,
+      ticket,
+      values: groupContext[ticket.ticketId]?.values,
       segment: ticketTypeFilter === "personal" ? "personal" : "full",
     }));
     const ticketEntries =
-      ticketTypeFilter === "personal"
-        ? personalEntries
-        : ticketTypeFilter === "shared"
-          ? sharedTickets
-          : [...personalEntries, ...sharedTickets];
+      ticketTypeFilter === "shared" ? sharedTickets : personalEntries;
     const monthFilteredEntries =
       ticketViewMode === "month"
         ? ticketEntries.filter(
@@ -501,7 +554,62 @@ export default function MyPageScreen({
       }, new Map<string, TicketListEntry[]>()),
     );
     const [selectedYear, selectedMonth] = selectedYearMonth.split("-");
+    const ownedBySharedId = new Map(
+      tickets.flatMap((ticket) => {
+        const context = groupContext[ticket.ticketId];
+        return context
+          ? [
+              [
+                context.sharedTicketId,
+                { ticket, values: context.values },
+              ] as const,
+            ]
+          : [];
+      }),
+    );
     const renderTicketCard = (ticket: TicketListEntry) => {
+      const linked =
+        ticket.sharedTicketId === undefined
+          ? undefined
+          : ownedBySharedId.get(ticket.sharedTicketId);
+      const savedTicket = linked?.ticket ?? ticket.ticket;
+      const values = linked?.values ?? ticket.values;
+      if (savedTicket?.design) {
+        const part =
+          ticket.segment === "shared"
+            ? "stub"
+            : ticket.segment === "personal" || !values
+              ? "body"
+              : undefined;
+        const fullWidth = Math.min(windowWidth, 420) - 16;
+        return (
+          <View
+            key={ticket.key}
+            style={part === "body" && styles.savedPersonalCard}
+          >
+            <TicketRenderer
+              designId={savedTicket.design.designId}
+              photoUris={savedTicket.photos.map((photo) => photo.url)}
+              values={
+                values ?? {
+                  date: savedTicket.visitDate,
+                  groupName: "",
+                  participants: [],
+                }
+              }
+              width={
+                part === "stub"
+                  ? 80
+                  : part === "body"
+                    ? fullWidth * 0.8
+                    : fullWidth
+              }
+              part={part}
+              lieDown
+            />
+          </View>
+        );
+      }
       const title = ticket.title;
       const subtitle = ticket.subtitle;
       const date = ticket.visitDate.replace(/-/g, ".");
@@ -705,18 +813,7 @@ export default function MyPageScreen({
                       {month.slice(0, 4)}년 {Number(month.slice(5, 7))}월
                     </Text>
                   )}
-                  {monthTickets
-                    .filter((ticket) => ticket.segment !== "shared")
-                    .map(renderTicketCard)}
-                  {monthTickets.some(
-                    (ticket) => ticket.segment === "shared",
-                  ) && (
-                    <View style={styles.sharedTicketGrid}>
-                      {monthTickets
-                        .filter((ticket) => ticket.segment === "shared")
-                        .map(renderTicketCard)}
-                    </View>
-                  )}
+                  {monthTickets.map(renderTicketCard)}
                 </View>
               ))
             )}
@@ -1638,6 +1735,7 @@ const styles = StyleSheet.create({
   },
   sharedTicketCard: { width: 80, aspectRatio: 0.5 },
   personalTicketCard: { width: "80%", aspectRatio: 2, alignSelf: "center" },
+  savedPersonalCard: { alignSelf: "center" },
   sharedTicketRowViewport: { width: "100%", height: 154, flexGrow: 0 },
   sharedTicketRow: {
     flexDirection: "row",
