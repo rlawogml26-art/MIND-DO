@@ -220,8 +220,12 @@ export default function TicketRenderer({
   // 훅 개수가 바뀌지 않도록 그림 3칸(공동 쪽·아래·위) + 사진 4칸(PHOTO_UPLOAD_MAX_COUNT)을 늘 부른다
   const stubImg = useImage(assetSource(designId, images[0]?.file));
   const showBody = part !== "stub";
-  const underImg = useImage(showBody ? assetSource(designId, images[1]?.file) : null);
-  const overImg = useImage(showBody ? assetSource(designId, images[2]?.file) : null);
+  const underImg = useImage(
+    showBody ? assetSource(designId, images[1]?.file) : null,
+  );
+  const overImg = useImage(
+    showBody ? assetSource(designId, images[2]?.file) : null,
+  );
   const p0 = useImage(showBody ? (photoUris[0] ?? null) : null);
   const p1 = useImage(showBody ? (photoUris[1] ?? null) : null);
   const p2 = useImage(showBody ? (photoUris[2] ?? null) : null);
@@ -283,7 +287,12 @@ export default function TicketRenderer({
 
   const face = (
     <Canvas style={{ width, height: shownH * scale }}>
-      <Group transform={[{ translateX: -offsetX * scale }, { translateY: -offsetY * scale }]}>
+      <Group
+        transform={[
+          { translateX: -offsetX * scale },
+          { translateY: -offsetY * scale },
+        ]}
+      >
         <Group transform={transform}>
           <Group clip={clip}>{list.ops.map(render)}</Group>
         </Group>
@@ -302,26 +311,34 @@ export default function TicketRenderer({
   return (
     <View style={{ width, height: shownH * scale }}>
       {face}
-      <View pointerEvents="none" style={{
-        position: "absolute",
-        left: (bodyX - offsetX) * scale,
-        top: (bodyY - offsetY) * scale,
-        width: bodyWidth,
-        height: bodyHeight,
-        overflow: "hidden",
-      }}>
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          left: (bodyX - offsetX) * scale,
+          top: (bodyY - offsetY) * scale,
+          width: bodyWidth,
+          height: bodyHeight,
+          overflow: "hidden",
+        }}
+      >
         {decorations.map(({ sticker, x, y }, index) => (
-          <Text key={index} style={{
-            position: "absolute",
-            left: (upright ? y : x) * (bodyWidth - stickerSize),
-            top: (upright ? 1 - x : y) * (bodyHeight - stickerSize),
-            fontSize: stickerSize * 0.8,
-            width: stickerSize,
-            height: stickerSize,
-            lineHeight: stickerSize,
-            textAlign: "center",
-            includeFontPadding: false,
-          }}>{sticker}</Text>
+          <Text
+            key={index}
+            style={{
+              position: "absolute",
+              left: (upright ? y : x) * (bodyWidth - stickerSize),
+              top: (upright ? 1 - x : y) * (bodyHeight - stickerSize),
+              fontSize: stickerSize * 0.8,
+              width: stickerSize,
+              height: stickerSize,
+              lineHeight: stickerSize,
+              textAlign: "center",
+              includeFontPadding: false,
+            }}
+          >
+            {sticker}
+          </Text>
         ))}
       </View>
     </View>

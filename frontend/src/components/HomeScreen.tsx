@@ -1,4 +1,8 @@
-import { SLOT_STATUS_COMPLETED, type MyTicket, type SharedTicketSummary } from "@mind-do/shared";
+import {
+  SLOT_STATUS_COMPLETED,
+  type MyTicket,
+  type SharedTicketSummary,
+} from "@mind-do/shared";
 import { useEffect, useMemo, useState } from "react";
 import {
   Image,
@@ -281,7 +285,11 @@ type HomeScreenProps = {
   currentUserId: number;
   groups: readonly { id: string; name: string; isDefault: boolean }[];
   initialDate?: string;
-  onOpenGroupSlot: (groupId: string, date: string, sharedTicketId: number | null) => void;
+  onOpenGroupSlot: (
+    groupId: string,
+    date: string,
+    sharedTicketId: number | null,
+  ) => void;
   onOpenStore: () => void;
   onOpenMy: () => void;
   onOpenGroup: () => void;
@@ -325,7 +333,12 @@ function dateLongTitle(date: string) {
 
 type HomeGroupTicket = {
   ticket: MyTicket;
-  values: { title: string | null; date: string; groupName: string; participants: string[] };
+  values: {
+    title: string | null;
+    date: string;
+    groupName: string;
+    participants: string[];
+  };
 };
 
 export default function HomeScreen({
@@ -339,9 +352,17 @@ export default function HomeScreen({
   onOpenStore,
 }: HomeScreenProps) {
   const [monthDate, setMonthDate] = useState(() =>
-    initialDate ? new Date(Number(initialDate.slice(0, 4)), Number(initialDate.slice(5, 7)) - 1, 1) : currentMonth(),
+    initialDate
+      ? new Date(
+          Number(initialDate.slice(0, 4)),
+          Number(initialDate.slice(5, 7)) - 1,
+          1,
+        )
+      : currentMonth(),
   );
-  const [selectedDate, setSelectedDate] = useState(() => initialDate ?? todayDateKey());
+  const [selectedDate, setSelectedDate] = useState(
+    () => initialDate ?? todayDateKey(),
+  );
   const [sharedTicketsByGroup, setSharedTicketsByGroup] = useState<
     Record<string, SharedTicketSummary[]>
   >({});
@@ -360,15 +381,24 @@ export default function HomeScreen({
     setSharedTicketsLoading(orderedGroups.length > 0);
     void Promise.allSettled(
       orderedGroups.map(async ({ id }) => {
-        const { sharedTickets } = await getGroupSharedTickets(Number(id), selectedMonth);
+        const { sharedTickets } = await getGroupSharedTickets(
+          Number(id),
+          selectedMonth,
+        );
         return [id, sharedTickets] as const;
       }),
     ).then((results) => {
       if (!active) return;
-      setSharedTicketsByGroup(Object.fromEntries(
-        results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []),
-      ));
-      setSharedTicketsFailed(results.some((result) => result.status === "rejected"));
+      setSharedTicketsByGroup(
+        Object.fromEntries(
+          results.flatMap((result) =>
+            result.status === "fulfilled" ? [result.value] : [],
+          ),
+        ),
+      );
+      setSharedTicketsFailed(
+        results.some((result) => result.status === "rejected"),
+      );
       setSharedTicketsLoading(false);
     });
     return () => {
@@ -376,40 +406,65 @@ export default function HomeScreen({
     };
   }, [orderedGroups, selectedMonth, sharedTicketsRetry]);
   const [showAllTickets, setShowAllTickets] = useState(initialShowAllTickets);
-  const [previewTicket, setPreviewTicket] = useState<HomeGroupTicket | null>(null);
+  const [previewTicket, setPreviewTicket] = useState<HomeGroupTicket | null>(
+    null,
+  );
   const [showingBack, setShowingBack] = useState(false);
-  const [ownGroupTickets, setOwnGroupTickets] = useState<Record<string, HomeGroupTicket | null>>({});
+  const [ownGroupTickets, setOwnGroupTickets] = useState<
+    Record<string, HomeGroupTicket | null>
+  >({});
   const [detailFailed, setDetailFailed] = useState(false);
   const [detailRetry, setDetailRetry] = useState(0);
   useEffect(() => {
     let active = true;
     setOwnGroupTickets({});
     setDetailFailed(false);
-    const lookups = Object.entries(sharedTicketsByGroup).flatMap(([groupId, entries]) => {
-      const summary = entries.find((entry) => entry.ticketDate === selectedDate);
-      return summary?.myStatus === SLOT_STATUS_COMPLETED ? [{ groupId, summary }] : [];
-    });
-    void Promise.allSettled(lookups.map(async ({ groupId, summary }) => {
-      const detail = await getSharedTicketDetail(summary.sharedTicketId);
-      const ownSlot = detail.slots.find((slot) => slot.userId === currentUserId);
-      const ticket = ownSlot?.ticket;
-      return [groupId, ticket ? {
-        ticket: { ...ticket, visitDate: detail.ticketDate },
-        values: {
-          title: detail.title,
-          date: detail.ticketDate,
-          groupName: detail.groupName,
-          participants: detail.slots.map((slot) => slot.name),
-        },
-      } : null] as const;
-    })).then((results) => {
+    const lookups = Object.entries(sharedTicketsByGroup).flatMap(
+      ([groupId, entries]) => {
+        const summary = entries.find(
+          (entry) => entry.ticketDate === selectedDate,
+        );
+        return summary?.myStatus === SLOT_STATUS_COMPLETED
+          ? [{ groupId, summary }]
+          : [];
+      },
+    );
+    void Promise.allSettled(
+      lookups.map(async ({ groupId, summary }) => {
+        const detail = await getSharedTicketDetail(summary.sharedTicketId);
+        const ownSlot = detail.slots.find(
+          (slot) => slot.userId === currentUserId,
+        );
+        const ticket = ownSlot?.ticket;
+        return [
+          groupId,
+          ticket
+            ? {
+                ticket: { ...ticket, visitDate: detail.ticketDate },
+                values: {
+                  title: detail.title,
+                  date: detail.ticketDate,
+                  groupName: detail.groupName,
+                  participants: detail.slots.map((slot) => slot.name),
+                },
+              }
+            : null,
+        ] as const;
+      }),
+    ).then((results) => {
       if (!active) return;
-      setOwnGroupTickets(Object.fromEntries(
-        results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []),
-      ));
+      setOwnGroupTickets(
+        Object.fromEntries(
+          results.flatMap((result) =>
+            result.status === "fulfilled" ? [result.value] : [],
+          ),
+        ),
+      );
       setDetailFailed(results.some((result) => result.status === "rejected"));
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [sharedTicketsByGroup, selectedDate, currentUserId, detailRetry]);
   const {
     tickets,
@@ -440,7 +495,6 @@ export default function HomeScreen({
     [tickets],
   );
   const recordCount = tickets.length;
-
 
   const openCalendarDate = (date: string) => {
     if (date > todayDateKey()) return;
@@ -520,13 +574,19 @@ export default function HomeScreen({
               <Text style={styles.fullListTitle}>오늘의 티켓</Text>
               {orderedGroups.map((group) => {
                 const entries = sharedTicketsByGroup[group.id];
-                const summary = entries?.find((entry) => entry.ticketDate === selectedDate);
+                const summary = entries?.find(
+                  (entry) => entry.ticketDate === selectedDate,
+                );
                 const ownTicket = ownGroupTickets[group.id];
-                const waitingForDetail = summary?.myStatus === SLOT_STATUS_COMPLETED && ownTicket === undefined;
+                const waitingForDetail =
+                  summary?.myStatus === SLOT_STATUS_COMPLETED &&
+                  ownTicket === undefined;
                 const width = Math.min(screenWidth - 32, 390);
                 return (
                   <View key={group.id} style={styles.fullGroupSection}>
-                    <Text style={styles.fullListSectionLabel}>{group.name}</Text>
+                    <Text style={styles.fullListSectionLabel}>
+                      {group.name}
+                    </Text>
                     {ownTicket ? (
                       <Pressable
                         accessibilityRole="button"
@@ -540,35 +600,47 @@ export default function HomeScreen({
                           <TicketRenderer
                             designId={ownTicket.ticket.design.designId}
                             decorations={ownTicket.ticket.decorations}
-                            photoUris={ownTicket.ticket.photos.map((photo) => photo.url)}
+                            photoUris={ownTicket.ticket.photos.map(
+                              (photo) => photo.url,
+                            )}
                             values={ownTicket.values}
                             width={width}
                             lieDown
                           />
                         ) : (
-                          <PersonalPhotoTicket ticket={ownTicket.ticket} width={width} />
+                          <PersonalPhotoTicket
+                            ticket={ownTicket.ticket}
+                            width={width}
+                          />
                         )}
                       </Pressable>
                     ) : !entries || waitingForDetail ? (
                       <Text style={styles.emptyTickets}>
-                        {sharedTicketsLoading || (waitingForDetail && !detailFailed)
+                        {sharedTicketsLoading ||
+                        (waitingForDetail && !detailFailed)
                           ? "티켓을 불러오는 중이에요."
                           : "티켓을 불러오지 못했어요."}
                       </Text>
                     ) : (
                       <View style={styles.batchEmptyTicket}>
                         <Text style={styles.batchEmptyPlus}>+</Text>
-                        <Text style={styles.batchEmptyText}>이 날에 만든 내 티켓이 없어요.</Text>
+                        <Text style={styles.batchEmptyText}>
+                          이 날에 만든 내 티켓이 없어요.
+                        </Text>
                       </View>
                     )}
                   </View>
                 );
               })}
               {(sharedTicketsFailed || detailFailed) && (
-                <Pressable accessibilityRole="button" onPress={() => {
-                  if (sharedTicketsFailed) setSharedTicketsRetry((value) => value + 1);
-                  else setDetailRetry((value) => value + 1);
-                }}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    if (sharedTicketsFailed)
+                      setSharedTicketsRetry((value) => value + 1);
+                    else setDetailRetry((value) => value + 1);
+                  }}
+                >
                   <Text style={styles.emptyTickets}>
                     티켓 불러오기 다시 시도
                   </Text>
@@ -714,19 +786,32 @@ export default function HomeScreen({
                     {orderedGroups.map((group) => {
                       const label = group.name;
                       const groupTickets = sharedTicketsByGroup[group.id];
-                      const ticket = groupTickets?.find((entry) => entry.ticketDate === selectedDate);
+                      const ticket = groupTickets?.find(
+                        (entry) => entry.ticketDate === selectedDate,
+                      );
                       const ownTicket = ownGroupTickets[group.id];
-                      const design = ticket?.myStatus === SLOT_STATUS_COMPLETED &&
+                      const design =
+                        ticket?.myStatus === SLOT_STATUS_COMPLETED &&
                         ownTicket?.values.date === selectedDate
-                        ? ownTicket.ticket.design
-                        : null;
+                          ? ownTicket.ticket.design
+                          : null;
                       return (
                         <Pressable
                           key={group.id}
                           accessibilityRole="button"
-                          accessibilityLabel={ticket ? `${label} ${ticket.title ?? "공동 티켓"} 보기` : `${label} 공동 티켓 만들기`}
+                          accessibilityLabel={
+                            ticket
+                              ? `${label} ${ticket.title ?? "공동 티켓"} 보기`
+                              : `${label} 공동 티켓 만들기`
+                          }
                           disabled={!groupTickets}
-                          onPress={() => onOpenGroupSlot(group.id, selectedDate, ticket?.sharedTicketId ?? null)}
+                          onPress={() =>
+                            onOpenGroupSlot(
+                              group.id,
+                              selectedDate,
+                              ticket?.sharedTicketId ?? null,
+                            )
+                          }
                           style={({ pressed }) => [
                             styles.ticketSlot,
                             styles.groupSlot,
@@ -739,7 +824,9 @@ export default function HomeScreen({
                           {design && ownTicket ? (
                             <TicketRenderer
                               designId={design.designId}
-                              photoUris={ownTicket.ticket.photos.map((photo) => photo.url)}
+                              photoUris={ownTicket.ticket.photos.map(
+                                (photo) => photo.url,
+                              )}
                               values={ownTicket.values}
                               width={homeTicketSlotWidth}
                               part="stub"
@@ -747,21 +834,40 @@ export default function HomeScreen({
                             />
                           ) : ticket ? (
                             <>
-                              <Text style={styles.slotDay}>{selectedDate.slice(5, 7)}{"\n"}{selectedDate.slice(8)}</Text>
-                              <Text numberOfLines={2} style={styles.slotLabel}>{ticket.title || label}</Text>
+                              <Text style={styles.slotDay}>
+                                {selectedDate.slice(5, 7)}
+                                {"\n"}
+                                {selectedDate.slice(8)}
+                              </Text>
+                              <Text numberOfLines={2} style={styles.slotLabel}>
+                                {ticket.title || label}
+                              </Text>
                             </>
                           ) : (
                             <>
                               <Text style={styles.emptySlotPlus}>
-                                {groupTickets ? "+" : sharedTicketsLoading ? "…" : "–"}
+                                {groupTickets
+                                  ? "+"
+                                  : sharedTicketsLoading
+                                    ? "…"
+                                    : "–"}
                               </Text>
-                              <Text numberOfLines={1} style={styles.slotLabel}>{label}</Text>
+                              <Text numberOfLines={1} style={styles.slotLabel}>
+                                {label}
+                              </Text>
                             </>
                           )}
                           {!design && (
                             <>
-                              <View style={[styles.slotNotch, styles.slotNotchTop]} />
-                              <View style={[styles.slotNotch, styles.slotNotchBottom]} />
+                              <View
+                                style={[styles.slotNotch, styles.slotNotchTop]}
+                              />
+                              <View
+                                style={[
+                                  styles.slotNotch,
+                                  styles.slotNotchBottom,
+                                ]}
+                              />
                             </>
                           )}
                         </Pressable>
@@ -770,8 +876,13 @@ export default function HomeScreen({
                   </ScrollView>
                 )}
                 {sharedTicketsFailed && (
-                  <Pressable accessibilityRole="button" onPress={() => setSharedTicketsRetry((value) => value + 1)}>
-                    <Text style={styles.emptyTickets}>그룹 티켓을 불러오지 못했어요. 다시 시도</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setSharedTicketsRetry((value) => value + 1)}
+                  >
+                    <Text style={styles.emptyTickets}>
+                      그룹 티켓을 불러오지 못했어요. 다시 시도
+                    </Text>
                   </Pressable>
                 )}
               </View>

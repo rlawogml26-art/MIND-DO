@@ -71,13 +71,30 @@ export const createSharedTicketRequestSchema = z.object({
 
 // design은 여기서 검사하지 않는다. 형식이 틀리면 INVALID_INPUT이 아니라 INVALID_DESIGN으로 알려야 해서
 // 서버가 ticketDesignSchema로 따로 검사한다.
-export const BASIC_TICKET_STICKERS = ["📷", "🎀", "✨", "🎁", "🌼", "🧸", "🐱", "🍰", "💌", "💖", "🍒", "🌟", "💐", "💕"] as const;
+export const BASIC_TICKET_STICKERS = [
+  "📷",
+  "🎀",
+  "✨",
+  "🎁",
+  "🌼",
+  "🧸",
+  "🐱",
+  "🍰",
+  "💌",
+  "💖",
+  "🍒",
+  "🌟",
+  "💐",
+  "💕",
+] as const;
 
-export const ticketDecorationsSchema = z.array(z.object({
-  sticker: z.enum(BASIC_TICKET_STICKERS),
-  x: z.number().min(0).max(1),
-  y: z.number().min(0).max(1),
-}));
+export const ticketDecorationsSchema = z.array(
+  z.object({
+    sticker: z.enum(BASIC_TICKET_STICKERS),
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+  }),
+);
 
 export type TicketDecoration = z.infer<typeof ticketDecorationsSchema>[number];
 

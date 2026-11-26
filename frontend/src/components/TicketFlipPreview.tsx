@@ -1,5 +1,16 @@
-import { DESIGN_LAYOUTS, type MyTicket, type TicketTextValues } from "@mind-do/shared";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  DESIGN_LAYOUTS,
+  type MyTicket,
+  type TicketTextValues,
+} from "@mind-do/shared";
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import TicketRenderer from "./TicketRenderer";
 
 const colors = { text: "#252B45", secondary: "#78819A" };
@@ -113,15 +124,14 @@ export default function TicketFlipPreview({
   const { w, h } = DESIGN_LAYOUTS.horizontal.ticket;
   const height = ticket.design
     ? width * (h / w)
-    : width * legacyPhotoHeightRatio + legacyTicketCaptionHeight +
+    : width * legacyPhotoHeightRatio +
+      legacyTicketCaptionHeight +
       2 * (legacyTicketPadding + legacyTicketBorder);
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={
-        showingBack ? "티켓 앞면 보기" : "티켓 뒷면 보기"
-      }
+      accessibilityLabel={showingBack ? "티켓 앞면 보기" : "티켓 뒷면 보기"}
       accessibilityHint="티켓을 누르면 앞면과 뒷면이 바뀝니다"
       onPress={onFlip}
       style={({ pressed }) => [
@@ -130,11 +140,7 @@ export default function TicketFlipPreview({
       ]}
     >
       {showingBack ? (
-        <PersonalTicketBack
-          ticket={ticket}
-          width={width}
-          height={height}
-        />
+        <PersonalTicketBack ticket={ticket} width={width} height={height} />
       ) : ticket.design ? (
         <TicketRenderer
           designId={ticket.design.designId}
@@ -145,10 +151,7 @@ export default function TicketFlipPreview({
           lieDown
         />
       ) : (
-        <PersonalPhotoTicket
-          ticket={ticket}
-          width={width}
-        />
+        <PersonalPhotoTicket ticket={ticket} width={width} />
       )}
     </Pressable>
   );
@@ -239,5 +242,4 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     textAlign: "left",
   },
-
 });

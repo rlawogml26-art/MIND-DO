@@ -91,7 +91,11 @@ type GroupScreenProps = {
   onOpenMy: () => void;
   groups: DemoGroup[];
   currentUserId: number;
-  homeTicket?: { groupId: string; date: string; sharedTicketId: number | null } | null;
+  homeTicket?: {
+    groupId: string;
+    date: string;
+    sharedTicketId: number | null;
+  } | null;
   onGroupsChange: Dispatch<SetStateAction<DemoGroup[]>>;
 };
 
@@ -859,7 +863,9 @@ export default function GroupScreen({
     );
   }, [groupTicketsForDisplay, monthFilter]);
   const [ticketGridWidth, setTicketGridWidth] = useState(0);
-  const [ticketDesigns, setTicketDesigns] = useState<Record<number, GroupTicketDesign>>({});
+  const [ticketDesigns, setTicketDesigns] = useState<
+    Record<number, GroupTicketDesign>
+  >({});
   useEffect(() => {
     if (page !== "group") return;
     let active = true;
@@ -867,10 +873,15 @@ export default function GroupScreen({
     async function loadTicketDesigns() {
       for (const ticket of sortedTickets) {
         if (!active) return;
-        if (!ticket.sharedTicketId || ticket.myStatus !== SLOT_STATUS_COMPLETED) continue;
-        const detail = await getSharedTicketDetail(ticket.sharedTicketId).catch(() => null);
+        if (!ticket.sharedTicketId || ticket.myStatus !== SLOT_STATUS_COMPLETED)
+          continue;
+        const detail = await getSharedTicketDetail(ticket.sharedTicketId).catch(
+          () => null,
+        );
         if (!active || !detail) continue;
-        const design = detail.slots.find((slot) => slot.userId === currentUserId)?.ticket?.design;
+        const design = detail.slots.find(
+          (slot) => slot.userId === currentUserId,
+        )?.ticket?.design;
         if (!design) continue;
         setTicketDesigns((current) => ({
           ...current,
@@ -887,7 +898,9 @@ export default function GroupScreen({
       }
     }
     void loadTicketDesigns();
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [page, sortedTickets, currentUserId]);
   const availableMonths = useMemo(
     () =>
@@ -958,7 +971,10 @@ export default function GroupScreen({
     );
   }
 
-  async function openGroup(id: string, entry?: NonNullable<GroupScreenProps["homeTicket"]>) {
+  async function openGroup(
+    id: string,
+    entry?: NonNullable<GroupScreenProps["homeTicket"]>,
+  ) {
     const version = ++requestVersion.current;
     try {
       const group = await loadGroup(Number(id));
@@ -971,8 +987,10 @@ export default function GroupScreen({
         setPage("group");
         return;
       }
-      const sharedTicketId = entry.sharedTicketId ??
-        group.tickets.find((ticket) => ticket.date === entry.date)?.sharedTicketId;
+      const sharedTicketId =
+        entry.sharedTicketId ??
+        group.tickets.find((ticket) => ticket.date === entry.date)
+          ?.sharedTicketId;
       if (sharedTicketId) {
         await openSharedTicketMembers(sharedTicketId, onOpenHome);
       } else {
@@ -1016,7 +1034,11 @@ export default function GroupScreen({
       setPage("groups");
       return;
     }
-    if (page === "newJoint" || page === "jointDone" || page === "ticketMembers") {
+    if (
+      page === "newJoint" ||
+      page === "jointDone" ||
+      page === "ticketMembers"
+    ) {
       returnFromJoint();
       return;
     }
@@ -1312,15 +1334,17 @@ export default function GroupScreen({
     if (homeTicket) {
       void openGroup(homeTicket.groupId, homeTicket);
     }
-    // The home entry is supplied when this screen mounts.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [homeTicket]);
 
   async function openTicketMembers(ticket: JointTicket) {
-    if (ticket.sharedTicketId) await openSharedTicketMembers(ticket.sharedTicketId);
+    if (ticket.sharedTicketId)
+      await openSharedTicketMembers(ticket.sharedTicketId);
   }
 
-  async function openSharedTicketMembers(sharedTicketId: number, onFailure?: () => void) {
+  async function openSharedTicketMembers(
+    sharedTicketId: number,
+    onFailure?: () => void,
+  ) {
     const version = ++requestVersion.current;
     try {
       const detail = await getSharedTicketDetail(sharedTicketId);
@@ -1489,7 +1513,12 @@ export default function GroupScreen({
     return (
       <SafeAreaView style={styles.safe} edges={["top"]}>
         <View style={styles.detailHeader}>
-          <Pressable accessibilityRole="button" accessibilityLabel="홈으로 돌아가기" onPress={back} style={styles.backBox}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="홈으로 돌아가기"
+            onPress={back}
+            style={styles.backBox}
+          >
             <Text style={styles.backLabel}>‹</Text>
           </Pressable>
           <Text style={styles.detailHeaderTitle}>공동 티켓 불러오는 중</Text>
@@ -1506,7 +1535,9 @@ export default function GroupScreen({
         <View style={styles.detailHeader}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={homeTicket ? "홈으로 돌아가기" : "그룹 티켓으로 돌아가기"}
+            accessibilityLabel={
+              homeTicket ? "홈으로 돌아가기" : "그룹 티켓으로 돌아가기"
+            }
             onPress={back}
             style={styles.backBox}
           >
@@ -1605,7 +1636,10 @@ export default function GroupScreen({
           </View>
           <View style={styles.ticketDetailStage}>
             <TicketFlipPreview
-              ticket={{ ...selectedSlot.ticket, visitDate: ticketDetail.ticketDate }}
+              ticket={{
+                ...selectedSlot.ticket,
+                visitDate: ticketDetail.ticketDate,
+              }}
               values={{
                 title: ticketDetail.title,
                 date: ticketDetail.ticketDate,
@@ -1969,7 +2003,9 @@ export default function GroupScreen({
                   </View>
                   <View
                     style={styles.ticketGrid}
-                    onLayout={({ nativeEvent }) => setTicketGridWidth(nativeEvent.layout.width)}
+                    onLayout={({ nativeEvent }) =>
+                      setTicketGridWidth(nativeEvent.layout.width)
+                    }
                   >
                     {sortedTickets.map((ticket, index) => (
                       <View
@@ -1981,9 +2017,16 @@ export default function GroupScreen({
                           groupName={selectedGroup.name}
                           index={index}
                           onPress={() => openTicketMembers(ticket)}
-                          design={ticket.sharedTicketId && ticket.myStatus === SLOT_STATUS_COMPLETED
-                            ? ticketDesigns[ticket.sharedTicketId] : undefined}
-                          width={Math.min(groupTicketMaxWidth, ticketGridWidth / 4 - groupTicketCellPadding * 2)}
+                          design={
+                            ticket.sharedTicketId &&
+                            ticket.myStatus === SLOT_STATUS_COMPLETED
+                              ? ticketDesigns[ticket.sharedTicketId]
+                              : undefined
+                          }
+                          width={Math.min(
+                            groupTicketMaxWidth,
+                            ticketGridWidth / 4 - groupTicketCellPadding * 2,
+                          )}
                         />
                       </View>
                     ))}
@@ -4195,8 +4238,16 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     rowGap: 16,
   },
-  ticketGridCell: { width: "25%", paddingHorizontal: groupTicketCellPadding, alignItems: "center" },
-  ticketCard: { width: "100%", maxWidth: groupTicketMaxWidth, alignItems: "center" },
+  ticketGridCell: {
+    width: "25%",
+    paddingHorizontal: groupTicketCellPadding,
+    alignItems: "center",
+  },
+  ticketCard: {
+    width: "100%",
+    maxWidth: groupTicketMaxWidth,
+    alignItems: "center",
+  },
   ticketCardFace: {
     width: "100%",
     aspectRatio: 0.5,

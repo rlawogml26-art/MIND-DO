@@ -21,7 +21,11 @@ import {
   useWindowDimensions,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { getGroupSharedTickets, getMyGroups, getSharedTicketDetail } from "../lib/api";
+import {
+  getGroupSharedTickets,
+  getMyGroups,
+  getSharedTicketDetail,
+} from "../lib/api";
 import { useMyTickets } from "../hooks/use-my-tickets";
 import TicketRenderer from "./TicketRenderer";
 
@@ -331,7 +335,9 @@ export default function MyPageScreen({
   const [ticketTypeFilter, setTicketTypeFilter] =
     useState<TicketTypeFilter>("all");
   const [sharedTickets, setSharedTickets] = useState<TicketListEntry[]>([]);
-  const [groupContext, setGroupContext] = useState<Record<number, { sharedTicketId: number; values: TicketTextValues }>>({});
+  const [groupContext, setGroupContext] = useState<
+    Record<number, { sharedTicketId: number; values: TicketTextValues }>
+  >({});
   const [sharedTicketStatus, setSharedTicketStatus] = useState<
     "loading" | "ready" | "error"
   >("loading");
@@ -353,51 +359,61 @@ export default function MyPageScreen({
       .then(({ groups }) =>
         Promise.all(
           groups.map(async (group) => {
-              const { sharedTickets } = await getGroupSharedTickets(
-                group.groupId,
-              );
-              return { group, sharedTickets };
+            const { sharedTickets } = await getGroupSharedTickets(
+              group.groupId,
+            );
+            return { group, sharedTickets };
           }),
         ),
       )
       .then(async (results) => {
         if (!active) return;
-        setSharedTickets(results.flatMap(({ group, sharedTickets }) =>
-          group.isDefault ? [] : sharedTickets
-                .filter((ticket) => ticket.isInvited)
-                .map((ticket): TicketListEntry => ({
-                  key: `shared-${ticket.sharedTicketId}`,
-                  visitDate: ticket.ticketDate,
-                  title: ticket.title || "공동 티켓",
-                  subtitle: group.name,
-                  segment: "shared",
-                  sharedTicketId: ticket.sharedTicketId,
-                })),
-        ));
+        setSharedTickets(
+          results.flatMap(({ group, sharedTickets }) =>
+            group.isDefault
+              ? []
+              : sharedTickets
+                  .filter((ticket) => ticket.isInvited)
+                  .map((ticket): TicketListEntry => ({
+                    key: `shared-${ticket.sharedTicketId}`,
+                    visitDate: ticket.ticketDate,
+                    title: ticket.title || "공동 티켓",
+                    subtitle: group.name,
+                    segment: "shared",
+                    sharedTicketId: ticket.sharedTicketId,
+                  })),
+          ),
+        );
         setSharedTicketStatus("ready");
-        await Promise.all(results.map(async ({ sharedTickets }) => {
-          for (const summary of sharedTickets) {
-            if (!active) return;
-            if (summary.myStatus !== SLOT_STATUS_COMPLETED) continue;
-            const detail = await getSharedTicketDetail(summary.sharedTicketId).catch(() => null);
-            if (!active || !detail) continue;
-            const ownSlot = detail.slots.find((slot) => slot.userId === currentUserId);
-            if (!ownSlot?.ticket) continue;
-            const ticketId = ownSlot.ticket.ticketId;
-            setGroupContext((current) => ({
-              ...current,
-              [ticketId]: {
-                sharedTicketId: detail.sharedTicketId,
-                values: {
-                  title: detail.title,
-                  date: detail.ticketDate,
-                  groupName: detail.groupName,
-                  participants: detail.slots.map((slot) => slot.name),
+        await Promise.all(
+          results.map(async ({ sharedTickets }) => {
+            for (const summary of sharedTickets) {
+              if (!active) return;
+              if (summary.myStatus !== SLOT_STATUS_COMPLETED) continue;
+              const detail = await getSharedTicketDetail(
+                summary.sharedTicketId,
+              ).catch(() => null);
+              if (!active || !detail) continue;
+              const ownSlot = detail.slots.find(
+                (slot) => slot.userId === currentUserId,
+              );
+              if (!ownSlot?.ticket) continue;
+              const ticketId = ownSlot.ticket.ticketId;
+              setGroupContext((current) => ({
+                ...current,
+                [ticketId]: {
+                  sharedTicketId: detail.sharedTicketId,
+                  values: {
+                    title: detail.title,
+                    date: detail.ticketDate,
+                    groupName: detail.groupName,
+                    participants: detail.slots.map((slot) => slot.name),
+                  },
                 },
-              },
-            }));
-          }
-        }));
+              }));
+            }
+          }),
+        );
       })
       .catch(() => {
         if (!active) return;
@@ -541,28 +557,54 @@ export default function MyPageScreen({
     const ownedBySharedId = new Map(
       tickets.flatMap((ticket) => {
         const context = groupContext[ticket.ticketId];
-        return context ? [[context.sharedTicketId, { ticket, values: context.values }] as const] : [];
+        return context
+          ? [
+              [
+                context.sharedTicketId,
+                { ticket, values: context.values },
+              ] as const,
+            ]
+          : [];
       }),
     );
     const renderTicketCard = (ticket: TicketListEntry) => {
-      const linked = ticket.sharedTicketId === undefined
-        ? undefined
-        : ownedBySharedId.get(ticket.sharedTicketId);
+      const linked =
+        ticket.sharedTicketId === undefined
+          ? undefined
+          : ownedBySharedId.get(ticket.sharedTicketId);
       const savedTicket = linked?.ticket ?? ticket.ticket;
       const values = linked?.values ?? ticket.values;
       if (savedTicket?.design) {
-        const part = ticket.segment === "shared"
-          ? "stub"
-          : ticket.segment === "personal" || !values ? "body" : undefined;
+        const part =
+          ticket.segment === "shared"
+            ? "stub"
+            : ticket.segment === "personal" || !values
+              ? "body"
+              : undefined;
         const fullWidth = Math.min(windowWidth, 420) - 16;
         return (
-          <View key={ticket.key} style={part === "body" && styles.savedPersonalCard}>
+          <View
+            key={ticket.key}
+            style={part === "body" && styles.savedPersonalCard}
+          >
             <TicketRenderer
               designId={savedTicket.design.designId}
               decorations={savedTicket.decorations}
               photoUris={savedTicket.photos.map((photo) => photo.url)}
-              values={values ?? { date: savedTicket.visitDate, groupName: "", participants: [] }}
-              width={part === "stub" ? 80 : part === "body" ? fullWidth * 0.8 : fullWidth}
+              values={
+                values ?? {
+                  date: savedTicket.visitDate,
+                  groupName: "",
+                  participants: [],
+                }
+              }
+              width={
+                part === "stub"
+                  ? 80
+                  : part === "body"
+                    ? fullWidth * 0.8
+                    : fullWidth
+              }
               part={part}
               lieDown
             />

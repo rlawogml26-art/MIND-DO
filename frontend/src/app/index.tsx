@@ -44,7 +44,8 @@ function AppContent() {
   });
 
   useEffect(() => {
-    if (!user || (screen !== "home" && (screen !== "group" || homeTicket))) return;
+    if (!user || (screen !== "home" && (screen !== "group" || homeTicket)))
+      return;
     let active = true;
     void getMyGroups()
       .then(({ groups: serverGroups }) => {

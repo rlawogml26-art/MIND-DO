@@ -39,7 +39,8 @@ import {
 } from "../lib/photo-upload";
 import TicketRenderer, { getTicketStickerSize } from "./TicketRenderer";
 const dispenserOutputPadding = 8;
-const { w: ticketFaceWidth, h: ticketFaceHeight } = DESIGN_LAYOUTS.horizontal.ticket;
+const { w: ticketFaceWidth, h: ticketFaceHeight } =
+  DESIGN_LAYOUTS.horizontal.ticket;
 
 type Props = {
   detail: SharedTicketDetailResponse;
@@ -56,7 +57,8 @@ export default function SharedTicketEditor({
 }: Props) {
   const { width, height } = useWindowDimensions();
   const dispenserWidth = Math.max(1, Math.min(320, width - 48));
-  const dispenserTicketHeight = dispenserWidth * ticketFaceHeight / ticketFaceWidth;
+  const dispenserTicketHeight =
+    (dispenserWidth * ticketFaceHeight) / ticketFaceWidth;
   const [photos, setPhotos] = useState<string[]>([]);
   const [photoKeys, setPhotoKeys] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<AiDraft[]>([]);
@@ -194,10 +196,16 @@ export default function SharedTicketEditor({
 
   const replacePhotoAt = (index: number) =>
     run(async () => {
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"] });
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+      });
       if (result.canceled || !result.assets[0]) return;
       const replacement = result.assets[0].uri;
-      setPhotos((current) => current.map((uri, position) => position === index ? replacement : uri));
+      setPhotos((current) =>
+        current.map((uri, position) =>
+          position === index ? replacement : uri,
+        ),
+      );
       setPhotoKeys([]);
     }, "사진을 바꾸지 못했어요.");
 
@@ -215,7 +223,9 @@ export default function SharedTicketEditor({
   const save = () =>
     run(async () => {
       if (!selected || issued) return;
-      const keys = photoKeys.length ? photoKeys : await uploadTicketPhotos(detail.sharedTicketId, photos);
+      const keys = photoKeys.length
+        ? photoKeys
+        : await uploadTicketPhotos(detail.sharedTicketId, photos);
       setPhotoKeys(keys);
       const result = await issueTicket(detail.sharedTicketId, {
         photoKeys: keys,
@@ -230,9 +240,16 @@ export default function SharedTicketEditor({
   if (selected) {
     const previewWidth = Math.max(1, Math.min(360, width - 48));
     const { body, ticket } = DESIGN_LAYOUTS.horizontal;
-    const bodyWidth = previewWidth * body.w / ticket.w;
-    const bodyHeight = previewWidth * body.h / ticket.w;
-    const title = issued && !printing ? "발권 완료" : stage === "decorate" ? "티켓 꾸미기" : stage === "memo" ? "뒷면 메모" : "발권하기";
+    const bodyWidth = (previewWidth * body.w) / ticket.w;
+    const bodyHeight = (previewWidth * body.h) / ticket.w;
+    const title =
+      issued && !printing
+        ? "발권 완료"
+        : stage === "decorate"
+          ? "티켓 꾸미기"
+          : stage === "memo"
+            ? "뒷면 메모"
+            : "발권하기";
     const openMemo = () => {
       setMemoBeforeEdit(memo);
       setStage("memo");
@@ -247,14 +264,42 @@ export default function SharedTicketEditor({
     };
     return (
       <SafeAreaView style={styles.screen}>
-        <ScrollView contentContainerStyle={styles.assembly} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.assembly}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.assemblyHeader}>
-            <Pressable accessibilityRole="button" accessibilityLabel={stage === "memo" && !issued ? "취소" : "뒤로가기"} onPress={back} disabled={busy || printing} style={styles.assemblyLeft}>
-              <Text style={stage === "memo" && !issued ? styles.headerAction : styles.backIcon}>{stage === "memo" && !issued ? "취소" : "‹"}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                stage === "memo" && !issued ? "취소" : "뒤로가기"
+              }
+              onPress={back}
+              disabled={busy || printing}
+              style={styles.assemblyLeft}
+            >
+              <Text
+                style={
+                  stage === "memo" && !issued
+                    ? styles.headerAction
+                    : styles.backIcon
+                }
+              >
+                {stage === "memo" && !issued ? "취소" : "‹"}
+              </Text>
             </Pressable>
-            <Text accessibilityRole="header" style={styles.assemblyTitle}>{title}</Text>
+            <Text accessibilityRole="header" style={styles.assemblyTitle}>
+              {title}
+            </Text>
             {!issued && stage !== "issue" && (
-              <Pressable accessibilityRole="button" onPress={stage === "decorate" ? openMemo : () => setStage("issue")} disabled={busy || editingUnavailable} style={styles.assemblyRight}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={
+                  stage === "decorate" ? openMemo : () => setStage("issue")
+                }
+                disabled={busy || editingUnavailable}
+                style={styles.assemblyRight}
+              >
                 <Text style={[styles.headerAction, styles.blueText]}>완료</Text>
               </Pressable>
             )}
@@ -266,18 +311,34 @@ export default function SharedTicketEditor({
                 accessibilityState={{ selected: stage === "decorate" }}
                 disabled={busy}
                 onPress={() => setStage("decorate")}
-                style={[styles.faceTab, stage === "decorate" && styles.faceTabActive]}
+                style={[
+                  styles.faceTab,
+                  stage === "decorate" && styles.faceTabActive,
+                ]}
               >
-                <Text style={stage === "decorate" ? styles.headerAction : styles.label}>앞면</Text>
+                <Text
+                  style={
+                    stage === "decorate" ? styles.headerAction : styles.label
+                  }
+                >
+                  앞면
+                </Text>
               </Pressable>
               <Pressable
                 accessibilityRole="tab"
                 accessibilityState={{ selected: stage === "memo" }}
                 disabled={busy || stage === "memo"}
                 onPress={openMemo}
-                style={[styles.faceTab, stage === "memo" && styles.faceTabActive]}
+                style={[
+                  styles.faceTab,
+                  stage === "memo" && styles.faceTabActive,
+                ]}
               >
-                <Text style={stage === "memo" ? styles.headerAction : styles.label}>뒷면 메모</Text>
+                <Text
+                  style={stage === "memo" ? styles.headerAction : styles.label}
+                >
+                  뒷면 메모
+                </Text>
               </Pressable>
             </View>
           )}
@@ -285,35 +346,93 @@ export default function SharedTicketEditor({
             <>
               <View style={styles.assemblyPreview}>
                 <View>
-                  <TicketRenderer designId={selected.design.designId} decorations={decorations} photoUris={photos} values={values} width={previewWidth} lieDown />
+                  <TicketRenderer
+                    designId={selected.design.designId}
+                    decorations={decorations}
+                    photoUris={photos}
+                    values={values}
+                    width={previewWidth}
+                    lieDown
+                  />
                   {tool === "stickers" && activeSticker !== null && (
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel="티켓에 스티커 배치"
                       disabled={busy || editingUnavailable}
-                      style={[styles.stickerPlacement, { width: bodyWidth, height: bodyHeight }]}
+                      style={[
+                        styles.stickerPlacement,
+                        { width: bodyWidth, height: bodyHeight },
+                      ]}
                       onPress={({ nativeEvent: { locationX, locationY } }) => {
-                        const size = getTicketStickerSize(bodyWidth, bodyHeight);
-                        const x = Math.min(1, Math.max(0, (locationX - size / 2) / (bodyWidth - size)));
-                        const y = Math.min(1, Math.max(0, (locationY - size / 2) / (bodyHeight - size)));
-                        setDecorations((current) => current.map((item, index) => index === activeSticker ? { ...item, x, y } : item));
+                        const size = getTicketStickerSize(
+                          bodyWidth,
+                          bodyHeight,
+                        );
+                        const x = Math.min(
+                          1,
+                          Math.max(
+                            0,
+                            (locationX - size / 2) / (bodyWidth - size),
+                          ),
+                        );
+                        const y = Math.min(
+                          1,
+                          Math.max(
+                            0,
+                            (locationY - size / 2) / (bodyHeight - size),
+                          ),
+                        );
+                        setDecorations((current) =>
+                          current.map((item, index) =>
+                            index === activeSticker ? { ...item, x, y } : item,
+                          ),
+                        );
                       }}
                     />
                   )}
                 </View>
               </View>
               <View style={styles.faceTabs}>
-                <Pressable accessibilityRole="button" accessibilityState={{ selected: tool === "photos" }} onPress={() => setTool("photos")}>
-                  <Text style={[styles.headerAction, tool === "photos" && styles.faceSelected]}>사진 변경</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: tool === "photos" }}
+                  onPress={() => setTool("photos")}
+                >
+                  <Text
+                    style={[
+                      styles.headerAction,
+                      tool === "photos" && styles.faceSelected,
+                    ]}
+                  >
+                    사진 변경
+                  </Text>
                 </Pressable>
-                <Pressable accessibilityRole="button" accessibilityState={{ selected: tool === "stickers" }} onPress={() => setTool("stickers")}>
-                  <Text style={[styles.headerAction, tool === "stickers" && styles.faceSelected]}>스티커</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: tool === "stickers" }}
+                  onPress={() => setTool("stickers")}
+                >
+                  <Text
+                    style={[
+                      styles.headerAction,
+                      tool === "stickers" && styles.faceSelected,
+                    ]}
+                  >
+                    스티커
+                  </Text>
                 </Pressable>
               </View>
               {tool === "photos" ? (
                 <View style={styles.photos}>
                   {photos.map((uri, index) => (
-                    <Pressable key={index} accessibilityRole="button" accessibilityLabel={`사진 ${index + 1} 변경`} disabled={busy || editingUnavailable} onPress={() => void replacePhotoAt(index)} style={styles.slot}>
+                    <Pressable
+                      key={index}
+                      accessibilityRole="button"
+                      accessibilityLabel={`사진 ${index + 1} 변경`}
+                      disabled={busy || editingUnavailable}
+                      onPress={() => void replacePhotoAt(index)}
+                      style={styles.slot}
+                    >
                       <Image source={{ uri }} style={styles.photo} />
                       <Text style={styles.photoChangeBadge}>변경</Text>
                     </Pressable>
@@ -323,30 +442,63 @@ export default function SharedTicketEditor({
                 <>
                   <View style={styles.stickerPalette}>
                     {BASIC_TICKET_STICKERS.map((sticker) => (
-                      <Pressable key={sticker} accessibilityRole="button" accessibilityLabel={`${sticker} 스티커 추가`} disabled={busy || editingUnavailable} style={styles.stickerButton} onPress={() => {
-                        setDecorations((current) => [...current, { sticker, x: 0.5, y: 0.5 }]);
-                        setActiveSticker(decorations.length);
-                      }}>
+                      <Pressable
+                        key={sticker}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${sticker} 스티커 추가`}
+                        disabled={busy || editingUnavailable}
+                        style={styles.stickerButton}
+                        onPress={() => {
+                          setDecorations((current) => [
+                            ...current,
+                            { sticker, x: 0.5, y: 0.5 },
+                          ]);
+                          setActiveSticker(decorations.length);
+                        }}
+                      >
                         <Text style={styles.stickerGlyph}>{sticker}</Text>
                       </Pressable>
                     ))}
                   </View>
                   {decorations.length > 0 && (
                     <>
-                      <Text style={styles.label}>스티커를 선택한 뒤 티켓 위를 눌러 위치를 바꿀 수 있어요.</Text>
+                      <Text style={styles.label}>
+                        스티커를 선택한 뒤 티켓 위를 눌러 위치를 바꿀 수 있어요.
+                      </Text>
                       <View style={styles.stickerPalette}>
                         {decorations.map(({ sticker }, index) => (
-                          <Pressable key={index} accessibilityRole="button" accessibilityLabel={`${index + 1}번 ${sticker} 스티커 선택`} accessibilityState={{ selected: activeSticker === index }} onPress={() => setActiveSticker(index)} style={[styles.stickerButton, activeSticker === index && styles.stickerSelected]}>
+                          <Pressable
+                            key={index}
+                            accessibilityRole="button"
+                            accessibilityLabel={`${index + 1}번 ${sticker} 스티커 선택`}
+                            accessibilityState={{
+                              selected: activeSticker === index,
+                            }}
+                            onPress={() => setActiveSticker(index)}
+                            style={[
+                              styles.stickerButton,
+                              activeSticker === index && styles.stickerSelected,
+                            ]}
+                          >
                             <Text style={styles.stickerGlyph}>{sticker}</Text>
                           </Pressable>
                         ))}
                       </View>
                       {activeSticker !== null && (
-                        <Pressable accessibilityRole="button" onPress={() => {
-                          setDecorations((current) => current.filter((_, index) => index !== activeSticker));
-                          setActiveSticker(null);
-                        }}>
-                          <Text style={[styles.label, styles.blueText]}>선택한 스티커 삭제</Text>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => {
+                            setDecorations((current) =>
+                              current.filter(
+                                (_, index) => index !== activeSticker,
+                              ),
+                            );
+                            setActiveSticker(null);
+                          }}
+                        >
+                          <Text style={[styles.label, styles.blueText]}>
+                            선택한 스티커 삭제
+                          </Text>
                         </Pressable>
                       )}
                     </>
@@ -358,29 +510,60 @@ export default function SharedTicketEditor({
             <View style={styles.memoCard}>
               <View style={styles.fieldHeading}>
                 <Text style={[styles.label, styles.blueText]}>MEMORY NOTE</Text>
-                <Text style={styles.label}>{detail.ticketDate.replaceAll("-", ".")}</Text>
+                <Text style={styles.label}>
+                  {detail.ticketDate.replaceAll("-", ".")}
+                </Text>
               </View>
-              <TextInput accessibilityLabel="뒷면 메모" placeholder="기억하고 싶은 순간을 적어 주세요" placeholderTextColor="#969EAD" style={styles.memoInput} editable={!busy && !editingUnavailable} multiline maxLength={PERSONAL_TICKET_MEMO_MAX} value={memo} onChangeText={setMemo} />
-              <Text style={styles.memoCount}>{memo.length}/{PERSONAL_TICKET_MEMO_MAX}</Text>
+              <TextInput
+                accessibilityLabel="뒷면 메모"
+                placeholder="기억하고 싶은 순간을 적어 주세요"
+                placeholderTextColor="#969EAD"
+                style={styles.memoInput}
+                editable={!busy && !editingUnavailable}
+                multiline
+                maxLength={PERSONAL_TICKET_MEMO_MAX}
+                value={memo}
+                onChangeText={setMemo}
+              />
+              <Text style={styles.memoCount}>
+                {memo.length}/{PERSONAL_TICKET_MEMO_MAX}
+              </Text>
             </View>
           ) : (
-            <View style={[styles.dispenser, { minHeight: Math.max(320, height - 220) }]}>
+            <View
+              style={[
+                styles.dispenser,
+                { minHeight: Math.max(320, height - 220) },
+              ]}
+            >
               <View style={styles.dispenserBrand}>
                 <Text style={styles.dispenserLogo}>MEMO:RE</Text>
                 <Text style={styles.dispenserTagline}>MEMORY · TICKET</Text>
               </View>
               <View style={{ width: dispenserWidth }}>
                 <View style={styles.dispenserSlot} />
-                <View style={[styles.dispenserOutput, { height: dispenserTicketHeight + dispenserOutputPadding }]}>
+                <View
+                  style={[
+                    styles.dispenserOutput,
+                    { height: dispenserTicketHeight + dispenserOutputPadding },
+                  ]}
+                >
                   {issued && (
-                    <Animated.View style={{
-                      transform: [{
-                        translateY: printProgress.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [-dispenserTicketHeight - dispenserOutputPadding, 0],
-                        }),
-                      }],
-                    }}>
+                    <Animated.View
+                      style={{
+                        transform: [
+                          {
+                            translateY: printProgress.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [
+                                -dispenserTicketHeight - dispenserOutputPadding,
+                                0,
+                              ],
+                            }),
+                          },
+                        ],
+                      }}
+                    >
                       <TicketRenderer
                         designId={issued.design.designId}
                         decorations={issued.decorations}
@@ -394,8 +577,20 @@ export default function SharedTicketEditor({
                 </View>
               </View>
               <View style={styles.dispenserStatusRow}>
-                <Text accessibilityLiveRegion="polite" style={[styles.dispenserStatus, issued && !printing && styles.dispenserComplete]}>
-                  {printing ? "티켓을 인쇄하고 있어요…" : busy ? "티켓을 저장하고 있어요…" : issued ? "티켓 발권 완료!" : ""}
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={[
+                    styles.dispenserStatus,
+                    issued && !printing && styles.dispenserComplete,
+                  ]}
+                >
+                  {printing
+                    ? "티켓을 인쇄하고 있어요…"
+                    : busy
+                      ? "티켓을 저장하고 있어요…"
+                      : issued
+                        ? "티켓 발권 완료!"
+                        : ""}
                 </Text>
               </View>
               <View style={styles.dispenserAction}>
@@ -404,9 +599,14 @@ export default function SharedTicketEditor({
                     accessibilityRole="button"
                     disabled={!issued && editingUnavailable}
                     onPress={issued ? onOpenTodaysTickets : () => void save()}
-                    style={[styles.issueButton, !issued && editingUnavailable && styles.actionDisabled]}
+                    style={[
+                      styles.issueButton,
+                      !issued && editingUnavailable && styles.actionDisabled,
+                    ]}
                   >
-                    <Text style={styles.actionText}>{issued ? "오늘의 티켓 보러가기  →" : "발권하기"}</Text>
+                    <Text style={styles.actionText}>
+                      {issued ? "오늘의 티켓 보러가기  →" : "발권하기"}
+                    </Text>
                   </Pressable>
                 )}
               </View>
@@ -635,37 +835,144 @@ const ink = "#303649";
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#FFFFFF" },
   assembly: { paddingHorizontal: 24, paddingBottom: 28, gap: 16 },
-  assemblyHeader: { height: 54, justifyContent: "center", alignItems: "center" },
+  assemblyHeader: {
+    height: 54,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   assemblyTitle: { color: "#282B33", fontSize: 16, fontWeight: "500" },
-  assemblyLeft: { position: "absolute", left: 0, minWidth: 40, height: 44, justifyContent: "center" },
-  assemblyRight: { position: "absolute", right: 0, minWidth: 40, height: 44, justifyContent: "center", alignItems: "flex-end" },
+  assemblyLeft: {
+    position: "absolute",
+    left: 0,
+    minWidth: 40,
+    height: 44,
+    justifyContent: "center",
+  },
+  assemblyRight: {
+    position: "absolute",
+    right: 0,
+    minWidth: 40,
+    height: 44,
+    justifyContent: "center",
+    alignItems: "flex-end",
+  },
   headerAction: { color: "#282B33", fontSize: 14, fontWeight: "500" },
   blueText: { color: "#0750ED" },
-  faceTabs: { flexDirection: "row", alignItems: "center", gap: 40, paddingHorizontal: 12, minHeight: 40 },
-  faceTab: { minHeight: 40, justifyContent: "center", borderBottomWidth: 3, borderBottomColor: "transparent" },
+  faceTabs: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 40,
+    paddingHorizontal: 12,
+    minHeight: 40,
+  },
+  faceTab: {
+    minHeight: 40,
+    justifyContent: "center",
+    borderBottomWidth: 3,
+    borderBottomColor: "transparent",
+  },
   faceTabActive: { borderBottomColor: "#FF7868" },
-  faceSelected: { borderBottomWidth: 3, borderBottomColor: "#FF7868", paddingBottom: 6 },
+  faceSelected: {
+    borderBottomWidth: 3,
+    borderBottomColor: "#FF7868",
+    paddingBottom: 6,
+  },
   assemblyPreview: { alignItems: "center", marginVertical: 28 },
-  photoChangeBadge: { position: "absolute", bottom: 4, right: 4, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, backgroundColor: "#282B33", color: "#FFFFFF", fontSize: 10 },
+  photoChangeBadge: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: "#282B33",
+    color: "#FFFFFF",
+    fontSize: 10,
+  },
   stickerPlacement: { position: "absolute", top: 0, right: 0 },
   stickerPalette: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  stickerButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 10, borderWidth: 1, borderColor: "#DFE5EF", backgroundColor: "#FFFFFF" },
+  stickerButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#DFE5EF",
+    backgroundColor: "#FFFFFF",
+  },
   stickerSelected: { borderColor: "#0750ED", backgroundColor: "#EAF0FF" },
   stickerGlyph: { fontSize: 23 },
-  memoCard: { marginTop: 20, minHeight: 170, padding: 16, gap: 12, borderWidth: 1, borderColor: "#DFE5EF", borderRadius: 18 },
-  memoInput: { minHeight: 84, color: "#282B33", fontSize: 14, lineHeight: 22, textAlignVertical: "top" },
+  memoCard: {
+    marginTop: 20,
+    minHeight: 170,
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#DFE5EF",
+    borderRadius: 18,
+  },
+  memoInput: {
+    minHeight: 84,
+    color: "#282B33",
+    fontSize: 14,
+    lineHeight: 22,
+    textAlignVertical: "top",
+  },
   memoCount: { alignSelf: "flex-end", color: "#767A85", fontSize: 11 },
-  dispenser: { alignItems: "center", justifyContent: "center", paddingBottom: 48 },
+  dispenser: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingBottom: 48,
+  },
   dispenserBrand: { alignItems: "center", marginBottom: 30 },
-  dispenserLogo: { color: "#7C8292", fontFamily: "serif", fontSize: 27, fontStyle: "italic", letterSpacing: 1.2 },
-  dispenserTagline: { color: "#252A3A", fontSize: 6, letterSpacing: 1.5, marginTop: -2 },
-  dispenserSlot: { width: "100%", height: 8, borderRadius: 5, backgroundColor: "#49382F", zIndex: 2, elevation: 4, shadowColor: "#372921", shadowOpacity: 0.28, shadowRadius: 3, shadowOffset: { width: 0, height: 2 } },
-  dispenserOutput: { alignItems: "center", overflow: "hidden", paddingTop: dispenserOutputPadding },
+  dispenserLogo: {
+    color: "#7C8292",
+    fontFamily: "serif",
+    fontSize: 27,
+    fontStyle: "italic",
+    letterSpacing: 1.2,
+  },
+  dispenserTagline: {
+    color: "#252A3A",
+    fontSize: 6,
+    letterSpacing: 1.5,
+    marginTop: -2,
+  },
+  dispenserSlot: {
+    width: "100%",
+    height: 8,
+    borderRadius: 5,
+    backgroundColor: "#49382F",
+    zIndex: 2,
+    elevation: 4,
+    shadowColor: "#372921",
+    shadowOpacity: 0.28,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  dispenserOutput: {
+    alignItems: "center",
+    overflow: "hidden",
+    paddingTop: dispenserOutputPadding,
+  },
   dispenserStatusRow: { minHeight: 22, marginTop: 22 },
-  dispenserStatus: { color: "#252A3A", fontSize: 13, lineHeight: 22, textAlign: "center" },
+  dispenserStatus: {
+    color: "#252A3A",
+    fontSize: 13,
+    lineHeight: 22,
+    textAlign: "center",
+  },
   dispenserComplete: { fontSize: 16, fontWeight: "700" },
   dispenserAction: { width: "100%", minHeight: 48, marginTop: 22 },
-  issueButton: { height: 48, borderRadius: 24, paddingHorizontal: 22, backgroundColor: "#0750ED", justifyContent: "center", alignItems: "center" },
+  issueButton: {
+    height: 48,
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    backgroundColor: "#0750ED",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   content: { paddingHorizontal: 16, paddingBottom: 24, gap: 14 },
   header: {
     height: 48,
