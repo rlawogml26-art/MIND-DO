@@ -1,5 +1,5 @@
-import type { MyTicket } from "@mind-do/shared";
-import { useMemo, useState } from "react";
+import { SLOT_STATUS_COMPLETED, type MyTicket, type SharedTicketSummary } from "@mind-do/shared";
+import { useEffect, useMemo, useState } from "react";
 import {
   Image,
   Pressable,
@@ -10,7 +10,9 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useMyTickets } from "../hooks/use-my-tickets";
+import { getGroupSharedTickets, getSharedTicketDetail } from "../lib/api";
 import TicketRenderer from "./TicketRenderer";
+import TicketFlipPreview, { PersonalPhotoTicket } from "./TicketFlipPreview";
 
 import logo from "../../assets/memo-re-wordmark.png";
 
@@ -26,6 +28,7 @@ const colors = {
 };
 
 const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+const homeTicketSlotWidth = 68;
 
 type BottomTab = "home" | "group" | "store" | "my";
 function BottomNavigation({
@@ -273,88 +276,12 @@ const bottomNavStyles = StyleSheet.create({
   },
 });
 
-function PersonalPhotoTicket({
-  ticket,
-  width,
-}: {
-  ticket: MyTicket;
-  width: number;
-}) {
-  const photos = ticket.photos.map((photo) => photo.url);
-  const photoHeight = width * 0.39;
-  return (
-    <View style={[styles.personalPhotoTicket, { width }]}>
-      <View style={[styles.personalPhotoCollage, { height: photoHeight }]}>
-        {photos.length === 1 ? (
-          <Image
-            source={{ uri: photos[0] }}
-            style={styles.personalPhotoSingle}
-            resizeMode="cover"
-          />
-        ) : photos.length > 1 ? (
-          <>
-            <Image
-              source={{ uri: photos[0] }}
-              style={styles.personalPhotoMain}
-              resizeMode="cover"
-            />
-            <View style={styles.personalPhotoSide}>
-              {photos.slice(1).map((uri, index) => (
-                <Image
-                  key={`${index}-${uri}`}
-                  source={{ uri }}
-                  style={styles.personalPhotoThumb}
-                  resizeMode="cover"
-                />
-              ))}
-              {photos.length === 2 && (
-                <View style={styles.personalPhotoThumbPlaceholder} />
-              )}
-            </View>
-          </>
-        ) : (
-          <View style={styles.personalPhotoPlaceholder}>
-            <Text style={styles.personalPhotoPlaceholderText}>
-              사진이 없어요
-            </Text>
-          </View>
-        )}
-      </View>
-      <View style={styles.personalPhotoCaptionRow}>
-        <Text style={styles.personalPhotoTitle} numberOfLines={1}>
-          나의 티켓
-        </Text>
-        <Text style={styles.personalPhotoDate}>
-          {formattedDate(ticket.visitDate)}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function PersonalTicketBack({
-  ticket,
-  width,
-}: {
-  ticket: MyTicket;
-  width: number;
-}) {
-  return (
-    <View style={[styles.personalTicketBack, { width, height: width * 0.5 }]}>
-      <View style={styles.personalTicketBackHeader}>
-        <Text style={styles.personalTicketBackLabel}>MEMORY NOTE</Text>
-        <Text style={styles.personalTicketBackDate}>
-          {formattedDate(ticket.visitDate)}
-        </Text>
-      </View>
-      <Text style={styles.personalTicketBackMemo}>
-        {ticket.memo?.trim() || "이날의 기억을 적어 주세요"}
-      </Text>
-    </View>
-  );
-}
-
 type HomeScreenProps = {
+  initialShowAllTickets?: boolean;
+  currentUserId: number;
+  groups: readonly { id: string; name: string; isDefault: boolean }[];
+  initialDate?: string;
+  onOpenGroupSlot: (groupId: string, date: string, sharedTicketId: number | null) => void;
   onOpenStore: () => void;
   onOpenMy: () => void;
   onOpenGroup: () => void;
@@ -396,79 +323,103 @@ function dateLongTitle(date: string) {
   return `${dateTitle(date)} ${weekday}`;
 }
 
-function ticketDateWithWeekday(date: string) {
-  if (!date) return "";
-  const [year, month, day] = date.split(/[-.]/).map(Number);
-  const weekday = [
-    "일요일",
-    "월요일",
-    "화요일",
-    "수요일",
-    "목요일",
-    "금요일",
-    "토요일",
-  ][new Date(year, month - 1, day).getDay()];
-  return `${year}.${String(month).padStart(2, "0")}.${String(day).padStart(2, "0")} · ${weekday}`;
-}
-
-function BatchTicketCard({
-  ticket,
-  onPress,
-}: {
+type HomeGroupTicket = {
   ticket: MyTicket;
-  onPress: () => void;
-}) {
-  const thumbnail = ticket.photos[0]?.url;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="내 티켓 보기"
-      onPress={onPress}
-      style={styles.batchTicket}
-    >
-      <View style={styles.batchTicketStub}>
-        <Text style={styles.batchStubBrand}>MEMO:RE</Text>
-        <Text style={styles.batchTicketTitle}>나의 티켓</Text>
-        <Text style={styles.batchStubDate}>
-          {ticketDateWithWeekday(ticket.visitDate)}
-        </Text>
-      </View>
-      <View style={styles.batchTicketPhotoPanel}>
-        {thumbnail ? (
-          <Image
-            source={{ uri: thumbnail }}
-            style={styles.batchTicketFullPhoto}
-            resizeMode="cover"
-          />
-        ) : (
-          <View
-            style={[styles.batchTicketFullPhoto, styles.batchTicketPhotoEmpty]}
-          />
-        )}
-      </View>
-    </Pressable>
-  );
-}
+  values: { title: string | null; date: string; groupName: string; participants: string[] };
+};
+
 export default function HomeScreen({
+  initialShowAllTickets = false,
+  currentUserId,
+  groups,
+  initialDate,
+  onOpenGroupSlot,
   onOpenMy,
   onOpenGroup,
   onOpenStore,
 }: HomeScreenProps) {
-  const [monthDate, setMonthDate] = useState(currentMonth);
-  const [selectedDate, setSelectedDate] = useState(todayDateKey);
-  const [showAllTickets, setShowAllTickets] = useState(false);
-  const [previewTicketId, setPreviewTicketId] = useState<number | null>(null);
+  const [monthDate, setMonthDate] = useState(() =>
+    initialDate ? new Date(Number(initialDate.slice(0, 4)), Number(initialDate.slice(5, 7)) - 1, 1) : currentMonth(),
+  );
+  const [selectedDate, setSelectedDate] = useState(() => initialDate ?? todayDateKey());
+  const [sharedTicketsByGroup, setSharedTicketsByGroup] = useState<
+    Record<string, SharedTicketSummary[]>
+  >({});
+  const [sharedTicketsFailed, setSharedTicketsFailed] = useState(false);
+  const [sharedTicketsLoading, setSharedTicketsLoading] = useState(false);
+  const [sharedTicketsRetry, setSharedTicketsRetry] = useState(0);
+  const selectedMonth = selectedDate.slice(0, 7);
+  const orderedGroups = useMemo(
+    () => [...groups].sort((a, b) => Number(b.isDefault) - Number(a.isDefault)),
+    [groups],
+  );
+  useEffect(() => {
+    let active = true;
+    setSharedTicketsByGroup({});
+    setSharedTicketsFailed(false);
+    setSharedTicketsLoading(orderedGroups.length > 0);
+    void Promise.allSettled(
+      orderedGroups.map(async ({ id }) => {
+        const { sharedTickets } = await getGroupSharedTickets(Number(id), selectedMonth);
+        return [id, sharedTickets] as const;
+      }),
+    ).then((results) => {
+      if (!active) return;
+      setSharedTicketsByGroup(Object.fromEntries(
+        results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []),
+      ));
+      setSharedTicketsFailed(results.some((result) => result.status === "rejected"));
+      setSharedTicketsLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [orderedGroups, selectedMonth, sharedTicketsRetry]);
+  const [showAllTickets, setShowAllTickets] = useState(initialShowAllTickets);
+  const [previewTicket, setPreviewTicket] = useState<HomeGroupTicket | null>(null);
   const [showingBack, setShowingBack] = useState(false);
+  const [ownGroupTickets, setOwnGroupTickets] = useState<Record<string, HomeGroupTicket | null>>({});
+  const [detailFailed, setDetailFailed] = useState(false);
+  const [detailRetry, setDetailRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setOwnGroupTickets({});
+    setDetailFailed(false);
+    const lookups = Object.entries(sharedTicketsByGroup).flatMap(([groupId, entries]) => {
+      const summary = entries.find((entry) => entry.ticketDate === selectedDate);
+      return summary?.myStatus === SLOT_STATUS_COMPLETED ? [{ groupId, summary }] : [];
+    });
+    void Promise.allSettled(lookups.map(async ({ groupId, summary }) => {
+      const detail = await getSharedTicketDetail(summary.sharedTicketId);
+      const ownSlot = detail.slots.find((slot) => slot.userId === currentUserId);
+      const ticket = ownSlot?.ticket;
+      return [groupId, ticket ? {
+        ticket: { ...ticket, visitDate: detail.ticketDate },
+        values: {
+          title: detail.title,
+          date: detail.ticketDate,
+          groupName: detail.groupName,
+          participants: detail.slots.map((slot) => slot.name),
+        },
+      } : null] as const;
+    })).then((results) => {
+      if (!active) return;
+      setOwnGroupTickets(Object.fromEntries(
+        results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []),
+      ));
+      setDetailFailed(results.some((result) => result.status === "rejected"));
+    });
+    return () => { active = false; };
+  }, [sharedTicketsByGroup, selectedDate, currentUserId, detailRetry]);
   const {
     tickets,
     loading: listLoading,
     failed: ticketLoadFailed,
     reload,
   } = useMyTickets();
-  const groupTicketPage = tickets.find(
-    (ticket) => ticket.ticketId === previewTicketId,
-  );
+  const groupTicketPage = previewTicket?.ticket;
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const previewWidth = Math.min(screenWidth - 48, 390);
   const calendarRows = Math.ceil(
     (new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay() +
       new Date(
@@ -489,15 +440,7 @@ export default function HomeScreen({
     [tickets],
   );
   const recordCount = tickets.length;
-  const dateTickets = tickets.filter(
-    (ticket) => ticket.visitDate === selectedDate,
-  );
 
-  const openTicket = (ticket: MyTicket) => {
-    setPreviewTicketId(ticket.ticketId);
-    setShowingBack(false);
-    reload();
-  };
 
   const openCalendarDate = (date: string) => {
     if (date > todayDateKey()) return;
@@ -527,13 +470,13 @@ export default function HomeScreen({
   return (
     <View style={styles.screen}>
       <View style={styles.page}>
-        {groupTicketPage ? (
+        {groupTicketPage && previewTicket ? (
           <View style={styles.groupTicketPage}>
             <View style={styles.groupTicketHeader}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="홈으로 돌아가기"
-                onPress={() => setPreviewTicketId(null)}
+                accessibilityLabel="전체 보기로 돌아가기"
+                onPress={() => setPreviewTicket(null)}
                 style={styles.groupTicketBackButton}
               >
                 <Text style={styles.fullListBackIcon}>‹</Text>
@@ -548,42 +491,13 @@ export default function HomeScreen({
               <Text style={styles.groupTicketMenu}>•••</Text>
             </View>
             <View style={styles.groupTicketPreviewArea}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={
-                  showingBack ? "티켓 앞면 보기" : "티켓 뒷면 보기"
-                }
-                accessibilityHint="티켓을 누르면 앞면과 뒷면이 바뀝니다"
-                onPress={() => setShowingBack((current) => !current)}
-                style={({ pressed }) => [
-                  styles.groupTicketPreview,
-                  pressed && styles.slotPressed,
-                ]}
-              >
-                {showingBack ? (
-                  <PersonalTicketBack
-                    ticket={groupTicketPage}
-                    width={Math.min(screenWidth - 48, 390)}
-                  />
-                ) : groupTicketPage.design ? (
-                  <TicketRenderer
-                    designId={groupTicketPage.design.designId}
-                    photoUris={groupTicketPage.photos.map((photo) => photo.url)}
-                    values={{
-                      date: groupTicketPage.visitDate,
-                      groupName: "",
-                      participants: [],
-                    }}
-                    width={Math.min(screenWidth - 48, 390)}
-                    lieDown
-                  />
-                ) : (
-                  <PersonalPhotoTicket
-                    ticket={groupTicketPage}
-                    width={Math.min(screenWidth - 48, 390)}
-                  />
-                )}
-              </Pressable>
+              <TicketFlipPreview
+                ticket={groupTicketPage}
+                values={previewTicket.values}
+                width={previewWidth}
+                showingBack={showingBack}
+                onFlip={() => setShowingBack((current) => !current)}
+              />
             </View>
           </View>
         ) : showAllTickets ? (
@@ -604,25 +518,59 @@ export default function HomeScreen({
               showsVerticalScrollIndicator={false}
             >
               <Text style={styles.fullListTitle}>오늘의 티켓</Text>
-              <Text style={styles.fullListSectionLabel}>나의 기록</Text>
-              {dateTickets.map((ticket) => (
-                <BatchTicketCard
-                  key={ticket.ticketId}
-                  ticket={ticket}
-                  onPress={() => openTicket(ticket)}
-                />
-              ))}
-              {!listLoading &&
-                !ticketLoadFailed &&
-                dateTickets.length === 0 && (
+              {orderedGroups.map((group) => {
+                const entries = sharedTicketsByGroup[group.id];
+                const summary = entries?.find((entry) => entry.ticketDate === selectedDate);
+                const ownTicket = ownGroupTickets[group.id];
+                const waitingForDetail = summary?.myStatus === SLOT_STATUS_COMPLETED && ownTicket === undefined;
+                const width = Math.min(screenWidth - 32, 390);
+                return (
+                  <View key={group.id} style={styles.fullGroupSection}>
+                    <Text style={styles.fullListSectionLabel}>{group.name}</Text>
+                    {ownTicket ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`${group.name} 내 티켓 보기`}
+                        onPress={() => {
+                          setShowingBack(false);
+                          setPreviewTicket(ownTicket);
+                        }}
+                      >
+                        {ownTicket.ticket.design ? (
+                          <TicketRenderer
+                            designId={ownTicket.ticket.design.designId}
+                            decorations={ownTicket.ticket.decorations}
+                            photoUris={ownTicket.ticket.photos.map((photo) => photo.url)}
+                            values={ownTicket.values}
+                            width={width}
+                            lieDown
+                          />
+                        ) : (
+                          <PersonalPhotoTicket ticket={ownTicket.ticket} width={width} />
+                        )}
+                      </Pressable>
+                    ) : !entries || waitingForDetail ? (
+                      <Text style={styles.emptyTickets}>
+                        {sharedTicketsLoading || (waitingForDetail && !detailFailed)
+                          ? "티켓을 불러오는 중이에요."
+                          : "티켓을 불러오지 못했어요."}
+                      </Text>
+                    ) : (
+                      <View style={styles.batchEmptyTicket}>
+                        <Text style={styles.batchEmptyPlus}>+</Text>
+                        <Text style={styles.batchEmptyText}>이 날에 만든 내 티켓이 없어요.</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+              {(sharedTicketsFailed || detailFailed) && (
+                <Pressable accessibilityRole="button" onPress={() => {
+                  if (sharedTicketsFailed) setSharedTicketsRetry((value) => value + 1);
+                  else setDetailRetry((value) => value + 1);
+                }}>
                   <Text style={styles.emptyTickets}>
-                    이 날짜에 만든 내 티켓이 없어요.
-                  </Text>
-                )}
-              {ticketLoadFailed && (
-                <Pressable accessibilityRole="button" onPress={reload}>
-                  <Text style={styles.emptyTickets}>
-                    내 티켓을 불러오지 못했어요. 다시 시도
+                    티켓 불러오기 다시 시도
                   </Text>
                 </Pressable>
               )}
@@ -763,45 +711,68 @@ export default function HomeScreen({
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.ticketSlots}
                   >
-                    {dateTickets.map((ticket) => (
-                      <Pressable
-                        key={ticket.ticketId}
-                        accessibilityRole="button"
-                        accessibilityLabel="내 티켓 보기"
-                        onPress={() => openTicket(ticket)}
-                        style={({ pressed }) => [
-                          styles.ticketSlot,
-                          pressed && styles.slotPressed,
-                        ]}
-                      >
-                        <View style={styles.slotTicketStub}>
-                          <Text style={styles.slotTicketName}>MEMO:RE</Text>
-                          <Text style={styles.slotTicketDate}>
-                            {formattedDate(ticket.visitDate)}
-                          </Text>
-                        </View>
-                        <View style={styles.slotTicketPhoto}>
-                          {ticket.photos[0] ? (
-                            <Image
-                              source={{ uri: ticket.photos[0].url }}
-                              style={styles.slotTicketImage}
-                              resizeMode="cover"
+                    {orderedGroups.map((group) => {
+                      const label = group.name;
+                      const groupTickets = sharedTicketsByGroup[group.id];
+                      const ticket = groupTickets?.find((entry) => entry.ticketDate === selectedDate);
+                      const ownTicket = ownGroupTickets[group.id];
+                      const design = ticket?.myStatus === SLOT_STATUS_COMPLETED &&
+                        ownTicket?.values.date === selectedDate
+                        ? ownTicket.ticket.design
+                        : null;
+                      return (
+                        <Pressable
+                          key={group.id}
+                          accessibilityRole="button"
+                          accessibilityLabel={ticket ? `${label} ${ticket.title ?? "공동 티켓"} 보기` : `${label} 공동 티켓 만들기`}
+                          disabled={!groupTickets}
+                          onPress={() => onOpenGroupSlot(group.id, selectedDate, ticket?.sharedTicketId ?? null)}
+                          style={({ pressed }) => [
+                            styles.ticketSlot,
+                            styles.groupSlot,
+                            group.isDefault && styles.personalGroupSlot,
+                            ticket && styles.filledGroupSlot,
+                            design && styles.designedGroupSlot,
+                            pressed && styles.slotPressed,
+                          ]}
+                        >
+                          {design && ownTicket ? (
+                            <TicketRenderer
+                              designId={design.designId}
+                              photoUris={ownTicket.ticket.photos.map((photo) => photo.url)}
+                              values={ownTicket.values}
+                              width={homeTicketSlotWidth}
+                              part="stub"
+                              lieDown
                             />
+                          ) : ticket ? (
+                            <>
+                              <Text style={styles.slotDay}>{selectedDate.slice(5, 7)}{"\n"}{selectedDate.slice(8)}</Text>
+                              <Text numberOfLines={2} style={styles.slotLabel}>{ticket.title || label}</Text>
+                            </>
                           ) : (
-                            <View style={styles.slotTicketEmptyImage} />
+                            <>
+                              <Text style={styles.emptySlotPlus}>
+                                {groupTickets ? "+" : sharedTicketsLoading ? "…" : "–"}
+                              </Text>
+                              <Text numberOfLines={1} style={styles.slotLabel}>{label}</Text>
+                            </>
                           )}
-                        </View>
-                        <Text style={styles.slotLabel} numberOfLines={1}>
-                          나의 기록
-                        </Text>
-                      </Pressable>
-                    ))}
-                    {!ticketLoadFailed && dateTickets.length === 0 && (
-                      <Text style={styles.emptyTickets}>
-                        이 날짜에 만든 내 티켓이 없어요.
-                      </Text>
-                    )}
+                          {!design && (
+                            <>
+                              <View style={[styles.slotNotch, styles.slotNotchTop]} />
+                              <View style={[styles.slotNotch, styles.slotNotchBottom]} />
+                            </>
+                          )}
+                        </Pressable>
+                      );
+                    })}
                   </ScrollView>
+                )}
+                {sharedTicketsFailed && (
+                  <Pressable accessibilityRole="button" onPress={() => setSharedTicketsRetry((value) => value + 1)}>
+                    <Text style={styles.emptyTickets}>그룹 티켓을 불러오지 못했어요. 다시 시도</Text>
+                  </Pressable>
                 )}
               </View>
             </ScrollView>
@@ -979,8 +950,8 @@ const styles = StyleSheet.create({
   fullViewText: { color: "#3F63E9", fontSize: 11, fontWeight: "700" },
   ticketSlots: { gap: 12, paddingRight: 16, paddingBottom: 8 },
   ticketSlot: {
-    width: 68,
-    height: 134,
+    width: homeTicketSlotWidth,
+    height: homeTicketSlotWidth * 2,
     borderRadius: 13,
     overflow: "hidden",
     backgroundColor: "#E7E9EF",
@@ -989,23 +960,31 @@ const styles = StyleSheet.create({
     paddingBottom: 7,
   },
   slotPressed: { opacity: 0.8, transform: [{ scale: 0.97 }] },
-  slotTicketStub: {
-    width: "100%",
-    flex: 1,
-    padding: 7,
-    justifyContent: "space-between",
-    backgroundColor: "#CBD9F1",
+  personalGroupSlot: { backgroundColor: "#C3D8F2" },
+  groupSlot: {
+    backgroundColor: "#E5E6EA",
+    justifyContent: "center",
+    gap: 12,
   },
-  slotTicketName: {
+  filledGroupSlot: { backgroundColor: "#FFEEE9", gap: 3 },
+  designedGroupSlot: { backgroundColor: "transparent", paddingBottom: 0 },
+  slotDay: {
     color: colors.text,
-    fontSize: 10,
-    lineHeight: 13,
-    fontWeight: "700",
+    fontSize: 22,
+    lineHeight: 27,
+    fontWeight: "600",
+    textAlign: "center",
   },
-  slotTicketDate: { color: colors.secondary, fontSize: 8 },
-  slotTicketPhoto: { width: "100%", height: 42, backgroundColor: "#D9DCE4" },
-  slotTicketImage: { width: "100%", height: "100%" },
-  slotTicketEmptyImage: { flex: 1, backgroundColor: "#D9DCE4" },
+  slotNotch: {
+    position: "absolute",
+    right: -7,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.surface,
+  },
+  slotNotchTop: { top: -7 },
+  slotNotchBottom: { bottom: -7 },
   slotLabel: {
     width: "100%",
     color: colors.text,
@@ -1039,80 +1018,6 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     fontWeight: "600",
     textAlign: "center",
-  },
-
-  personalPhotoTicket: {
-    overflow: "hidden",
-    borderRadius: 12,
-    backgroundColor: "#F2F3F6",
-    padding: 6,
-    borderWidth: 1,
-    borderColor: "#E6E8ED",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.14,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  personalPhotoCollage: {
-    width: "100%",
-    flexDirection: "row",
-    gap: 4,
-    overflow: "hidden",
-    borderRadius: 7,
-    backgroundColor: "#E7E9EF",
-  },
-  personalPhotoSingle: { width: "100%", height: "100%" },
-  personalPhotoMain: { width: "64%", height: "100%", borderRadius: 5 },
-  personalPhotoSide: { flex: 1, gap: 4 },
-  personalPhotoThumb: { flex: 1, width: "100%", borderRadius: 5 },
-  personalPhotoThumbPlaceholder: { flex: 1 },
-  personalPhotoPlaceholder: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  personalPhotoPlaceholderText: { color: colors.secondary, fontSize: 11 },
-  personalPhotoCaptionRow: {
-    height: 25,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 3,
-  },
-  personalPhotoTitle: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  personalPhotoDate: { color: colors.secondary, fontSize: 9, marginLeft: 8 },
-  personalTicketBack: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#B9BDC6",
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.16,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  personalTicketBackHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  personalTicketBackLabel: { color: "#3F63E9", fontSize: 8, fontWeight: "700" },
-  personalTicketBackDate: { color: colors.secondary, fontSize: 8 },
-  personalTicketBackMemo: {
-    marginTop: 18,
-    color: "#454955",
-    fontSize: 11,
-    lineHeight: 16,
-    textAlign: "left",
   },
 
   groupTicketPage: { flex: 1, backgroundColor: "#FFFFFF" },
@@ -1150,16 +1055,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingTop: 76,
-  },
-  groupTicketPreview: {
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 10,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.14,
-    shadowRadius: 3,
-    elevation: 2,
   },
   ticketImageSaveRow: {
     width: "100%",
@@ -1216,83 +1111,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   fullGroupSection: { marginTop: 18 },
-  batchTicket: {
-    width: "100%",
-    height: 144,
-    flexDirection: "row",
-    overflow: "hidden",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#DDE3ED",
-    backgroundColor: "#FFFFFF",
-  },
-  batchTicketFullPhoto: { width: "100%", height: "100%" },
-  batchTicketStub: {
-    width: "25%",
-    backgroundColor: "#E6B9D0",
-    paddingVertical: 13,
-    paddingHorizontal: 9,
-    justifyContent: "space-between",
-  },
-  batchTicketPhotoPanel: {
-    flex: 1,
-    height: "100%",
-    backgroundColor: "#DDE3ED",
-  },
-  batchStubBrand: {
-    color: colors.secondary,
-    fontSize: 9,
-    lineHeight: 12,
-    letterSpacing: 0.3,
-  },
-  batchStubDate: { color: colors.secondary, fontSize: 8, lineHeight: 11 },
-  batchStubLabel: {
-    color: colors.text,
-    fontSize: 9,
-    lineHeight: 12,
-    fontWeight: "500",
-  },
-  batchTicketDetails: { flex: 1, paddingHorizontal: 12, paddingVertical: 8 },
-  batchTicketBrand: {
-    color: colors.secondary,
-    fontSize: 9,
-    fontWeight: "600",
-    letterSpacing: 0.4,
-    marginBottom: 5,
-  },
-  batchTicketImageWrap: {
-    width: "100%",
-    height: 49,
-    borderRadius: 5,
-    backgroundColor: "#F1E9E1",
-    overflow: "hidden",
-    marginBottom: 5,
-  },
-  batchTicketPhoto: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 6,
-    backgroundColor: "#E7E9EF",
-  },
-  batchTicketPhotoEmpty: { backgroundColor: "#DDE3ED" },
-  batchTicketTitle: {
-    color: colors.text,
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "700",
-  },
-  batchTicketName: {
-    color: colors.primary,
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: "700",
-  },
-  batchTicketCaption: {
-    color: colors.secondary,
-    fontSize: 9,
-    lineHeight: 12,
-    marginTop: 2,
-  },
   batchEmptyTicket: {
     height: 110,
     borderRadius: 12,

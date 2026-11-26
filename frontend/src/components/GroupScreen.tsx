@@ -3,6 +3,8 @@ import {
   type InviteInfoResponse,
   type SharedTicketDetailResponse,
   type SharedTicketListResponse,
+  type TicketTextValues,
+  SLOT_STATUS_COMPLETED,
   GROUP_NAME_MAX,
   USER_GROUP_MAX,
   JOINT_TITLE_MAX,
@@ -41,6 +43,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import TicketRenderer from "./TicketRenderer";
+import TicketFlipPreview from "./TicketFlipPreview";
 import SharedTicketEditor from "./SharedTicketEditor";
 import {
   ApiError,
@@ -83,10 +86,12 @@ export type DemoGroup = {
 
 type GroupScreenProps = {
   onOpenHome: () => void;
+  onOpenTodaysTickets: (date: string) => void;
   onOpenStore: () => void;
   onOpenMy: () => void;
   groups: DemoGroup[];
   currentUserId: number;
+  homeTicket?: { groupId: string; date: string; sharedTicketId: number | null } | null;
   onGroupsChange: Dispatch<SetStateAction<DemoGroup[]>>;
 };
 
@@ -507,16 +512,24 @@ function FormInput({
   );
 }
 
+type GroupTicketDesign = { designId: string; values: TicketTextValues };
+const groupTicketMaxWidth = 68;
+const groupTicketCellPadding = 4;
+
 function TicketStub({
   ticket,
   groupName,
   index,
   onPress,
+  design,
+  width,
 }: {
   ticket: JointTicket;
   groupName: string;
   index: number;
   onPress: () => void;
+  design?: GroupTicketDesign;
+  width: number;
 }) {
   const [, month = "", day = ""] = ticket.date.split(/[.-]/);
   const colors = ["#E98270", "#9FD4BB", "#B39FE3"];
@@ -527,20 +540,31 @@ function TicketStub({
       onPress={onPress}
       style={({ pressed }) => [styles.ticketCard, pressed && styles.pressed]}
     >
-      <View
-        style={[
-          styles.ticketCardFace,
-          { backgroundColor: colors[index % colors.length] },
-        ]}
-      >
-        <Text style={styles.ticketCardDate}>
-          {String(Number(month)).padStart(2, "0")}.
-          {String(Number(day)).padStart(2, "0")}
-        </Text>
-        <Text numberOfLines={1} style={styles.ticketGroupName}>
-          {groupName}
-        </Text>
-      </View>
+      {design && width > 0 ? (
+        <TicketRenderer
+          designId={design.designId}
+          photoUris={[]}
+          values={design.values}
+          width={width}
+          part="stub"
+          lieDown
+        />
+      ) : (
+        <View
+          style={[
+            styles.ticketCardFace,
+            { backgroundColor: colors[index % colors.length] },
+          ]}
+        >
+          <Text style={styles.ticketCardDate}>
+            {String(Number(month)).padStart(2, "0")}.
+            {String(Number(day)).padStart(2, "0")}
+          </Text>
+          <Text numberOfLines={1} style={styles.ticketGroupName}>
+            {groupName}
+          </Text>
+        </View>
+      )}
       <Text numberOfLines={1} style={styles.ticketCardTitle}>
         {ticket.title || "제목 없음"}
       </Text>
@@ -615,11 +639,13 @@ function MemberProfiles({
 
 export default function GroupScreen({
   onOpenHome,
+  onOpenTodaysTickets,
   onOpenMy,
   onOpenStore,
   groups,
   onGroupsChange: setGroups,
   currentUserId,
+  homeTicket,
 }: GroupScreenProps) {
   const [page, setPage] = useState<Page>("groups");
   const [selectedGroupId, setSelectedGroupId] = useState("");
@@ -832,6 +858,37 @@ export default function GroupScreen({
       ),
     );
   }, [groupTicketsForDisplay, monthFilter]);
+  const [ticketGridWidth, setTicketGridWidth] = useState(0);
+  const [ticketDesigns, setTicketDesigns] = useState<Record<number, GroupTicketDesign>>({});
+  useEffect(() => {
+    if (page !== "group") return;
+    let active = true;
+    setTicketDesigns({});
+    async function loadTicketDesigns() {
+      for (const ticket of sortedTickets) {
+        if (!active) return;
+        if (!ticket.sharedTicketId || ticket.myStatus !== SLOT_STATUS_COMPLETED) continue;
+        const detail = await getSharedTicketDetail(ticket.sharedTicketId).catch(() => null);
+        if (!active || !detail) continue;
+        const design = detail.slots.find((slot) => slot.userId === currentUserId)?.ticket?.design;
+        if (!design) continue;
+        setTicketDesigns((current) => ({
+          ...current,
+          [detail.sharedTicketId]: {
+            designId: design.designId,
+            values: {
+              title: detail.title,
+              date: detail.ticketDate,
+              groupName: detail.groupName,
+              participants: detail.slots.map((slot) => slot.name),
+            },
+          },
+        }));
+      }
+    }
+    void loadTicketDesigns();
+    return () => { active = false; };
+  }, [page, sortedTickets, currentUserId]);
   const availableMonths = useMemo(
     () =>
       Array.from(
@@ -901,7 +958,7 @@ export default function GroupScreen({
     );
   }
 
-  async function openGroup(id: string) {
+  async function openGroup(id: string, entry?: NonNullable<GroupScreenProps["homeTicket"]>) {
     const version = ++requestVersion.current;
     try {
       const group = await loadGroup(Number(id));
@@ -910,13 +967,29 @@ export default function GroupScreen({
       setSelectedGroupId(id);
       setMonthFilter(null);
       setPopup("none");
-      setPage("group");
+      if (!entry) {
+        setPage("group");
+        return;
+      }
+      const sharedTicketId = entry.sharedTicketId ??
+        group.tickets.find((ticket) => ticket.date === entry.date)?.sharedTicketId;
+      if (sharedTicketId) {
+        await openSharedTicketMembers(sharedTicketId, onOpenHome);
+      } else {
+        startNewJoint(entry.date);
+      }
     } catch {
       if (version === requestVersion.current) {
         Alert.alert("그룹 불러오기 오류", "그룹 정보를 불러오지 못했어요.");
+        if (entry) onOpenHome();
       }
     }
   }
+  function returnFromJoint() {
+    if (homeTicket) onOpenHome();
+    else setPage("group");
+  }
+
   function back() {
     requestVersion.current += 1;
     if (popup !== "none") {
@@ -943,8 +1016,8 @@ export default function GroupScreen({
       setPage("groups");
       return;
     }
-    if (page === "jointDone") {
-      setPage("group");
+    if (page === "newJoint" || page === "jointDone" || page === "ticketMembers") {
+      returnFromJoint();
       return;
     }
     if (page === "handoffSelect") {
@@ -1142,8 +1215,8 @@ export default function GroupScreen({
       submitting.current = false;
     }
   }
-  function startNewJoint() {
-    setJointDate(fmtDate(dateToday()));
+  function startNewJoint(date = dateToday()) {
+    setJointDate(fmtDate(date));
     setJointTitle("");
     setSelectedJointMembers([]);
     setPage("newJoint");
@@ -1235,19 +1308,32 @@ export default function GroupScreen({
     }
   }
 
+  useEffect(() => {
+    if (homeTicket) {
+      void openGroup(homeTicket.groupId, homeTicket);
+    }
+    // The home entry is supplied when this screen mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [homeTicket]);
+
   async function openTicketMembers(ticket: JointTicket) {
-    if (!ticket.sharedTicketId) return;
+    if (ticket.sharedTicketId) await openSharedTicketMembers(ticket.sharedTicketId);
+  }
+
+  async function openSharedTicketMembers(sharedTicketId: number, onFailure?: () => void) {
     const version = ++requestVersion.current;
     try {
-      const detail = await getSharedTicketDetail(ticket.sharedTicketId);
+      const detail = await getSharedTicketDetail(sharedTicketId);
       if (version !== requestVersion.current) return;
       setTicketDetail(detail);
       setJointDate(fmtDate(detail.ticketDate));
       setJointTitle(detail.title ?? "");
       setPage("ticketMembers");
     } catch {
-      if (version === requestVersion.current)
+      if (version === requestVersion.current) {
         Alert.alert("티켓 조회 오류", "티켓을 불러오지 못했어요.");
+        onFailure?.();
+      }
     }
   }
   function startLeave() {
@@ -1350,6 +1436,7 @@ export default function GroupScreen({
       return (
         <TicketRenderer
           designId={ticket.design.designId}
+          decorations={ticket.decorations}
           photoUris={photoUris}
           width={width}
           lieDown
@@ -1380,6 +1467,7 @@ export default function GroupScreen({
     return (
       <SharedTicketEditor
         detail={ticketDetail}
+        onOpenTodaysTickets={() => onOpenTodaysTickets(ticketDetail.ticketDate)}
         onClose={() => setPage("ticketMembers")}
         onIssued={() => {
           const ticket = selectedGroup?.tickets.find(
@@ -1397,6 +1485,20 @@ export default function GroupScreen({
     );
   }
 
+  if (homeTicket && page === "groups") {
+    return (
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <View style={styles.detailHeader}>
+          <Pressable accessibilityRole="button" accessibilityLabel="홈으로 돌아가기" onPress={back} style={styles.backBox}>
+            <Text style={styles.backLabel}>‹</Text>
+          </Pressable>
+          <Text style={styles.detailHeaderTitle}>공동 티켓 불러오는 중</Text>
+          <View style={styles.ellipsisBox} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (page === "ticketMembers" && ticketDetail) {
     const ticketWidth = Math.min(360, windowWidth - 24);
     return (
@@ -1404,8 +1506,8 @@ export default function GroupScreen({
         <View style={styles.detailHeader}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="그룹 티켓으로 돌아가기"
-            onPress={() => setPage("group")}
+            accessibilityLabel={homeTicket ? "홈으로 돌아가기" : "그룹 티켓으로 돌아가기"}
+            onPress={back}
             style={styles.backBox}
           >
             <Text style={styles.backLabel}>‹</Text>
@@ -1475,9 +1577,7 @@ export default function GroupScreen({
   }
 
   if (page === "ticketDetail" && selectedSlot?.ticket && ticketDetail) {
-    const ticketCardWidth = Math.min(390, windowWidth - 40);
-    const ticket = selectedSlot.ticket;
-    const ticketDate = fmtDate(ticketDetail.ticketDate);
+    const ticketCardWidth = Math.min(390, windowWidth - 48);
     return (
       <SafeAreaView style={styles.safe} edges={["top"]}>
         <View style={styles.detailHeader}>
@@ -1504,35 +1604,18 @@ export default function GroupScreen({
             <Text style={styles.ticketCreatorName}>{selectedSlot.name}</Text>
           </View>
           <View style={styles.ticketDetailStage}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                ticketDetailShowingBack
-                  ? "티켓 앞면으로 뒤집기"
-                  : "티켓 뒷면으로 뒤집기"
-              }
-              onPress={() => setTicketDetailShowingBack((showing) => !showing)}
-              style={[
-                ticketDetailShowingBack
-                  ? styles.ticketBackNoteCard
-                  : styles.ticketPreviewCard,
-                { width: ticketCardWidth },
-              ]}
-            >
-              {ticketDetailShowingBack ? (
-                <>
-                  <View style={styles.ticketBackNoteHeader}>
-                    <Text style={styles.ticketBackNoteLabel}>MEMORY NOTE</Text>
-                    <Text style={styles.ticketBackNoteDate}>{ticketDate}</Text>
-                  </View>
-                  {!!ticket.memo?.trim() && (
-                    <Text style={styles.ticketBackNoteText}>{ticket.memo}</Text>
-                  )}
-                </>
-              ) : (
-                renderTicket(selectedSlot, ticketCardWidth - 12)
-              )}
-            </Pressable>
+            <TicketFlipPreview
+              ticket={{ ...selectedSlot.ticket, visitDate: ticketDetail.ticketDate }}
+              values={{
+                title: ticketDetail.title,
+                date: ticketDetail.ticketDate,
+                groupName: ticketDetail.groupName,
+                participants: ticketDetail.slots.map((slot) => slot.name),
+              }}
+              width={ticketCardWidth}
+              showingBack={ticketDetailShowingBack}
+              onFlip={() => setTicketDetailShowingBack((showing) => !showing)}
+            />
           </View>
           <Text style={styles.ticketFlipHint}>
             티켓을 누르면 {ticketDetailShowingBack ? "앞면" : "뒷면"}을 볼 수
@@ -1838,7 +1921,7 @@ export default function GroupScreen({
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel="새 티켓"
-                        onPress={startNewJoint}
+                        onPress={() => startNewJoint()}
                         style={({ pressed }) => [
                           styles.newTicketButton,
                           pressed && styles.pressed,
@@ -1884,27 +1967,32 @@ export default function GroupScreen({
                         : "전체 기간"}
                     </Text>
                   </View>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    nestedScrollEnabled
-                    contentContainerStyle={styles.ticketGrid}
+                  <View
+                    style={styles.ticketGrid}
+                    onLayout={({ nativeEvent }) => setTicketGridWidth(nativeEvent.layout.width)}
                   >
                     {sortedTickets.map((ticket, index) => (
-                      <TicketStub
+                      <View
                         key={`${ticket.sharedTicketId ?? ticket.date}`}
-                        ticket={ticket}
-                        groupName={selectedGroup.name}
-                        index={index}
-                        onPress={() => openTicketMembers(ticket)}
-                      />
+                        style={styles.ticketGridCell}
+                      >
+                        <TicketStub
+                          ticket={ticket}
+                          groupName={selectedGroup.name}
+                          index={index}
+                          onPress={() => openTicketMembers(ticket)}
+                          design={ticket.sharedTicketId && ticket.myStatus === SLOT_STATUS_COMPLETED
+                            ? ticketDesigns[ticket.sharedTicketId] : undefined}
+                          width={Math.min(groupTicketMaxWidth, ticketGridWidth / 4 - groupTicketCellPadding * 2)}
+                        />
+                      </View>
                     ))}
                     {sortedTickets.length === 0 && (
                       <Text style={styles.noTicketText}>
                         표시할 공동 티켓이 없어요.
                       </Text>
                     )}
-                  </ScrollView>
+                  </View>
                 </ScrollView>
                 <BottomNavigation
                   activeTab="group"
@@ -2335,7 +2423,7 @@ export default function GroupScreen({
                   <TextButton
                     text="나가기"
                     outlined
-                    onPress={() => setPage("group")}
+                    onPress={returnFromJoint}
                   />
                 </View>
               </>
@@ -4103,14 +4191,15 @@ const styles = StyleSheet.create({
   ticketPeriodLabel: { color: C.detailMuted, fontSize: 11, lineHeight: 16 },
   ticketGrid: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "flex-start",
-    gap: 24,
-    paddingRight: 20,
+    rowGap: 16,
   },
-  ticketCard: { width: 68, alignItems: "center" },
+  ticketGridCell: { width: "25%", paddingHorizontal: groupTicketCellPadding, alignItems: "center" },
+  ticketCard: { width: "100%", maxWidth: groupTicketMaxWidth, alignItems: "center" },
   ticketCardFace: {
     width: "100%",
-    height: 135,
+    aspectRatio: 0.5,
     borderRadius: 10,
     paddingHorizontal: 9,
     paddingTop: 14,
@@ -4183,51 +4272,6 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
     justifyContent: "flex-start",
-  },
-  ticketPreviewCard: {
-    padding: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#D9DDE4",
-    backgroundColor: "#F1F2F5",
-    overflow: "hidden",
-    shadowColor: "#202431",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.16,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  ticketBackNoteCard: {
-    minHeight: 180,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#C9CCD2",
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#202431",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.16,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  ticketBackNoteHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  ticketBackNoteLabel: {
-    color: "#0750ED",
-    fontSize: 8,
-    lineHeight: 12,
-    fontWeight: "600",
-  },
-  ticketBackNoteDate: { color: "#767A85", fontSize: 9, lineHeight: 12 },
-  ticketBackNoteText: {
-    color: "#282B33",
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 17,
   },
   ticketFlipHint: {
     color: C.detailMuted,

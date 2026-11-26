@@ -172,6 +172,7 @@ model Ticket {
   visitDate      DateTime     @map("visit_date") @db.Date
   memo           String?      @db.VarChar(500)
   design         Json?
+  decorations    Json?
   status         TicketStatus @default(DRAFT)
   completedAt    DateTime?    @map("completed_at")
   createdAt      DateTime     @default(now()) @map("created_at")

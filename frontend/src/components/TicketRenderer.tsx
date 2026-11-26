@@ -1,4 +1,5 @@
 import {
+  DESIGN_LAYOUTS,
   PHOTO_UPLOAD_MAX_COUNT,
   buildDrawList,
   findDesign,
@@ -7,6 +8,7 @@ import {
   type DrawText,
   type DesignPhotoSlot,
   type TicketTextValues,
+  type TicketDecoration,
 } from "@mind-do/shared";
 import {
   Canvas,
@@ -23,6 +25,7 @@ import {
   type SkPath,
 } from "@shopify/react-native-skia";
 import { useMemo } from "react";
+import { Text, View } from "react-native";
 
 import { DESIGN_ASSETS } from "../designs/assets.generated";
 
@@ -38,7 +41,13 @@ type TicketRendererProps = {
   width: number;
   // 세로형을 시계 방향으로 90도 눕혀 공동 쪽이 왼쪽에 오게 그린다 (일괄 보기, 11/18). 가로형에는 영향 없음
   lieDown?: boolean;
+  part?: "stub" | "body";
+  decorations?: readonly TicketDecoration[];
 };
+
+export function getTicketStickerSize(bodyWidth: number, bodyHeight: number) {
+  return Math.min(bodyWidth, bodyHeight) * 0.22;
+}
 
 // 글꼴 id → 기기 글꼴 이름.
 // 후속 Issue #99: 앱에 넣을 글꼴 목록이 정해지면 useFonts로 글꼴 파일을 넣고 이 표를 바꾼다.
@@ -192,6 +201,8 @@ export default function TicketRenderer({
   values,
   width,
   lieDown = false,
+  part,
+  decorations,
 }: TicketRendererProps) {
   const design = findDesign(designId);
   const photoCount = Math.min(
@@ -208,12 +219,13 @@ export default function TicketRenderer({
 
   // 훅 개수가 바뀌지 않도록 그림 3칸(공동 쪽·아래·위) + 사진 4칸(PHOTO_UPLOAD_MAX_COUNT)을 늘 부른다
   const stubImg = useImage(assetSource(designId, images[0]?.file));
-  const underImg = useImage(assetSource(designId, images[1]?.file));
-  const overImg = useImage(assetSource(designId, images[2]?.file));
-  const p0 = useImage(photoUris[0] ?? null);
-  const p1 = useImage(photoUris[1] ?? null);
-  const p2 = useImage(photoUris[2] ?? null);
-  const p3 = useImage(photoUris[3] ?? null);
+  const showBody = part !== "stub";
+  const underImg = useImage(showBody ? assetSource(designId, images[1]?.file) : null);
+  const overImg = useImage(showBody ? assetSource(designId, images[2]?.file) : null);
+  const p0 = useImage(showBody ? (photoUris[0] ?? null) : null);
+  const p1 = useImage(showBody ? (photoUris[1] ?? null) : null);
+  const p2 = useImage(showBody ? (photoUris[2] ?? null) : null);
+  const p3 = useImage(showBody ? (photoUris[3] ?? null) : null);
 
   const clip = useMemo(() => (list ? ticketClip(list) : null), [list]);
 
@@ -221,9 +233,14 @@ export default function TicketRenderer({
 
   const rotated = lieDown && list.orientation === "vertical";
   // 눕히면 화면에서 가로·세로가 바뀐다
-  const shownW = rotated ? list.height : list.width;
-  const shownH = rotated ? list.width : list.height;
+  const region = part
+    ? DESIGN_LAYOUTS[list.orientation][part]
+    : { x: 0, y: 0, w: list.width, h: list.height };
+  const shownW = rotated ? region.h : region.w;
+  const shownH = rotated ? region.w : region.h;
   const scale = width / shownW;
+  const offsetX = rotated ? list.height - region.y - region.h : region.x;
+  const offsetY = rotated ? region.x : region.y;
   // 시계 방향 90도: (x, y) → (높이 - y, x). 아래쪽 공동 쪽이 왼쪽으로 온다
   const transform = rotated
     ? [{ scale }, { translateX: list.height }, { rotate: Math.PI / 2 }]
@@ -264,11 +281,49 @@ export default function TicketRenderer({
     }
   };
 
-  return (
+  const face = (
     <Canvas style={{ width, height: shownH * scale }}>
-      <Group transform={transform}>
-        <Group clip={clip}>{list.ops.map(render)}</Group>
+      <Group transform={[{ translateX: -offsetX * scale }, { translateY: -offsetY * scale }]}>
+        <Group transform={transform}>
+          <Group clip={clip}>{list.ops.map(render)}</Group>
+        </Group>
       </Group>
     </Canvas>
+  );
+  if (!decorations?.length || part === "stub") return face;
+
+  const { body } = DESIGN_LAYOUTS[list.orientation];
+  const bodyX = rotated ? list.height - body.y - body.h : body.x;
+  const bodyY = rotated ? body.x : body.y;
+  const bodyWidth = (rotated ? body.h : body.w) * scale;
+  const bodyHeight = (rotated ? body.w : body.h) * scale;
+  const stickerSize = getTicketStickerSize(bodyWidth, bodyHeight);
+  const upright = list.orientation === "vertical" && !rotated;
+  return (
+    <View style={{ width, height: shownH * scale }}>
+      {face}
+      <View pointerEvents="none" style={{
+        position: "absolute",
+        left: (bodyX - offsetX) * scale,
+        top: (bodyY - offsetY) * scale,
+        width: bodyWidth,
+        height: bodyHeight,
+        overflow: "hidden",
+      }}>
+        {decorations.map(({ sticker, x, y }, index) => (
+          <Text key={index} style={{
+            position: "absolute",
+            left: (upright ? y : x) * (bodyWidth - stickerSize),
+            top: (upright ? 1 - x : y) * (bodyHeight - stickerSize),
+            fontSize: stickerSize * 0.8,
+            width: stickerSize,
+            height: stickerSize,
+            lineHeight: stickerSize,
+            textAlign: "center",
+            includeFontPadding: false,
+          }}>{sticker}</Text>
+        ))}
+      </View>
+    </View>
   );
 }
