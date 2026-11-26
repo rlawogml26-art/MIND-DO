@@ -1,5 +1,4 @@
 import {
-  BASIC_TICKET_STICKERS,
   DESIGN_LAYOUTS,
   ErrorCode,
   MOOD_PROMPT_MAX,
@@ -7,7 +6,6 @@ import {
   PHOTO_UPLOAD_MAX_COUNT,
   type AiDraft,
   type IssuedTicketResponse,
-  type TicketDecoration,
   type SharedTicketDetailResponse,
 } from "@mind-do/shared";
 import * as ImagePicker from "expo-image-picker";
@@ -37,7 +35,7 @@ import {
   PHOTO_UPLOAD_FAILED,
   uploadTicketPhotos,
 } from "../lib/photo-upload";
-import TicketRenderer, { getTicketStickerSize } from "./TicketRenderer";
+import TicketRenderer from "./TicketRenderer";
 const dispenserOutputPadding = 8;
 const { w: ticketFaceWidth, h: ticketFaceHeight } =
   DESIGN_LAYOUTS.horizontal.ticket;
@@ -74,9 +72,6 @@ export default function SharedTicketEditor({
   const [issued, setIssued] = useState<IssuedTicketResponse | null>(null);
   const [printing, setPrinting] = useState(false);
   const [printProgress] = useState(() => new Animated.Value(0));
-  const [tool, setTool] = useState<"photos" | "stickers">("photos");
-  const [decorations, setDecorations] = useState<TicketDecoration[]>([]);
-  const [activeSticker, setActiveSticker] = useState<number | null>(null);
   const step = drafts.length ? 2 : 1;
   const values = {
     title: detail.title,
@@ -231,7 +226,6 @@ export default function SharedTicketEditor({
         photoKeys: keys,
         memo: memo.trim(),
         design: selected.design,
-        decorations,
       });
       setPrinting(true);
       setIssued(result);
@@ -239,9 +233,6 @@ export default function SharedTicketEditor({
 
   if (selected) {
     const previewWidth = Math.max(1, Math.min(360, width - 48));
-    const { body, ticket } = DESIGN_LAYOUTS.horizontal;
-    const bodyWidth = (previewWidth * body.w) / ticket.w;
-    const bodyHeight = (previewWidth * body.h) / ticket.w;
     const title =
       issued && !printing
         ? "발권 완료"
@@ -345,166 +336,32 @@ export default function SharedTicketEditor({
           {stage === "decorate" ? (
             <>
               <View style={styles.assemblyPreview}>
-                <View>
-                  <TicketRenderer
-                    designId={selected.design.designId}
-                    decorations={decorations}
-                    photoUris={photos}
-                    values={values}
-                    width={previewWidth}
-                    lieDown
-                  />
-                  {tool === "stickers" && activeSticker !== null && (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="티켓에 스티커 배치"
-                      disabled={busy || editingUnavailable}
-                      style={[
-                        styles.stickerPlacement,
-                        { width: bodyWidth, height: bodyHeight },
-                      ]}
-                      onPress={({ nativeEvent: { locationX, locationY } }) => {
-                        const size = getTicketStickerSize(
-                          bodyWidth,
-                          bodyHeight,
-                        );
-                        const x = Math.min(
-                          1,
-                          Math.max(
-                            0,
-                            (locationX - size / 2) / (bodyWidth - size),
-                          ),
-                        );
-                        const y = Math.min(
-                          1,
-                          Math.max(
-                            0,
-                            (locationY - size / 2) / (bodyHeight - size),
-                          ),
-                        );
-                        setDecorations((current) =>
-                          current.map((item, index) =>
-                            index === activeSticker ? { ...item, x, y } : item,
-                          ),
-                        );
-                      }}
-                    />
-                  )}
-                </View>
+                <TicketRenderer
+                  designId={selected.design.designId}
+                  photoUris={photos}
+                  values={values}
+                  width={previewWidth}
+                  lieDown
+                />
               </View>
-              <View style={styles.faceTabs}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: tool === "photos" }}
-                  onPress={() => setTool("photos")}
-                >
-                  <Text
-                    style={[
-                      styles.headerAction,
-                      tool === "photos" && styles.faceSelected,
-                    ]}
+              <Text accessibilityRole="header" style={styles.headerAction}>
+                사진 변경
+              </Text>
+              <View style={styles.photos}>
+                {photos.map((uri, index) => (
+                  <Pressable
+                    key={index}
+                    accessibilityRole="button"
+                    accessibilityLabel={`사진 ${index + 1} 변경`}
+                    disabled={busy || editingUnavailable}
+                    onPress={() => void replacePhotoAt(index)}
+                    style={styles.slot}
                   >
-                    사진 변경
-                  </Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: tool === "stickers" }}
-                  onPress={() => setTool("stickers")}
-                >
-                  <Text
-                    style={[
-                      styles.headerAction,
-                      tool === "stickers" && styles.faceSelected,
-                    ]}
-                  >
-                    스티커
-                  </Text>
-                </Pressable>
+                    <Image source={{ uri }} style={styles.photo} />
+                    <Text style={styles.photoChangeBadge}>변경</Text>
+                  </Pressable>
+                ))}
               </View>
-              {tool === "photos" ? (
-                <View style={styles.photos}>
-                  {photos.map((uri, index) => (
-                    <Pressable
-                      key={index}
-                      accessibilityRole="button"
-                      accessibilityLabel={`사진 ${index + 1} 변경`}
-                      disabled={busy || editingUnavailable}
-                      onPress={() => void replacePhotoAt(index)}
-                      style={styles.slot}
-                    >
-                      <Image source={{ uri }} style={styles.photo} />
-                      <Text style={styles.photoChangeBadge}>변경</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              ) : (
-                <>
-                  <View style={styles.stickerPalette}>
-                    {BASIC_TICKET_STICKERS.map((sticker) => (
-                      <Pressable
-                        key={sticker}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${sticker} 스티커 추가`}
-                        disabled={busy || editingUnavailable}
-                        style={styles.stickerButton}
-                        onPress={() => {
-                          setDecorations((current) => [
-                            ...current,
-                            { sticker, x: 0.5, y: 0.5 },
-                          ]);
-                          setActiveSticker(decorations.length);
-                        }}
-                      >
-                        <Text style={styles.stickerGlyph}>{sticker}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  {decorations.length > 0 && (
-                    <>
-                      <Text style={styles.label}>
-                        스티커를 선택한 뒤 티켓 위를 눌러 위치를 바꿀 수 있어요.
-                      </Text>
-                      <View style={styles.stickerPalette}>
-                        {decorations.map(({ sticker }, index) => (
-                          <Pressable
-                            key={index}
-                            accessibilityRole="button"
-                            accessibilityLabel={`${index + 1}번 ${sticker} 스티커 선택`}
-                            accessibilityState={{
-                              selected: activeSticker === index,
-                            }}
-                            onPress={() => setActiveSticker(index)}
-                            style={[
-                              styles.stickerButton,
-                              activeSticker === index && styles.stickerSelected,
-                            ]}
-                          >
-                            <Text style={styles.stickerGlyph}>{sticker}</Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                      {activeSticker !== null && (
-                        <Pressable
-                          accessibilityRole="button"
-                          onPress={() => {
-                            setDecorations((current) =>
-                              current.filter(
-                                (_, index) => index !== activeSticker,
-                              ),
-                            );
-                            setActiveSticker(null);
-                          }}
-                        >
-                          <Text style={[styles.label, styles.blueText]}>
-                            선택한 스티커 삭제
-                          </Text>
-                        </Pressable>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
             </>
           ) : stage === "memo" ? (
             <View style={styles.memoCard}>
@@ -566,7 +423,7 @@ export default function SharedTicketEditor({
                     >
                       <TicketRenderer
                         designId={issued.design.designId}
-                        decorations={issued.decorations}
+
                         photoUris={photos}
                         values={values}
                         width={dispenserWidth}
@@ -872,11 +729,6 @@ const styles = StyleSheet.create({
     borderBottomColor: "transparent",
   },
   faceTabActive: { borderBottomColor: "#FF7868" },
-  faceSelected: {
-    borderBottomWidth: 3,
-    borderBottomColor: "#FF7868",
-    paddingBottom: 6,
-  },
   assemblyPreview: { alignItems: "center", marginVertical: 28 },
   photoChangeBadge: {
     position: "absolute",
@@ -889,20 +741,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 10,
   },
-  stickerPlacement: { position: "absolute", top: 0, right: 0 },
-  stickerPalette: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  stickerButton: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#DFE5EF",
-    backgroundColor: "#FFFFFF",
-  },
-  stickerSelected: { borderColor: "#0750ED", backgroundColor: "#EAF0FF" },
-  stickerGlyph: { fontSize: 23 },
   memoCard: {
     marginTop: 20,
     minHeight: 170,

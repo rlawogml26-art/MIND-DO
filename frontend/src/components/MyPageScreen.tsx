@@ -589,7 +589,6 @@ export default function MyPageScreen({
           >
             <TicketRenderer
               designId={savedTicket.design.designId}
-              decorations={savedTicket.decorations}
               photoUris={savedTicket.photos.map((photo) => photo.url)}
               values={
                 values ?? {

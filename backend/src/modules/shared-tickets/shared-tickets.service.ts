@@ -5,7 +5,6 @@ import {
   SLOT_STATUS_COMPLETED,
   SLOT_STATUS_EMPTY,
   ticketDesignSchema,
-  ticketDecorationsSchema,
   type CreateSharedTicketRequest,
   type IssueTicketRequest,
   type SharedTicketListResponse,
@@ -144,11 +143,6 @@ const canEditSharedTicket = (
   userId: number,
 ) => sharedTicket.creatorId === userId || sharedTicket.leaderId === userId;
 
-const toStoredDecorations = (decorations: unknown) => {
-  const parsed = ticketDecorationsSchema.safeParse(decorations);
-  return parsed.success ? parsed.data : undefined;
-};
-
 export async function getMyTickets(cookieHeader: string | undefined) {
   const tickets = await repository.findOwnedCompletedTickets(
     getRequesterId(cookieHeader),
@@ -158,7 +152,6 @@ export async function getMyTickets(cookieHeader: string | undefined) {
       tickets.map(async (ticket) => ({
         ...ticket,
         design: toStoredDesign(ticket.design),
-        decorations: toStoredDecorations(ticket.decorations),
         photos: await toPhotoResponses(ticket.photos),
       })),
     ),
@@ -199,7 +192,6 @@ async function buildSharedTicketDetail(sharedTicketId: number, userId: number) {
               photos: await toPhotoResponses(ticket.photos),
               memo: ticket.memo,
               design: toStoredDesign(ticket.design),
-              decorations: toStoredDecorations(ticket.decorations),
               createdAt: ticket.createdAt.toISOString(),
             }
           : null,
@@ -281,7 +273,6 @@ export const issueTicket = async (
     photoKeys: input.photoKeys,
     memo: input.memo,
     design: design.data,
-    decorations: input.decorations,
   });
   if (result.status === "shared_ticket_not_found") {
     throw new SharedTicketNotFoundError();
@@ -303,7 +294,6 @@ export const issueTicket = async (
     ),
     memo: input.memo,
     design: design.data,
-    decorations: input.decorations,
     createdAt: result.createdAt.toISOString(),
   };
 };

@@ -599,7 +599,6 @@ export default function HomeScreen({
                         {ownTicket.ticket.design ? (
                           <TicketRenderer
                             designId={ownTicket.ticket.design.designId}
-                            decorations={ownTicket.ticket.decorations}
                             photoUris={ownTicket.ticket.photos.map(
                               (photo) => photo.url,
                             )}

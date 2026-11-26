@@ -144,7 +144,6 @@ export default function TicketFlipPreview({
       ) : ticket.design ? (
         <TicketRenderer
           designId={ticket.design.designId}
-          decorations={ticket.decorations}
           photoUris={ticket.photos.map((photo) => photo.url)}
           values={values}
           width={width}

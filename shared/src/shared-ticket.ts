@@ -71,33 +71,6 @@ export const createSharedTicketRequestSchema = z.object({
 
 // design은 여기서 검사하지 않는다. 형식이 틀리면 INVALID_INPUT이 아니라 INVALID_DESIGN으로 알려야 해서
 // 서버가 ticketDesignSchema로 따로 검사한다.
-export const BASIC_TICKET_STICKERS = [
-  "📷",
-  "🎀",
-  "✨",
-  "🎁",
-  "🌼",
-  "🧸",
-  "🐱",
-  "🍰",
-  "💌",
-  "💖",
-  "🍒",
-  "🌟",
-  "💐",
-  "💕",
-] as const;
-
-export const ticketDecorationsSchema = z.array(
-  z.object({
-    sticker: z.enum(BASIC_TICKET_STICKERS),
-    x: z.number().min(0).max(1),
-    y: z.number().min(0).max(1),
-  }),
-);
-
-export type TicketDecoration = z.infer<typeof ticketDecorationsSchema>[number];
-
 export const issueTicketRequestSchema = z.object({
   photoKeys: z
     .array(z.string().min(1))
@@ -106,7 +79,6 @@ export const issueTicketRequestSchema = z.object({
     .refine((keys) => new Set(keys).size === keys.length),
   memo: optionalTrimmedText(PERSONAL_TICKET_MEMO_MAX),
   design: z.unknown(),
-  decorations: ticketDecorationsSchema.optional(),
 });
 
 export const ticketPhotoResponseSchema = z.object({
@@ -122,7 +94,6 @@ export const myTicketListResponseSchema = z.object({
       photos: z.array(ticketPhotoResponseSchema),
       memo: z.string().nullable(),
       design: ticketDesignSchema.nullable(),
-      decorations: ticketDecorationsSchema.optional(),
     }),
   ),
 });
@@ -138,7 +109,6 @@ export const issuedTicketResponseSchema = z.object({
   photos: z.array(ticketPhotoResponseSchema),
   memo: z.string().nullable(),
   design: ticketDesignSchema,
-  decorations: ticketDecorationsSchema.optional(),
   createdAt: z.iso.datetime(),
 });
 
@@ -155,7 +125,6 @@ export const sharedTicketSlotResponseSchema = z.object({
       // 저장된 디자인이 지금 형식과 맞지 않으면(디자인 형식이 바뀐 뒤의 예전 티켓) null.
       // 티켓 하나 때문에 공동 티켓 전체 조회가 실패하지 않게 한다
       design: ticketDesignSchema.nullable(),
-      decorations: ticketDecorationsSchema.optional(),
       createdAt: z.iso.datetime(),
     })
     .nullable(),

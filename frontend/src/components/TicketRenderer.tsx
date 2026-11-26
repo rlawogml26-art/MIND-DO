@@ -8,7 +8,6 @@ import {
   type DrawText,
   type DesignPhotoSlot,
   type TicketTextValues,
-  type TicketDecoration,
 } from "@mind-do/shared";
 import {
   Canvas,
@@ -25,7 +24,6 @@ import {
   type SkPath,
 } from "@shopify/react-native-skia";
 import { useMemo } from "react";
-import { Text, View } from "react-native";
 
 import { DESIGN_ASSETS } from "../designs/assets.generated";
 
@@ -42,12 +40,7 @@ type TicketRendererProps = {
   // 세로형을 시계 방향으로 90도 눕혀 공동 쪽이 왼쪽에 오게 그린다 (일괄 보기, 11/18). 가로형에는 영향 없음
   lieDown?: boolean;
   part?: "stub" | "body";
-  decorations?: readonly TicketDecoration[];
 };
-
-export function getTicketStickerSize(bodyWidth: number, bodyHeight: number) {
-  return Math.min(bodyWidth, bodyHeight) * 0.22;
-}
 
 // 글꼴 id → 기기 글꼴 이름.
 // 후속 Issue #99: 앱에 넣을 글꼴 목록이 정해지면 useFonts로 글꼴 파일을 넣고 이 표를 바꾼다.
@@ -202,7 +195,6 @@ export default function TicketRenderer({
   width,
   lieDown = false,
   part,
-  decorations,
 }: TicketRendererProps) {
   const design = findDesign(designId);
   const photoCount = Math.min(
@@ -285,7 +277,7 @@ export default function TicketRenderer({
     }
   };
 
-  const face = (
+  return (
     <Canvas style={{ width, height: shownH * scale }}>
       <Group
         transform={[
@@ -298,49 +290,5 @@ export default function TicketRenderer({
         </Group>
       </Group>
     </Canvas>
-  );
-  if (!decorations?.length || part === "stub") return face;
-
-  const { body } = DESIGN_LAYOUTS[list.orientation];
-  const bodyX = rotated ? list.height - body.y - body.h : body.x;
-  const bodyY = rotated ? body.x : body.y;
-  const bodyWidth = (rotated ? body.h : body.w) * scale;
-  const bodyHeight = (rotated ? body.w : body.h) * scale;
-  const stickerSize = getTicketStickerSize(bodyWidth, bodyHeight);
-  const upright = list.orientation === "vertical" && !rotated;
-  return (
-    <View style={{ width, height: shownH * scale }}>
-      {face}
-      <View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          left: (bodyX - offsetX) * scale,
-          top: (bodyY - offsetY) * scale,
-          width: bodyWidth,
-          height: bodyHeight,
-          overflow: "hidden",
-        }}
-      >
-        {decorations.map(({ sticker, x, y }, index) => (
-          <Text
-            key={index}
-            style={{
-              position: "absolute",
-              left: (upright ? y : x) * (bodyWidth - stickerSize),
-              top: (upright ? 1 - x : y) * (bodyHeight - stickerSize),
-              fontSize: stickerSize * 0.8,
-              width: stickerSize,
-              height: stickerSize,
-              lineHeight: stickerSize,
-              textAlign: "center",
-              includeFontPadding: false,
-            }}
-          >
-            {sticker}
-          </Text>
-        ))}
-      </View>
-    </View>
   );
 }

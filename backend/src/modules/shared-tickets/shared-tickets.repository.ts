@@ -10,7 +10,6 @@ export async function findOwnedCompletedTickets(userId: number) {
       visitDate: true,
       memo: true,
       design: true,
-      decorations: true,
       images: {
         orderBy: { sortOrder: "asc" },
         select: { s3Key: true, sortOrder: true },
@@ -22,7 +21,6 @@ export async function findOwnedCompletedTickets(userId: number) {
     visitDate: toDateOnly(ticket.visitDate),
     memo: ticket.memo,
     design: ticket.design,
-    decorations: ticket.decorations,
     photos: ticket.images.map(({ s3Key, sortOrder }) => ({
       photoKey: s3Key,
       sortOrder,
@@ -186,7 +184,6 @@ export const findSharedTicketDetail = async ({
           userId: true,
           memo: true,
           design: true,
-          decorations: true,
           createdAt: true,
           images: {
             orderBy: { sortOrder: "asc" },
@@ -214,7 +211,6 @@ export const findSharedTicketDetail = async ({
       userId: ticket.userId,
       memo: ticket.memo,
       design: ticket.design,
-      decorations: ticket.decorations,
       createdAt: ticket.createdAt,
       photos: ticket.images.map((image) => ({
         photoKey: image.s3Key,
@@ -230,7 +226,6 @@ type CreateIssuedTicketInput = {
   photoKeys: string[];
   memo: string | null;
   design: Prisma.InputJsonValue;
-  decorations?: Prisma.InputJsonValue;
 };
 
 export const createIssuedTicket = async ({
@@ -239,7 +234,6 @@ export const createIssuedTicket = async ({
   photoKeys,
   memo,
   design,
-  decorations,
 }: CreateIssuedTicketInput) => {
   try {
     return await getPrismaClient().$transaction(async (transaction) => {
@@ -265,7 +259,6 @@ export const createIssuedTicket = async ({
           visitDate: sharedTicket.ticketDate,
           memo,
           design,
-          decorations,
           status: "COMPLETED",
           completedAt: new Date(),
           images: {

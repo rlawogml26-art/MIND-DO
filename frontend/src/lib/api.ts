@@ -25,7 +25,6 @@ import {
   type SignupRequest,
   type SharedTicketPhotoUploadRequest,
   type AiDraftsRequest,
-  type TicketDecoration,
   type TicketDesign,
 } from "@mind-do/shared";
 import { z } from "zod";
@@ -248,7 +247,6 @@ export const issueTicket = (
     photoKeys: string[];
     memo?: string;
     design: TicketDesign;
-    decorations?: TicketDecoration[];
   },
 ) =>
   request(

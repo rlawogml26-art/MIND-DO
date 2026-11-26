@@ -1460,7 +1460,6 @@ export default function GroupScreen({
       return (
         <TicketRenderer
           designId={ticket.design.designId}
-          decorations={ticket.decorations}
           photoUris={photoUris}
           width={width}
           lieDown
