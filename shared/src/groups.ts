@@ -136,3 +136,17 @@ export type GroupDetailResponse = z.infer<typeof groupDetailResponseSchema>;
 export type InviteInfoResponse = z.infer<typeof inviteInfoResponseSchema>;
 export type LeaveGroupRequest = z.infer<typeof leaveGroupRequestSchema>;
 export type LeaveGroupResponse = z.infer<typeof leaveGroupResponseSchema>;
+
+export const transferGroupLeaderRequestSchema = z.object({
+  userId: positiveIdSchema,
+});
+
+export const transferGroupLeaderResponseSchema = z.object({
+  groupId: positiveIdSchema,
+  leaderId: positiveIdSchema,
+  myRole: z.literal(GROUP_ROLE_MEMBER),
+});
+
+export type TransferGroupLeaderResponse = z.infer<
+  typeof transferGroupLeaderResponseSchema
+>;
