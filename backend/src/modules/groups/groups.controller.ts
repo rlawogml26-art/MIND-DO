@@ -12,6 +12,8 @@ import {
   joinGroupResponseSchema,
   leaveGroupRequestSchema,
   leaveGroupResponseSchema,
+  unlinkFormerMemberTicketsParamsSchema,
+  unlinkFormerMemberTicketsResponseSchema,
   USER_GROUP_MAX,
 } from "@mind-do/shared";
 import {
@@ -32,7 +34,65 @@ import {
   getMyGroups,
   joinGroupByInvite,
   leaveGroup,
+  unlinkFormerMemberTickets,
+  UnlinkFormerMemberTicketsError,
 } from "./groups.service.js";
+
+const unlinkFormerMemberErrors = {
+  group_not_found: {
+    status: 404,
+    code: ErrorCode.GROUP_NOT_FOUND,
+    message: "그룹을 찾을 수 없습니다.",
+  },
+  not_group_leader: {
+    status: 403,
+    code: ErrorCode.NOT_GROUP_LEADER,
+    message: "그룹장만 티켓 연결을 제거할 수 있습니다.",
+  },
+  member_not_found: {
+    status: 404,
+    code: ErrorCode.MEMBER_NOT_FOUND,
+    message: "그룹 멤버 기록을 찾을 수 없습니다.",
+  },
+  current_member: {
+    status: 400,
+    code: ErrorCode.INVALID_INPUT,
+    message: "현재 멤버의 티켓 연결은 제거할 수 없습니다.",
+  },
+};
+
+export const deleteFormerMemberTicketLinks = async (
+  req: Request,
+  res: Response,
+) => {
+  const params = unlinkFormerMemberTicketsParamsSchema.safeParse(req.params);
+  if (!params.success) {
+    return res.status(400).json({
+      error: {
+        code: ErrorCode.INVALID_INPUT,
+        message: "입력값을 확인해주세요.",
+      },
+    });
+  }
+  try {
+    const { groupId, userId } = params.data;
+    const result = await unlinkFormerMemberTickets(
+      req.headers.cookie,
+      groupId,
+      userId,
+    );
+    return res
+      .status(200)
+      .json({ data: unlinkFormerMemberTicketsResponseSchema.parse(result) });
+  } catch (error: unknown) {
+    if (sendAuthError(res, error)) return;
+    if (error instanceof UnlinkFormerMemberTicketsError) {
+      const { status, code, message } = unlinkFormerMemberErrors[error.reason];
+      return res.status(status).json({ error: { code, message } });
+    }
+    throw error;
+  }
+};
 
 export const postGroup = async (req: Request, res: Response) => {
   const parsed = createGroupRequestSchema.safeParse(req.body);

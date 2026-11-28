@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  deleteFormerMemberTicketLinks,
   getGroup,
   getGroups,
   postGroup,
@@ -276,5 +277,49 @@ router.post("/:groupId/invites", postGroupInvite);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post("/:groupId/leave", postLeaveGroup);
+
+/**
+ * @swagger
+ * /api/groups/{groupId}/members/{userId}/ticket-links:
+ *   delete:
+ *     tags: [그룹]
+ *     summary: 탈퇴자 티켓 연결 일괄 제거
+ *     description: 그룹장이 과거 멤버의 개인 티켓 연결을 이 그룹에서만 끊습니다. 연결이 없으면 0을 반환합니다.
+ *     security:
+ *       - AccessTokenCookie: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *     responses:
+ *       '200':
+ *         description: 연결 제거 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   $ref: '#/components/schemas/UnlinkFormerMemberTicketsResponse'
+ *       '400':
+ *         description: 경로 입력 오류 또는 대상이 현재 멤버임 (INVALID_INPUT)
+ *       '401':
+ *         description: 인증 실패 (UNAUTHORIZED, ACCESS_TOKEN_EXPIRED)
+ *       '403':
+ *         description: 그룹장 권한 없음 (NOT_GROUP_LEADER)
+ *       '404':
+ *         description: 그룹 또는 대상 멤버 기록 없음 (GROUP_NOT_FOUND, MEMBER_NOT_FOUND)
+ *       '500':
+ *         description: 서버 오류 (INTERNAL_SERVER_ERROR)
+ */
+router.delete(
+  "/:groupId/members/:userId/ticket-links",
+  deleteFormerMemberTicketLinks,
+);
 
 export default router;
