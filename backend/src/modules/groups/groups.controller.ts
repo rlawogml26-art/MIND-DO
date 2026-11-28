@@ -12,6 +12,8 @@ import {
   joinGroupResponseSchema,
   leaveGroupRequestSchema,
   leaveGroupResponseSchema,
+  transferGroupLeaderRequestSchema,
+  transferGroupLeaderResponseSchema,
   USER_GROUP_MAX,
 } from "@mind-do/shared";
 import {
@@ -32,6 +34,8 @@ import {
   getMyGroups,
   joinGroupByInvite,
   leaveGroup,
+  transferGroupLeader,
+  TransferGroupLeaderError,
 } from "./groups.service.js";
 
 export const postGroup = async (req: Request, res: Response) => {
@@ -72,6 +76,65 @@ export const postGroup = async (req: Request, res: Response) => {
           message: `참여 중인 그룹은 최대 ${USER_GROUP_MAX}개까지 가능합니다.`,
         },
       });
+    }
+    throw error;
+  }
+};
+
+const transferGroupLeaderErrors = {
+  invalid_input: {
+    status: 400,
+    code: ErrorCode.INVALID_INPUT,
+    message: "본인에게 그룹장 권한을 넘길 수 없습니다.",
+  },
+  not_group_leader: {
+    status: 403,
+    code: ErrorCode.NOT_GROUP_LEADER,
+    message: "그룹장만 권한을 넘길 수 있습니다.",
+  },
+  default_group_not_allowed: {
+    status: 403,
+    code: ErrorCode.DEFAULT_GROUP_NOT_ALLOWED,
+    message: "기본 1인 그룹에서는 그룹장을 변경할 수 없습니다.",
+  },
+  group_not_found: {
+    status: 404,
+    code: ErrorCode.GROUP_NOT_FOUND,
+    message: "그룹을 찾을 수 없습니다.",
+  },
+  member_not_found: {
+    status: 404,
+    code: ErrorCode.MEMBER_NOT_FOUND,
+    message: "그룹 멤버를 찾을 수 없습니다.",
+  },
+};
+
+export const patchGroupLeader = async (req: Request, res: Response) => {
+  const params = groupIdParamsSchema.safeParse(req.params);
+  const body = transferGroupLeaderRequestSchema.safeParse(req.body);
+  if (!params.success || !body.success) {
+    return res.status(400).json({
+      error: {
+        code: ErrorCode.INVALID_INPUT,
+        message: "입력값을 확인해주세요.",
+      },
+    });
+  }
+
+  try {
+    const result = await transferGroupLeader(
+      req.headers.cookie,
+      params.data.groupId,
+      body.data.userId,
+    );
+    return res
+      .status(200)
+      .json({ data: transferGroupLeaderResponseSchema.parse(result) });
+  } catch (error: unknown) {
+    if (sendAuthError(res, error)) return;
+    if (error instanceof TransferGroupLeaderError) {
+      const { status, code, message } = transferGroupLeaderErrors[error.reason];
+      return res.status(status).json({ error: { code, message } });
     }
     throw error;
   }

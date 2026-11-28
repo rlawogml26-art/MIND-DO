@@ -11,6 +11,7 @@ import {
   type GroupListResponse,
   type InviteInfoResponse,
   type LeaveGroupResponse,
+  type TransferGroupLeaderResponse,
 } from "@mind-do/shared";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -284,4 +285,35 @@ export const leaveGroup = async (
     groupDeleted: result.groupDeleted,
     newLeaderId: result.newLeaderId,
   };
+};
+
+type TransferGroupLeaderFailure =
+  | "invalid_input"
+  | "not_group_leader"
+  | "default_group_not_allowed"
+  | "group_not_found"
+  | "member_not_found";
+
+export class TransferGroupLeaderError extends Error {
+  constructor(readonly reason: TransferGroupLeaderFailure) {
+    super(reason);
+  }
+}
+
+export const transferGroupLeader = async (
+  cookieHeader: string | undefined,
+  groupId: number,
+  targetUserId: number,
+): Promise<TransferGroupLeaderResponse> => {
+  const requesterId = getAuthenticatedUserId(
+    getAccessTokenFromCookieHeader(cookieHeader),
+  );
+  const result = await repository.transferGroupLeader(
+    groupId,
+    requesterId,
+    targetUserId,
+  );
+  if (result.status !== "transferred")
+    throw new TransferGroupLeaderError(result.status);
+  return { groupId, leaderId: result.leaderId, myRole: GROUP_ROLE_MEMBER };
 };

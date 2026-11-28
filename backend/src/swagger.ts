@@ -18,6 +18,8 @@ import {
   joinGroupResponseSchema,
   leaveGroupRequestSchema,
   leaveGroupResponseSchema,
+  transferGroupLeaderRequestSchema,
+  transferGroupLeaderResponseSchema,
   groupListResponseSchema,
   groupDetailResponseSchema,
   inviteInfoResponseSchema,
@@ -107,6 +109,18 @@ const options: swaggerJsdoc.Options = {
           target: "openapi-3.0",
           io: "output",
         }),
+        TransferGroupLeaderRequest: z.toJSONSchema(
+          transferGroupLeaderRequestSchema,
+          {
+            target: "openapi-3.0",
+          },
+        ),
+        TransferGroupLeaderResponse: z.toJSONSchema(
+          transferGroupLeaderResponseSchema,
+          {
+            target: "openapi-3.0",
+          },
+        ),
         LeaveGroupRequest: z.toJSONSchema(leaveGroupRequestSchema, {
           target: "openapi-3.0",
           io: "input",
