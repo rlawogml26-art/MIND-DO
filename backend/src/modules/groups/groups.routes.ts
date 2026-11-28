@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  deleteGroupMember,
   getGroup,
   getGroups,
   postGroup,
@@ -276,5 +277,52 @@ router.post("/:groupId/invites", postGroupInvite);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post("/:groupId/leave", postLeaveGroup);
+
+/**
+ * @swagger
+ * /api/groups/{groupId}/members/{userId}:
+ *   delete:
+ *     tags: [그룹]
+ *     summary: 그룹 멤버 강퇴
+ *     description: 그룹장이 멤버를 내보내며 그 멤버의 개인 티켓을 그룹에 남길지 선택합니다.
+ *     security:
+ *       - AccessTokenCookie: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/RemoveGroupMemberRequest'
+ *     responses:
+ *       '200':
+ *         description: 강퇴 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   $ref: '#/components/schemas/RemoveGroupMemberResponse'
+ *       '400':
+ *         description: 입력 오류 또는 본인을 대상으로 요청 (INVALID_INPUT)
+ *       '401':
+ *         description: 인증 실패 (UNAUTHORIZED, ACCESS_TOKEN_EXPIRED)
+ *       '403':
+ *         description: 그룹장 권한 없음 또는 기본 그룹 (NOT_GROUP_LEADER, DEFAULT_GROUP_NOT_ALLOWED)
+ *       '404':
+ *         description: 그룹 또는 대상 멤버 없음 (GROUP_NOT_FOUND, MEMBER_NOT_FOUND)
+ *       '500':
+ *         description: 서버 오류 (INTERNAL_SERVER_ERROR)
+ */
+router.delete("/:groupId/members/:userId", deleteGroupMember);
 
 export default router;

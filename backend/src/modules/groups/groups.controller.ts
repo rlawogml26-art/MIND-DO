@@ -12,6 +12,9 @@ import {
   joinGroupResponseSchema,
   leaveGroupRequestSchema,
   leaveGroupResponseSchema,
+  removeGroupMemberParamsSchema,
+  removeGroupMemberRequestSchema,
+  removeGroupMemberResponseSchema,
   USER_GROUP_MAX,
 } from "@mind-do/shared";
 import {
@@ -32,7 +35,42 @@ import {
   getMyGroups,
   joinGroupByInvite,
   leaveGroup,
+  removeGroupMember,
+  RemoveGroupMemberError,
 } from "./groups.service.js";
+
+export const deleteGroupMember = async (req: Request, res: Response) => {
+  const params = removeGroupMemberParamsSchema.safeParse(req.params);
+  const body = removeGroupMemberRequestSchema.safeParse(req.body);
+  if (!params.success || !body.success) {
+    return res.status(400).json({
+      error: {
+        code: ErrorCode.INVALID_INPUT,
+        message: "입력값을 확인해주세요.",
+      },
+    });
+  }
+
+  try {
+    const result = await removeGroupMember(
+      req.headers.cookie,
+      params.data.groupId,
+      params.data.userId,
+      body.data.removeTickets,
+    );
+    return res.status(200).json({
+      data: removeGroupMemberResponseSchema.parse(result),
+    });
+  } catch (error: unknown) {
+    if (sendAuthError(res, error)) return;
+    if (error instanceof RemoveGroupMemberError) {
+      return res.status(error.status).json({
+        error: { code: error.code, message: error.message },
+      });
+    }
+    throw error;
+  }
+};
 
 export const postGroup = async (req: Request, res: Response) => {
   const parsed = createGroupRequestSchema.safeParse(req.body);

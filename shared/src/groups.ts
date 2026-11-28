@@ -136,3 +136,22 @@ export type GroupDetailResponse = z.infer<typeof groupDetailResponseSchema>;
 export type InviteInfoResponse = z.infer<typeof inviteInfoResponseSchema>;
 export type LeaveGroupRequest = z.infer<typeof leaveGroupRequestSchema>;
 export type LeaveGroupResponse = z.infer<typeof leaveGroupResponseSchema>;
+
+export const removeGroupMemberParamsSchema = groupIdParamsSchema.extend({
+  userId: groupIdParamsSchema.shape.groupId,
+});
+
+export const removeGroupMemberRequestSchema = z.object({
+  removeTickets: z.boolean(),
+});
+
+export const removeGroupMemberResponseSchema = z.object({
+  groupId: positiveIdSchema,
+  removedUserId: positiveIdSchema,
+  memberCount: z.number().int().positive().max(GROUP_MAX_MEMBERS),
+  unlinkedCount: z.number().int().nonnegative(),
+});
+
+export type RemoveGroupMemberResponse = z.infer<
+  typeof removeGroupMemberResponseSchema
+>;

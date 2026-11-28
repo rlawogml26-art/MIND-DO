@@ -18,6 +18,8 @@ import {
   joinGroupResponseSchema,
   leaveGroupRequestSchema,
   leaveGroupResponseSchema,
+  removeGroupMemberRequestSchema,
+  removeGroupMemberResponseSchema,
   groupListResponseSchema,
   groupDetailResponseSchema,
   inviteInfoResponseSchema,
@@ -107,6 +109,18 @@ const options: swaggerJsdoc.Options = {
           target: "openapi-3.0",
           io: "output",
         }),
+        RemoveGroupMemberRequest: z.toJSONSchema(
+          removeGroupMemberRequestSchema,
+          {
+            target: "openapi-3.0",
+          },
+        ),
+        RemoveGroupMemberResponse: z.toJSONSchema(
+          removeGroupMemberResponseSchema,
+          {
+            target: "openapi-3.0",
+          },
+        ),
         LeaveGroupRequest: z.toJSONSchema(leaveGroupRequestSchema, {
           target: "openapi-3.0",
           io: "input",
