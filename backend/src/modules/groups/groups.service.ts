@@ -11,6 +11,7 @@ import {
   type GroupListResponse,
   type InviteInfoResponse,
   type LeaveGroupResponse,
+  type RemoveGroupMemberResponse,
 } from "@mind-do/shared";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -26,6 +27,71 @@ export class DefaultGroupNotAllowedError extends Error {}
 export class GroupFullError extends Error {}
 export class InviteInvalidError extends Error {}
 export class AlreadyGroupMemberError extends Error {}
+
+const removeGroupMemberErrors = {
+  invalid_input: {
+    status: 400,
+    code: ErrorCode.INVALID_INPUT,
+    message: "본인은 그룹 나가기 기능을 이용해주세요.",
+  },
+  default_group_not_allowed: {
+    status: 403,
+    code: ErrorCode.DEFAULT_GROUP_NOT_ALLOWED,
+    message: "기본 1인 그룹에서는 멤버를 강퇴할 수 없습니다.",
+  },
+  not_group_leader: {
+    status: 403,
+    code: ErrorCode.NOT_GROUP_LEADER,
+    message: "그룹장만 멤버를 강퇴할 수 있습니다.",
+  },
+  group_not_found: {
+    status: 404,
+    code: ErrorCode.GROUP_NOT_FOUND,
+    message: "그룹을 찾을 수 없습니다.",
+  },
+  member_not_found: {
+    status: 404,
+    code: ErrorCode.MEMBER_NOT_FOUND,
+    message: "그룹 멤버를 찾을 수 없습니다.",
+  },
+};
+
+export class RemoveGroupMemberError extends Error {
+  readonly status: number;
+  readonly code: ErrorCode;
+
+  constructor(reason: keyof typeof removeGroupMemberErrors) {
+    const { status, code, message } = removeGroupMemberErrors[reason];
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+export const removeGroupMember = async (
+  cookieHeader: string | undefined,
+  groupId: number,
+  removedUserId: number,
+  removeTickets: boolean,
+): Promise<RemoveGroupMemberResponse> => {
+  const requesterId = getAuthenticatedUserId(
+    getAccessTokenFromCookieHeader(cookieHeader),
+  );
+  const result = await repository.removeGroupMember(
+    groupId,
+    requesterId,
+    removedUserId,
+    removeTickets,
+  );
+  if (result.status !== "removed")
+    throw new RemoveGroupMemberError(result.status);
+  return {
+    groupId,
+    removedUserId,
+    memberCount: result.memberCount,
+    unlinkedCount: result.unlinkedCount,
+  };
+};
 
 function getInviteConfiguration() {
   const rawTtlHours = process.env["INVITE_LINK_TTL_HOURS"];

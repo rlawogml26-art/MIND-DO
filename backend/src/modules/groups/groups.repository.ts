@@ -1,3 +1,4 @@
+import type { Prisma } from "../../generated/prisma/client.js";
 import { GROUP_MAX_MEMBERS, USER_GROUP_MAX } from "@mind-do/shared";
 import { getPrismaClient } from "../../lib/prisma.js";
 
@@ -264,21 +265,135 @@ type LeaveGroupInput = {
   keepTickets: boolean;
 };
 
+export const removeGroupMember = (
+  groupId: number,
+  requesterId: number,
+  removedUserId: number,
+  removeTickets: boolean,
+) =>
+  getPrismaClient().$transaction(async (transaction) => {
+    const group = await lockActiveGroup(transaction, groupId);
+    if (!group) return { status: "group_not_found" as const };
+
+    const members = await transaction.groupMember.findMany({
+      where: { groupId, leftAt: null },
+      select: { id: true, userId: true },
+    });
+    if (!members.some(({ userId }) => userId === requesterId)) {
+      return { status: "group_not_found" as const };
+    }
+    if (group.isDefault)
+      return { status: "default_group_not_allowed" as const };
+    if (Number(group.leaderId) !== requesterId) {
+      return { status: "not_group_leader" as const };
+    }
+    if (requesterId === removedUserId) {
+      return { status: "invalid_input" as const };
+    }
+    const target = members.find(({ userId }) => userId === removedUserId);
+    if (!target) return { status: "member_not_found" as const };
+
+    await transaction.groupMember.update({
+      where: { id: target.id },
+      data: { leftAt: new Date() },
+    });
+    const { unlinkedCount } = await cleanDepartingMemberTickets(
+      transaction,
+      groupId,
+      removedUserId,
+      !removeTickets,
+    );
+    return {
+      status: "removed" as const,
+      memberCount: members.length - 1,
+      unlinkedCount,
+    };
+  });
+
 // 그룹 나가기. 개인 티켓 원본은 지우지 않는다 (원본 삭제와 다른 동작).
 // 나간 사람의 티켓·슬롯 정리는 나가기와 같은 잠금 안에서 해야 해서, 그룹 기능 안에서 티켓·초대자 표를 함께 고친다.
+async function lockActiveGroup(
+  transaction: Prisma.TransactionClient,
+  groupId: number,
+) {
+  const groups = await transaction.$queryRaw<
+    Array<{ isDefault: boolean; leaderId: number }>
+  >`
+    SELECT is_default AS isDefault, leader_id AS leaderId
+    FROM \`groups\`
+    WHERE id = ${groupId} AND deleted_at IS NULL
+    FOR UPDATE
+  `;
+  return groups[0];
+}
+
+async function cleanDepartingMemberTickets(
+  transaction: Prisma.TransactionClient,
+  groupId: number,
+  userId: number,
+  keepTickets: boolean,
+) {
+  // 개인 티켓 저장(createIssuedTicket)도 초대자 행을 먼저 잠그므로, 저장과 나가기가 겹쳐도
+  // "미완성"으로 보고 지운 슬롯에 티켓이 새로 생기지 않는다
+  const mySlots = await transaction.$queryRaw<
+    Array<{ sharedTicketId: number }>
+  >`
+    SELECT sti.shared_ticket_id AS sharedTicketId
+    FROM shared_ticket_invitees sti
+    JOIN shared_tickets st ON st.id = sti.shared_ticket_id
+    WHERE st.group_id = ${groupId} AND sti.user_id = ${userId}
+    FOR UPDATE
+  `;
+  const groupSharedTickets = await transaction.sharedTicket.findMany({
+    where: { groupId },
+    select: { id: true },
+  });
+  const groupSharedTicketIds = groupSharedTickets.map(({ id }) => id);
+
+  let removedSlotIds = mySlots.map(({ sharedTicketId }) =>
+    Number(sharedTicketId),
+  );
+  if (keepTickets) {
+    const completed = await transaction.ticket.findMany({
+      where: {
+        userId,
+        sharedTicketId: { in: groupSharedTicketIds },
+        status: "COMPLETED",
+        deletedAt: null,
+      },
+      select: { sharedTicketId: true },
+    });
+    const keptSlotIds = new Set(
+      completed.map(({ sharedTicketId }) => sharedTicketId),
+    );
+    removedSlotIds = removedSlotIds.filter((id) => !keptSlotIds.has(id));
+  }
+
+  // 지우는 슬롯에 남은 미완성·삭제된 티켓의 연결도 끊는다. 남겨 두면 다시 들어와 초대받았을 때
+  // (shared_ticket_id, user_id) 고유 키에 걸려 새 개인 티켓을 저장할 수 없다
+  const unlinked = await transaction.ticket.updateMany({
+    where: {
+      userId,
+      sharedTicketId: {
+        in: keepTickets ? removedSlotIds : groupSharedTicketIds,
+      },
+    },
+    data: { sharedTicketId: null },
+  });
+  await transaction.sharedTicketInvitee.deleteMany({
+    where: { userId, sharedTicketId: { in: removedSlotIds } },
+  });
+  return {
+    groupSharedTicketIds,
+    unlinkedCount: keepTickets ? 0 : unlinked.count,
+  };
+}
+
 export const leaveGroup = ({ groupId, userId, keepTickets }: LeaveGroupInput) =>
   getPrismaClient().$transaction(async (transaction) => {
     // 같은 그룹에서 동시에 나가거나 들어오는 요청을 한 줄로 세워, 마지막 두 명이 동시에 나가도
     // 멤버 0명인 그룹이 남지 않게 한다
-    const groups = await transaction.$queryRaw<
-      Array<{ isDefault: boolean; leaderId: number }>
-    >`
-      SELECT is_default AS isDefault, leader_id AS leaderId
-      FROM \`groups\`
-      WHERE id = ${groupId} AND deleted_at IS NULL
-      FOR UPDATE
-    `;
-    const group = groups[0];
+    const group = await lockActiveGroup(transaction, groupId);
     if (!group) return { status: "group_not_found" as const };
 
     const membership = await transaction.groupMember.findFirst({
@@ -296,56 +411,12 @@ export const leaveGroup = ({ groupId, userId, keepTickets }: LeaveGroupInput) =>
       data: { leftAt: now },
     });
 
-    // 개인 티켓 저장(createIssuedTicket)도 초대자 행을 먼저 잠그므로, 저장과 나가기가 겹쳐도
-    // "미완성"으로 보고 지운 슬롯에 티켓이 새로 생기지 않는다
-    const mySlots = await transaction.$queryRaw<
-      Array<{ sharedTicketId: number }>
-    >`
-      SELECT sti.shared_ticket_id AS sharedTicketId
-      FROM shared_ticket_invitees sti
-      JOIN shared_tickets st ON st.id = sti.shared_ticket_id
-      WHERE st.group_id = ${groupId} AND sti.user_id = ${userId}
-      FOR UPDATE
-    `;
-    const groupSharedTickets = await transaction.sharedTicket.findMany({
-      where: { groupId },
-      select: { id: true },
-    });
-    const groupSharedTicketIds = groupSharedTickets.map(({ id }) => id);
-
-    let removedSlotIds = mySlots.map(({ sharedTicketId }) =>
-      Number(sharedTicketId),
+    const { groupSharedTicketIds } = await cleanDepartingMemberTickets(
+      transaction,
+      groupId,
+      userId,
+      keepTickets,
     );
-    if (keepTickets) {
-      const completed = await transaction.ticket.findMany({
-        where: {
-          userId,
-          sharedTicketId: { in: groupSharedTicketIds },
-          status: "COMPLETED",
-          deletedAt: null,
-        },
-        select: { sharedTicketId: true },
-      });
-      const keptSlotIds = new Set(
-        completed.map(({ sharedTicketId }) => sharedTicketId),
-      );
-      removedSlotIds = removedSlotIds.filter((id) => !keptSlotIds.has(id));
-    }
-
-    // 지우는 슬롯에 남은 미완성·삭제된 티켓의 연결도 끊는다. 남겨 두면 다시 들어와 초대받았을 때
-    // (shared_ticket_id, user_id) 고유 키에 걸려 새 개인 티켓을 저장할 수 없다
-    await transaction.ticket.updateMany({
-      where: {
-        userId,
-        sharedTicketId: {
-          in: keepTickets ? removedSlotIds : groupSharedTicketIds,
-        },
-      },
-      data: { sharedTicketId: null },
-    });
-    await transaction.sharedTicketInvitee.deleteMany({
-      where: { userId, sharedTicketId: { in: removedSlotIds } },
-    });
 
     const firstRemaining = await transaction.groupMember.findFirst({
       where: { groupId, leftAt: null },
