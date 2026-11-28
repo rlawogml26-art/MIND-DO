@@ -20,6 +20,10 @@ export const ticketResponseSchema = createTicketSchema.extend({
   ticketId: z.number().int().positive(),
 });
 
+export const deleteTicketResponseSchema = z.object({
+  ticketId: ticketResponseSchema.shape.ticketId,
+});
+
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
