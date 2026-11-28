@@ -1,4 +1,5 @@
 import type { CreateTicketInput, UpdateTicketInput } from "@mind-do/shared";
+import { getPrismaClient } from "../../lib/prisma.js";
 
 export type Ticket = CreateTicketInput & {
   ticketId: number;
@@ -65,10 +66,19 @@ export const updateTicket = async (
   return updatedTicket;
 };
 
-export const deleteTicket = async (ticketId: number): Promise<boolean> => {
-  const index = tickets.findIndex((ticket) => ticket.ticketId === ticketId);
-  const ticket = tickets[index];
-  if (!ticket || ticket.deletedAt !== null) return false;
-  ticket.deletedAt = new Date();
-  return true;
-};
+export const findActivePersonalTicket = (ticketId: number) =>
+  getPrismaClient().ticket.findFirst({
+    where: { id: ticketId, deletedAt: null },
+    select: { userId: true, sharedTicketId: true },
+  });
+
+export const softDeleteOwnedPersonalTicket = (
+  ticketId: number,
+  userId: number,
+) =>
+  // Prisma update는 updatedAt도 갱신하므로 삭제 시각만 쓰는 SQL을 사용한다.
+  getPrismaClient().$executeRaw`
+    UPDATE tickets
+    SET deleted_at = CURRENT_TIMESTAMP(3)
+    WHERE id = ${ticketId} AND user_id = ${userId} AND deleted_at IS NULL
+  `;

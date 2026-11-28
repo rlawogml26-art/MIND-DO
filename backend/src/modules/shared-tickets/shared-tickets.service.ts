@@ -166,6 +166,23 @@ export const getSharedTicketDetail = async (
   return buildSharedTicketDetail(sharedTicketId, userId);
 };
 
+export async function canViewPersonalTicketInSharedTicket(
+  sharedTicketId: number,
+  ticketId: number,
+  requesterId: number,
+) {
+  const detail = await repository.findSharedTicketDetail({
+    sharedTicketId,
+    userId: requesterId,
+  });
+  if (!detail) return false;
+
+  const ticket = detail.tickets.find((entry) => entry.ticketId === ticketId);
+  return (
+    !!ticket && detail.invitees.some(({ userId }) => userId === ticket.userId)
+  );
+}
+
 async function buildSharedTicketDetail(sharedTicketId: number, userId: number) {
   const detail = await repository.findSharedTicketDetail({
     sharedTicketId,

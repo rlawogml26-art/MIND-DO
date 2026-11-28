@@ -4,6 +4,7 @@ export enum ErrorCode {
   // 기존 코드 (변경 금지)
   INVALID_INPUT = "INVALID_INPUT", // 400 입력 형식·길이·개수 위반 (명세의 VALIDATION_ERROR와 같은 뜻)
   TICKET_NOT_FOUND = "TICKET_NOT_FOUND", // 404 개인 티켓이 없거나(삭제 포함) 볼 권한이 없음
+  NOT_TICKET_OWNER = "NOT_TICKET_OWNER", // 403 개인 티켓 소유자가 아님
   INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR", // 500
 
   // 인증 (모든 API 공통, 로그인)

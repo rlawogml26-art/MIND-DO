@@ -2,11 +2,16 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import {
   createTicketSchema,
+  deleteTicketResponseSchema,
   updateTicketSchema,
   ticketResponseSchema,
   ErrorCode,
 } from "@mind-do/shared";
 import * as service from "./ticket.service.js";
+import {
+  AccessTokenExpiredError,
+  UnauthorizedError,
+} from "../auth/auth.service.js";
 
 const ticketIdSchema = z.object({
   ticketId: z
@@ -107,12 +112,37 @@ export const deleteTicket = async (req: Request, res: Response) => {
   const params = ticketIdSchema.safeParse(req.params);
   if (!params.success) return invalidInput(res);
   try {
-    if (!(await service.deleteTicket(params.data.ticketId)))
-      return notFound(res);
-    return res
-      .status(200)
-      .json({ data: { message: "티켓이 성공적으로 삭제되었습니다." } });
-  } catch {
-    return serverError(res);
+    const { ticketId } = params.data;
+    const result = await service.deleteTicket(req.headers.cookie, ticketId);
+    if (result === "not_found") return notFound(res);
+    if (result === "not_owner") {
+      return res.status(403).json({
+        error: {
+          code: ErrorCode.NOT_TICKET_OWNER,
+          message: "티켓 소유자만 삭제할 수 있습니다.",
+        },
+      });
+    }
+    return res.status(200).json({
+      data: deleteTicketResponseSchema.parse({ ticketId }),
+    });
+  } catch (error: unknown) {
+    if (error instanceof AccessTokenExpiredError) {
+      return res.status(401).json({
+        error: {
+          code: ErrorCode.ACCESS_TOKEN_EXPIRED,
+          message: "액세스 토큰이 만료되었습니다.",
+        },
+      });
+    }
+    if (error instanceof UnauthorizedError) {
+      return res.status(401).json({
+        error: {
+          code: ErrorCode.UNAUTHORIZED,
+          message: "로그인이 필요합니다.",
+        },
+      });
+    }
+    throw error;
   }
 };

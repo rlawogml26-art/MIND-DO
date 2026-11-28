@@ -85,9 +85,11 @@ router.get("/", getTickets);
  *       404:
  *         description: 수정할 티켓을 찾을 수 없음
  *   delete:
- *     summary: 티켓 삭제
+ *     summary: 개인 티켓 원본 삭제
  *     tags: [티켓 아카이빙]
- *     description: 특정 ID를 가진 티켓을 삭제합니다.
+ *     description: 소유자의 개인 티켓을 소프트 삭제합니다. 공동 티켓과 초대 슬롯은 유지됩니다.
+ *     security:
+ *       - AccessTokenCookie: []
  *     parameters:
  *       - in: path
  *         name: ticketId
@@ -98,8 +100,23 @@ router.get("/", getTickets);
  *     responses:
  *       200:
  *         description: 삭제 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   $ref: '#/components/schemas/DeleteTicketResponse'
+ *       400:
+ *         description: 티켓 ID 검증 실패 (INVALID_INPUT)
+ *       401:
+ *         description: 인증 실패 (UNAUTHORIZED 또는 ACCESS_TOKEN_EXPIRED)
+ *       403:
+ *         description: 티켓을 볼 수 있으나 소유자가 아님 (NOT_TICKET_OWNER)
  *       404:
- *         description: 삭제할 티켓을 찾을 수 없음
+ *         description: 티켓이 없거나, 삭제됐거나, 열람 권한이 없음 (TICKET_NOT_FOUND)
+ *       500:
+ *         description: 서버 오류 (INTERNAL_SERVER_ERROR)
  */
 router.get("/:ticketId", getTicketById);
 router.put("/:ticketId", updateTicket);

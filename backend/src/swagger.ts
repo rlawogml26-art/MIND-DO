@@ -5,6 +5,7 @@ import {
   aiDraftsRequestSchema,
   aiDraftsResponseSchema,
   createTicketSchema,
+  deleteTicketResponseSchema,
   createGroupRequestSchema,
   createSharedTicketRequestSchema,
   createGroupInviteResponseSchema,
@@ -162,6 +163,9 @@ const options: swaggerJsdoc.Options = {
           }),
           { target: "openapi-3.0" },
         ),
+        DeleteTicketResponse: z.toJSONSchema(deleteTicketResponseSchema, {
+          target: "openapi-3.0",
+        }),
         CreateTicketInput: z.toJSONSchema(createTicketSchema, {
           target: "openapi-3.0",
           io: "input",
