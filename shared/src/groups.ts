@@ -25,6 +25,12 @@ export const createGroupRequestSchema = z.object({
   name: groupNameSchema,
 });
 
+export const unlinkFormerMemberTicketsParamsSchema = groupIdParamsSchema.extend(
+  {
+    userId: groupIdParamsSchema.shape.groupId,
+  },
+);
+
 export const groupResponseSchema = z.object({
   groupId: z.number().int().positive(),
   name: groupNameSchema,
@@ -136,3 +142,13 @@ export type GroupDetailResponse = z.infer<typeof groupDetailResponseSchema>;
 export type InviteInfoResponse = z.infer<typeof inviteInfoResponseSchema>;
 export type LeaveGroupRequest = z.infer<typeof leaveGroupRequestSchema>;
 export type LeaveGroupResponse = z.infer<typeof leaveGroupResponseSchema>;
+
+export const unlinkFormerMemberTicketsResponseSchema = z.object({
+  groupId: positiveIdSchema,
+  userId: positiveIdSchema,
+  unlinkedCount: z.number().int().nonnegative(),
+});
+
+export type UnlinkFormerMemberTicketsResponse = z.infer<
+  typeof unlinkFormerMemberTicketsResponseSchema
+>;

@@ -11,6 +11,7 @@ import {
   type GroupListResponse,
   type InviteInfoResponse,
   type LeaveGroupResponse,
+  type UnlinkFormerMemberTicketsResponse,
 } from "@mind-do/shared";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -26,6 +27,36 @@ export class DefaultGroupNotAllowedError extends Error {}
 export class GroupFullError extends Error {}
 export class InviteInvalidError extends Error {}
 export class AlreadyGroupMemberError extends Error {}
+type UnlinkFormerMemberFailure =
+  | "group_not_found"
+  | "not_group_leader"
+  | "member_not_found"
+  | "current_member";
+
+export class UnlinkFormerMemberTicketsError extends Error {
+  constructor(readonly reason: UnlinkFormerMemberFailure) {
+    super(reason);
+  }
+}
+
+export async function unlinkFormerMemberTickets(
+  cookieHeader: string | undefined,
+  groupId: number,
+  userId: number,
+): Promise<UnlinkFormerMemberTicketsResponse> {
+  const requesterId = getAuthenticatedUserId(
+    getAccessTokenFromCookieHeader(cookieHeader),
+  );
+  const result = await repository.unlinkFormerMemberTickets(
+    groupId,
+    requesterId,
+    userId,
+  );
+  if (result.status !== "unlinked") {
+    throw new UnlinkFormerMemberTicketsError(result.status);
+  }
+  return { groupId, userId, unlinkedCount: result.unlinkedCount };
+}
 
 function getInviteConfiguration() {
   const rawTtlHours = process.env["INVITE_LINK_TTL_HOURS"];
