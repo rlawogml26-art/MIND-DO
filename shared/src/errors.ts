@@ -16,6 +16,7 @@ export enum ErrorCode {
   // 그룹 (생성·초대 링크·가입)
   GROUP_NOT_FOUND = "GROUP_NOT_FOUND", // 404 그룹이 없거나 내가 멤버가 아님
   NOT_GROUP_LEADER = "NOT_GROUP_LEADER", // 403 그룹장 전용 행동
+  MEMBER_NOT_FOUND = "MEMBER_NOT_FOUND", // 404 그룹 멤버 기록을 찾을 수 없음
   DEFAULT_GROUP_NOT_ALLOWED = "DEFAULT_GROUP_NOT_ALLOWED", // 403 기본 1인 그룹에서 할 수 없는 행동
   INVITE_INVALID = "INVITE_INVALID", // 404 초대 링크가 없거나 만료·무효 (구분하지 않음)
   GROUP_LIMIT_EXCEEDED = "GROUP_LIMIT_EXCEEDED", // 409 참여 그룹이 이미 4개 (기본 1인 그룹 제외)
