@@ -1,4 +1,5 @@
 import { GROUP_MAX_MEMBERS, USER_GROUP_MAX } from "@mind-do/shared";
+import type { Prisma } from "../../generated/prisma/client.js";
 import { getPrismaClient } from "../../lib/prisma.js";
 
 type CreateGroupRecordInput = {
@@ -266,19 +267,64 @@ type LeaveGroupInput = {
 
 // 그룹 나가기. 개인 티켓 원본은 지우지 않는다 (원본 삭제와 다른 동작).
 // 나간 사람의 티켓·슬롯 정리는 나가기와 같은 잠금 안에서 해야 해서, 그룹 기능 안에서 티켓·초대자 표를 함께 고친다.
+async function lockActiveGroup(
+  transaction: Prisma.TransactionClient,
+  groupId: number,
+) {
+  // 그룹 멤버십과 그룹장 변경을 직렬화해 권한 검사와 갱신 사이의 변경을 막는다.
+  const groups = await transaction.$queryRaw<
+    Array<{ isDefault: boolean; leaderId: number }>
+  >`
+    SELECT is_default AS isDefault, leader_id AS leaderId
+    FROM \`groups\`
+    WHERE id = ${groupId} AND deleted_at IS NULL
+    FOR UPDATE
+  `;
+  return groups[0];
+}
+
+export const transferGroupLeader = (
+  groupId: number,
+  requesterId: number,
+  targetUserId: number,
+) =>
+  getPrismaClient().$transaction(async (transaction) => {
+    const group = await lockActiveGroup(transaction, groupId);
+    if (!group) return { status: "group_not_found" as const };
+
+    const members = await transaction.groupMember.findMany({
+      where: {
+        groupId,
+        leftAt: null,
+        userId: { in: [requesterId, targetUserId] },
+      },
+      select: { userId: true },
+    });
+    if (!members.some(({ userId }) => userId === requesterId)) {
+      return { status: "group_not_found" as const };
+    }
+    if (Number(group.leaderId) !== requesterId) {
+      return { status: "not_group_leader" as const };
+    }
+    if (group.isDefault)
+      return { status: "default_group_not_allowed" as const };
+    if (requesterId === targetUserId)
+      return { status: "invalid_input" as const };
+    if (!members.some(({ userId }) => userId === targetUserId)) {
+      return { status: "member_not_found" as const };
+    }
+
+    const { leaderId } = await transaction.group.update({
+      where: { id: groupId },
+      data: { leaderId: targetUserId },
+      select: { leaderId: true },
+    });
+    return { status: "transferred" as const, leaderId };
+  });
+
 export const leaveGroup = ({ groupId, userId, keepTickets }: LeaveGroupInput) =>
   getPrismaClient().$transaction(async (transaction) => {
-    // 같은 그룹에서 동시에 나가거나 들어오는 요청을 한 줄로 세워, 마지막 두 명이 동시에 나가도
-    // 멤버 0명인 그룹이 남지 않게 한다
-    const groups = await transaction.$queryRaw<
-      Array<{ isDefault: boolean; leaderId: number }>
-    >`
-      SELECT is_default AS isDefault, leader_id AS leaderId
-      FROM \`groups\`
-      WHERE id = ${groupId} AND deleted_at IS NULL
-      FOR UPDATE
-    `;
-    const group = groups[0];
+    const group = await lockActiveGroup(transaction, groupId);
     if (!group) return { status: "group_not_found" as const };
 
     const membership = await transaction.groupMember.findFirst({

@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getGroup,
   getGroups,
+  patchGroupLeader,
   postGroup,
   postGroupInvite,
   postLeaveGroup,
@@ -276,5 +277,48 @@ router.post("/:groupId/invites", postGroupInvite);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post("/:groupId/leave", postLeaveGroup);
+
+/**
+ * @swagger
+ * /api/groups/{groupId}/leader:
+ *   patch:
+ *     tags: [그룹]
+ *     summary: 그룹장 위임
+ *     description: 그룹장이 다른 현재 멤버에게 권한을 넘기고 일반 멤버로 남습니다.
+ *     security:
+ *       - AccessTokenCookie: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/TransferGroupLeaderRequest'
+ *     responses:
+ *       '200':
+ *         description: 위임 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   $ref: '#/components/schemas/TransferGroupLeaderResponse'
+ *       '400':
+ *         description: 입력 오류 또는 본인에게 위임 (INVALID_INPUT)
+ *       '401':
+ *         description: 인증 실패 (UNAUTHORIZED, ACCESS_TOKEN_EXPIRED)
+ *       '403':
+ *         description: 그룹장 권한 없음 또는 기본 그룹 (NOT_GROUP_LEADER, DEFAULT_GROUP_NOT_ALLOWED)
+ *       '404':
+ *         description: 그룹 또는 대상 멤버 없음 (GROUP_NOT_FOUND, MEMBER_NOT_FOUND)
+ *       '500':
+ *         description: 서버 오류 (INTERNAL_SERVER_ERROR)
+ */
+router.patch("/:groupId/leader", patchGroupLeader);
 
 export default router;
